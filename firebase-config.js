@@ -65,7 +65,16 @@
    just needs the `schools` path to exist.)
    ============================================================================ */
 
-window.PLATFORM_FIREBASE_CONFIG = null;
+window.PLATFORM_FIREBASE_CONFIG = {
+    apiKey: "AIzaSyDEDD-tMaJ_l63C53IBkWzklxJM5wjzrWk",
+    authDomain: "markbook-45fc1.firebaseapp.com",
+    databaseURL: "https://markbook-45fc1-default-rtdb.firebaseio.com",
+    projectId: "markbook-45fc1",
+    storageBucket: "markbook-45fc1.firebasestorage.app",
+    messagingSenderId: "625139819480",
+    appId: "1:625139819480:web:b06e145706b21d288a88ad",
+    measurementId: "G-J1TJJ3PMQE"
+  };
 
 /* Example — uncomment and fill in with YOUR project's values:
 
