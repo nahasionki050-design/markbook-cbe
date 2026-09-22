@@ -196,6 +196,21 @@ function ensureSchoolShape(s){
   if(!Array.isArray(s.dos)) s.dos = [];
   if(!s.classTeachers || typeof s.classTeachers!=='object') s.classTeachers = {};
   if(!s.marks || typeof s.marks!=='object') s.marks = {};
+  // Every reader of school.teachers assumes t.assignments is an array (Teachers &
+  // Permissions, marks entry, report cards all do t.assignments.some/.map/.filter
+  // with no guard). A teacher record missing that field — e.g. one that round-tripped
+  // through a cloud merge mid-edit — used to crash every one of those screens silently.
+  // Sanitizing shape here, at the one choke point every load/migrate/merge passes
+  // through, protects all of them at once.
+  s.teachers.forEach(t=>{
+    if(!Array.isArray(t.assignments)) t.assignments = [];
+    if(typeof t.canPrint !== 'boolean') t.canPrint = true;
+  });
+  // Same idea for exams: every mark-entry and report screen does exam.maxMarksByArea[id]
+  // with no guard, which throws outright if maxMarksByArea is missing entirely.
+  s.exams.forEach(e=>{
+    if(!e.maxMarksByArea || typeof e.maxMarksByArea !== 'object') e.maxMarksByArea = {};
+  });
   return s;
 }
 function migrateDB(db){
