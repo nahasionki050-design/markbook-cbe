@@ -169,12 +169,32 @@ function loadDB(){
 // the current data shape. Safe to call repeatedly — every step is a no-op once already
 // migrated, so this doubles as the single source of truth for "what does a valid DB look
 // like" whether the data came from this browser's storage or an older backup file.
+// Ensures a single school object has every field the templates expect, regardless of
+// where it came from (a fresh create, an older backup file, or a cloud snapshot that
+// replaced the whole local record). Missing an object/array field here is what makes a
+// tab like Classes or Learners silently render blank — the template throws partway
+// through building its HTML, so the tab's content area is just left empty. Safe to call
+// repeatedly; every line is a no-op once the field already exists.
+function ensureSchoolShape(s){
+  if(!s) return s;
+  if(!Array.isArray(s.classes)) s.classes = [];
+  if(!Array.isArray(s.students)) s.students = [];
+  if(!Array.isArray(s.teachers)) s.teachers = [];
+  if(!Array.isArray(s.exams)) s.exams = [];
+  if(!Array.isArray(s.learningAreas)) s.learningAreas = defaultAreas();
+  if(!Array.isArray(s.gradingSystem)) s.gradingSystem = defaultGrading();
+  if(!Array.isArray(s.dos)) s.dos = [];
+  if(!s.classTeachers || typeof s.classTeachers!=='object') s.classTeachers = {};
+  if(!s.marks || typeof s.marks!=='object') s.marks = {};
+  return s;
+}
 function migrateDB(db){
   if(!db.settings) db.settings = {trialDays:14};
   if(!db.settings.trialDays) db.settings.trialDays = 14;
   if(db.adminSync===undefined) db.adminSync = null; // older backups/devices never had cloud admin sync
   // migrate older schools that don't yet have status/trial fields
   Object.values(db.schools||{}).forEach(s=>{
+    ensureSchoolShape(s);
     if(!s.status){
       s.status = 'active'; // pre-existing schools before this feature keep working uninterrupted
       s.createdAt = s.createdAt || Date.now();
@@ -371,7 +391,7 @@ function mergeDataFromCloud(code, remote){
   const remoteTime = remote._updatedAt || 0;
   if(!local || remoteTime > localTime){
     const marks = local ? local.marks : {};
-    DB.schools[code] = Object.assign({}, remote, {marks: marks||{}});
+    DB.schools[code] = ensureSchoolShape(Object.assign({}, remote, {marks: marks||{}}));
     saveDB(DB, {skipCloud:true});
     if(syncState.dataReady){ toast('🔄 School data updated from another device'); softRefresh(); }
   } else if(local && localTime > remoteTime){
@@ -393,12 +413,14 @@ async function bootstrapFromCloudIfNeeded(code, config){
       const local = DB.schools[code];
       const localTime = local ? (local._updatedAt||0) : -1;
       if(!local || (remote._updatedAt||0) >= localTime){
-        DB.schools[code] = Object.assign({}, remote, {marks: remoteMarks||{}, syncConfig:{enabled:true, config}});
+        DB.schools[code] = ensureSchoolShape(Object.assign({}, remote, {marks: remoteMarks||{}, syncConfig:{enabled:true, config}}));
       } else {
         local.marks = remoteMarks || local.marks;
+        ensureSchoolShape(local);
       }
     } else if(DB.schools[code]){
       DB.schools[code].marks = remoteMarks || DB.schools[code].marks;
+      ensureSchoolShape(DB.schools[code]);
     }
     if(DB.schools[code]){ DB.schools[code].syncConfig = {enabled:true, config}; saveDB(DB, {skipCloud:true}); }
   }catch(e){ console.warn('Cloud bootstrap failed (offline, or bad config?)', e); }
@@ -887,7 +909,7 @@ function recoverAdminFromBackup(){
     try{
       const incoming = JSON.parse(e.target.result);
       if(!incoming || typeof incoming!=='object' || !('schools' in incoming) || !incoming.adminPassword) throw new Error('Not a valid backup file');
-      DB = incoming; if(!DB.settings) DB.settings = {trialDays:14}; saveDB(DB);
+      DB = migrateDB(incoming); saveDB(DB);
       setSession({role:'admin', label:'Admin/Owner'});
       toast('Backup restored — logged in as admin');
       route();
@@ -1465,7 +1487,7 @@ function tplClasses(school){
   <div style="align-self:flex-end"><button onclick="addClass()">Add Class</button></div></div>
   <table style="margin-top:10px"><tr><th>Class</th><th>Class Teacher</th><th>Learners</th><th>Actions</th></tr>
   ${school.classes.map(c=>`<tr><td>${escapeHtml(c.name)}</td>
-    <td><input value="${escapeHtml(school.classTeachers[c.id]||'')}" onchange="setClassTeacher('${c.id}',this.value)"></td>
+    <td><input value="${escapeHtml((school.classTeachers||{})[c.id]||'')}" onchange="setClassTeacher('${c.id}',this.value)"></td>
     <td>${school.students.filter(s=>s.classId===c.id).length}</td>
     <td><button class="danger" onclick="delClass('${c.id}')">Delete</button></td></tr>`).join('') || '<tr><td colspan="4" class="small">No classes yet.</td></tr>'}
   </table></div>`;
@@ -1478,7 +1500,7 @@ function delClass(id){
   if(!confirm('Delete this class? Learners in it will remain unassigned.')) return;
   const s = currentSchool(); s.classes = s.classes.filter(c=>c.id!==id); delete s.classTeachers[id]; saveDB(DB); renderDOS();
 }
-function setClassTeacher(id,val){ currentSchool().classTeachers[id]=val; saveDB(DB); }
+function setClassTeacher(id,val){ const s=currentSchool(); if(!s.classTeachers) s.classTeachers={}; s.classTeachers[id]=val; saveDB(DB); }
 
 /* --- Learning Areas --- */
 function tplAreas(school){
