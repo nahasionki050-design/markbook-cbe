@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
 <meta name="description" content="CBC Markbook — a learner assessment and reporting platform for CBC schools: record marks, auto-grade against the CBC rubric, and generate printable learner progress reports and class assessment sheets.">
 <meta name="theme-color" content="#123a63">
+<meta name="robots" content="noindex, nofollow">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -133,6 +134,15 @@ canvas{max-width:100%;}
 <script src="firebase-config.js"></script>
 <script>
 const APP_VERSION = '1.1.0';
+// The Admin/Owner tab is completely hidden from the login screen and unreachable
+// (even by URL) unless the page is opened with ?key=<this value> in the address bar.
+// This is what stops a random visitor from ever seeing "Admin/Owner" or being able to
+// set the admin password themselves — CHANGE THIS to your own secret before deploying,
+// then bookmark your admin link as: yoursite.netlify.app/?role=admin&key=YOUR_SECRET
+// Note: since this is a static site, anyone who views page source can find this value —
+// it stops casual/opportunistic access and search-engine discovery, not a determined
+// attacker inspecting the code. Treat it like a hidden door, not a lock.
+const ADMIN_ACCESS_KEY = 'CBC-9247-owner-portal';
 /* ============================= DATA LAYER ============================= */
 const DB_KEY = 'cbc_markbook_db_v1';
 // Wraps localStorage so a school running in a browser that blocks it (private/incognito
@@ -235,6 +245,14 @@ function migrateDB(db){
   return db;
 }
 function saveDB(db, opts){
+  if(!opts || !opts.skipCloud){
+    // Stamp the active school as "just edited" BEFORE pushing/storing, so that if a
+    // cloud echo of an earlier push arrives while more edits are still in flight (e.g.
+    // adding a second teacher right after the first), the echo's older timestamp can
+    // never be mistaken for newer and silently overwrite this fresher local change.
+    const activeSchool = (session && (session.role==='dos'||session.role==='teacher')) ? db.schools[session.schoolCode] : null;
+    if(activeSchool) activeSchool._updatedAt = Date.now();
+  }
   storageSet(DB_KEY, JSON.stringify(db));
   if(!opts || !opts.skipCloud){ scheduleCloudPush(); scheduleAdminCloudPush(); }
 }
@@ -325,7 +343,7 @@ function scheduleCloudPush(){
   clearTimeout(syncState.pushTimer);
   syncState.pushTimer = setTimeout(()=>{
     schoolDataRef(school.code).set(nonMarksSnapshot(school)).catch(e=>console.warn('Cloud sync push failed', e));
-  }, 900);
+  }, 300);
 }
 function pushMarkToCloud(code, examId, sid, areaId, val){
   if(!syncState.enabled || !fbDb) return;
@@ -730,7 +748,7 @@ function toast(msg,type='ok'){
 }
 function getQueryParams(){
   const p = new URLSearchParams(location.search);
-  return {school:p.get('school'), role:p.get('role'), sync:p.get('sync')};
+  return {school:p.get('school'), role:p.get('role'), sync:p.get('sync'), key:p.get('key')};
 }
 // Figures out which Firebase config (if any) should be used to bootstrap a login: a sync
 // link the person opened, a Sync Code they pasted on the login form, or a config this
@@ -784,6 +802,10 @@ function renderLogin(){
   // Any link that carries a school code was generated FOR that school (DOS/HOI or Teacher link).
   // Such links must never reveal that an admin/owner portal exists at all.
   const restricted = !!qp.school;
+  // Owner/admin access is opt-in via a secret ?key= in the URL — without it, the
+  // Admin/Owner tab is never rendered and ?role=admin is silently ignored below, so
+  // a random visitor (or a search engine) never even learns an owner portal exists.
+  const ownerKeyOk = !!qp.key && qp.key === ADMIN_ACCESS_KEY;
   const prefillRole = qp.role==='teacher' ? 'teacher' : 'dos';
   app.innerHTML = `
   <div class="login-wrap">
@@ -794,7 +816,7 @@ function renderLogin(){
     </div>
     <div class="card">
       <div class="tabs center" id="loginTabs">
-        ${restricted ? '' : `<button data-r="admin" class="${!prefillCode && (qp.role==='admin')?'active':''}">Admin/Owner</button>`}
+        ${(restricted || !ownerKeyOk) ? '' : `<button data-r="admin" class="${!prefillCode && (qp.role==='admin')?'active':''}">Admin/Owner</button>`}
         <button data-r="dos" class="${prefillRole==='dos'?'active':''}">DOS / HOI</button>
         <button data-r="teacher" class="${prefillRole==='teacher'?'active':''}">Teacher</button>
       </div>
@@ -802,7 +824,7 @@ function renderLogin(){
     </div>
     <div class="app-footer">CBC Markbook v${APP_VERSION} &nbsp;·&nbsp; Your data stays on this device unless your school turns on Multi-Device Sync</div>
   </div>`;
-  let activeRole = restricted ? prefillRole : (qp.role==='admin' ? 'admin' : (prefillRole==='teacher'?'teacher':'dos'));
+  let activeRole = restricted ? prefillRole : ((qp.role==='admin' && ownerKeyOk) ? 'admin' : (prefillRole==='teacher'?'teacher':'dos'));
   qsa('#loginTabs button').forEach(b=> b.onclick=()=>{ activeRole=b.dataset.r; qsa('#loginTabs button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderForm();});
   function renderForm(){
     const f = qs('#loginForm');
@@ -848,7 +870,17 @@ function syncFieldHtml(qp){
 function doAdminLogin(){
   const pw = qs('#pw').value.trim();
   if(!pw){ qs('#loginMsg').innerHTML='<div class="msg err">Enter a password.</div>'; return; }
-  if(!DB.adminPassword){ DB.adminPassword = pw; saveDB(DB); }
+  if(!DB.adminPassword){
+    // First-time setup only proceeds if this page load carried the secret owner key —
+    // checked again here (not just at tab-render time) so it can't be triggered by
+    // someone calling this function directly, e.g. from the browser console.
+    const qp = getQueryParams();
+    if(!qp.key || qp.key !== ADMIN_ACCESS_KEY){
+      qs('#loginMsg').innerHTML='<div class="msg err">Admin setup is not available from this link.</div>';
+      return;
+    }
+    DB.adminPassword = pw; saveDB(DB);
+  }
   if(DB.adminPassword !== pw){ qs('#loginMsg').innerHTML='<div class="msg err">Wrong password.</div>'; return; }
   setSession({role:'admin', label:'Admin/Owner'});
   route();
@@ -1335,7 +1367,7 @@ function renderDOS(){
   if(dosTab==='teachers') c.innerHTML = tplTeachers(school);
   if(dosTab==='marks'){ c.innerHTML = tplDosMarks(school); if(school.classes.length) dosRenderExamOptions(); }
   if(dosTab==='assess') c.innerHTML = tplAssessPicker(school);
-  if(dosTab==='reports'){ c.innerHTML = tplReportsPicker(school); if(school.classes.length) fillRepLearners(); }
+  if(dosTab==='reports'){ c.innerHTML = tplReportsPicker(school); if(school.classes.length){ fillRepLearners(); fillRepExams(); } }
   if(dosTab==='history') c.innerHTML = tplHistory(school);
   if(dosTab==='profile') c.innerHTML = tplSchoolProfile(school);
   if(dosTab==='account') c.innerHTML = tplAccount(school);
@@ -1845,10 +1877,10 @@ function renderTeacher(){
   </div>
   ${t.canPrint ? `<div class="card"><h2 class="no-print">📄 Print Learner Reports</h2>
   <div class="row no-print">
-    <div><label>Class</label><select id="trepClass" onchange="fillTeacherRepLearners()">
+    <div><label>Class</label><select id="trepClass" onchange="fillTeacherRepLearners();fillTeacherRepExams()">
       ${myClasses.map(cid=>{const c=school.classes.find(x=>x.id===cid);return `<option value="${cid}">${escapeHtml(c.name)}</option>`;}).join('')}
     </select></div>
-    <div><label>Exam</label><select id="trepExam">${school.exams.filter(e=>myClasses.includes(e.classId)).map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams</option>'}</select></div>
+    <div><label>Exam</label><select id="trepExam">${school.exams.filter(e=>e.classId===myClasses[0]).map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this class</option>'}</select></div>
     <div><label>Learner</label><select id="trepLearner"></select></div>
   </div>
   <div class="flexbtns no-print">
@@ -1860,11 +1892,20 @@ function renderTeacher(){
   <div class="card"><h2 class="no-print">🖨 Class List of Previous Exams</h2><div id="teacherHistory"></div></div>`;
   renderTeacherAreaOptions();
   renderTeacherHistory();
-  if(t.canPrint && myClasses.length) fillTeacherRepLearners();
+  if(t.canPrint && myClasses.length){ fillTeacherRepLearners(); fillTeacherRepExams(); }
 }
 function fillTeacherRepLearners(){
   const school = currentSchool(); const classId = qs('#trepClass').value;
   qs('#trepLearner').innerHTML = studentsInClass(school, classId).map(s=>`<option value="${s.id}">${escapeHtml(s.name)}${s.adm?' ('+escapeHtml(s.adm)+')':''}</option>`).join('');
+}
+// Scopes the Exam dropdown to whichever class is currently selected (same fix as the
+// DOS Reports page) — a teacher assigned to more than one class could otherwise pick
+// Class A here while an exam from Class B stayed selected underneath, producing a
+// blank report.
+function fillTeacherRepExams(){
+  const school = currentSchool(); const classId = qs('#trepClass').value;
+  const exams = school.exams.filter(e=>e.classId===classId);
+  qs('#trepExam').innerHTML = exams.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this class</option>';
 }
 function generateTeacherReport(sid, examId){
   if(!sid||!examId){ toast('Select learner & exam','err'); return; }
@@ -2064,10 +2105,11 @@ function viewCumulative(){
 
 /* ============================= REPORTS ============================= */
 function tplReportsPicker(school){
+  const firstClassId = school.classes[0].id;
   return `<div class="card"><h2 class="no-print">📄 Individual / Whole-Class Report Cards</h2>
   <div class="row no-print">
-    <div><label>Class</label><select id="repClass" onchange="fillRepLearners()">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
-    <div><label>Exam / Term</label><select id="repExam">${school.exams.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams</option>'}</select></div>
+    <div><label>Class</label><select id="repClass" onchange="fillRepLearners();fillRepExams()">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
+    <div><label>Exam / Term</label><select id="repExam">${school.exams.filter(e=>e.classId===firstClassId).map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this class</option>'}</select></div>
     <div><label>Learner</label><select id="repLearner"></select></div>
   </div>
   <div class="flexbtns no-print">
@@ -2079,6 +2121,16 @@ function tplReportsPicker(school){
 function fillRepLearners(){
   const school = currentSchool(); const classId = qs('#repClass').value;
   qs('#repLearner').innerHTML = studentsInClass(school, classId).map(s=>`<option value="${s.id}">${escapeHtml(s.name)}${s.adm?' ('+escapeHtml(s.adm)+')':''}</option>`).join('');
+}
+// Keeps the Exam dropdown scoped to whichever class is currently selected — mirroring
+// dosRenderExamOptions() on the Marks entry page. Without this, the Exam list showed
+// every exam from every class in the school, so picking a class here could leave an
+// exam from a DIFFERENT class selected underneath, and Generate would silently produce
+// an empty/blank report for that class's learners (no marks exist under that exam id).
+function fillRepExams(){
+  const school = currentSchool(); const classId = qs('#repClass').value;
+  const exams = school.exams.filter(e=>e.classId===classId);
+  qs('#repExam').innerHTML = exams.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this class</option>';
 }
 function buildReportHTML(school, sid, examId){
   const student = school.students.find(s=>s.id===sid);
