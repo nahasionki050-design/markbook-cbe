@@ -1,0 +1,24 @@
+[build]
+  publish = "."
+  command = "true"
+
+# Pure static site — index.html + firebase-config.js are served as-is, no build step.
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Cache the app shell lightly so a redeploy (e.g. after editing firebase-config.js)
+# reaches users promptly instead of being stuck behind a long-lived cache.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/firebase-config.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
