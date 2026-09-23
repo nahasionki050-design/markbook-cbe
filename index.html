@@ -62,7 +62,7 @@ th,td{border:1px solid #c9d3de;padding:6px 7px;text-align:center;}
 th{background:#e7edf5;color:var(--navy);font-weight:700;}
 tr:nth-child(even) td{background:#fafcfe;}
 tr:hover td{background:#eef4fb;}
-.badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700;color:#fff;letter-spacing:.3px;box-shadow:0 1px 2px rgba(0,0,0,.12);}
+.badge{display:inline-block;padding:3px 11px;border-radius:10px;font-size:12px;font-weight:700;color:#fff;letter-spacing:.3px;box-shadow:0 1px 2px rgba(0,0,0,.12);}
 .EE{background:var(--ee);} .ME{background:var(--me);} .AE{background:var(--ae);} .BE{background:var(--be);}
 .small{font-size:12px;color:#5a6b7c;}
 .flexbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
@@ -79,30 +79,34 @@ tr:hover td{background:#eef4fb;}
 .msg.err{background:#fbe6e6;color:#9c2c2c;}
 .school-code{font-size:22px;letter-spacing:3px;font-weight:800;color:var(--navy);}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-@media(max-width:700px){.grid2{grid-template-columns:1fr;}}
-.report-card{border:1.5px solid var(--navy);border-radius:12px;overflow:hidden;background:#fff;}
+@media(max-width:700px){.grid2{grid-template-columns:1fr;}.rc-info{grid-template-columns:1fr;}.rc-sigrow{grid-template-columns:1fr;}}
+.report-card{border:1.5px solid var(--navy);border-radius:12px;overflow:hidden;background:#fff;max-width:840px;margin:0 auto 18px;box-shadow:0 4px 18px rgba(18,58,99,.1);}
 .rc-topband{height:6px;background:linear-gradient(90deg,var(--gold) 0%,var(--navy) 55%,var(--navy2) 100%);}
-.rc-body{padding:14px 18px 12px;}
-.report-header{text-align:center;border-bottom:3px double var(--navy);padding-bottom:8px;margin-bottom:10px;}
+.rc-body{padding:20px 26px 18px;}
+.report-header{text-align:center;border-bottom:3px double var(--navy);padding-bottom:10px;margin-bottom:14px;}
 .report-header h2{margin:2px 0;color:var(--navy);}
-.report-card .report-header{border-bottom:2px solid var(--gold);padding-bottom:7px;margin-bottom:9px;}
-.report-card .report-header h2{font-size:19px;font-weight:800;letter-spacing:.3px;}
-.rc-doctitle{font-size:12px;color:var(--navy2);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin:2px 0;}
-.rc-code{font-size:10.5px;color:#8a9bad;letter-spacing:.8px;}
-.rc-info{display:grid;grid-template-columns:1.5fr 1fr;gap:10px;margin-bottom:9px;}
-.rc-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px 12px;background:#f5f8fc;border:1px solid var(--border);border-radius:9px;padding:8px 12px;font-size:12px;align-content:center;}
+.report-card .report-header{border-bottom:2px solid var(--gold);padding-bottom:9px;margin-bottom:12px;}
+.report-card .report-header h2{font-size:24px;font-weight:800;letter-spacing:.3px;}
+.report-card .report-header p{font-size:14px;margin:3px 0;}
+.rc-doctitle{font-size:14px;color:var(--navy2);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin:3px 0;}
+.rc-code{font-size:12px;color:#8a9bad;letter-spacing:.8px;}
+.rc-info{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin-bottom:14px;}
+.rc-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;background:#f5f8fc;border:1px solid var(--border);border-radius:10px;padding:12px 16px;font-size:14px;align-content:center;line-height:1.5;}
 .rc-info-grid b{color:var(--navy);}
-.rc-overall-box{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border-radius:9px;padding:8px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
-.rc-overall-box .rc-grade{font-size:21px;font-weight:800;letter-spacing:.5px;}
-.rc-overall-box .rc-sub{font-size:10px;opacity:.88;margin-top:2px;}
-table.rc-table th{background:var(--navy);color:#fff;font-size:10.5px;text-transform:uppercase;letter-spacing:.2px;border-color:var(--navy2);}
+.rc-overall-box{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
+.rc-overall-box .rc-grade{font-size:28px;font-weight:800;letter-spacing:.5px;}
+.rc-overall-box .rc-sub{font-size:13px;opacity:.92;margin-top:4px;}
+table.rc-table{font-size:14px;}
+table.rc-table th{background:var(--navy);color:#fff;font-size:13px;text-transform:uppercase;letter-spacing:.2px;border-color:var(--navy2);padding:9px 8px;}
+table.rc-table td{padding:9px 8px;}
 table.rc-table tr.rc-total td{background:#fdf6e5;font-weight:800;border-top:2px solid var(--gold);}
-.rc-remark{margin-top:8px;background:#fbf8ef;border-left:4px solid var(--gold);border-radius:0 8px 8px 0;padding:6px 10px;font-size:11.5px;}
-.rc-chart-label{font-size:11px;font-weight:700;color:var(--navy);display:block;margin-bottom:1px;}
-.rc-sigrow{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px;}
-.sig-line{border-top:1px solid #333;margin-top:36px;padding-top:4px;font-size:12px;text-align:center;}
+.rc-remark{margin-top:12px;background:#fbf8ef;border-left:4px solid var(--gold);border-radius:0 8px 8px 0;padding:10px 14px;font-size:14px;line-height:1.5;}
+.rc-chartwrap{margin-top:16px;}
+.rc-chart-label{font-size:14px;font-weight:700;color:var(--navy);display:block;margin-bottom:6px;}
+.rc-sigrow{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:28px;}
+.sig-line{border-top:1px solid #333;margin-top:42px;padding-top:6px;font-size:14px;text-align:center;}
 .rc-sigrow .sig-line{border-top:1px dotted #8a9bad;margin-top:0;}
-.rc-footer{text-align:center;font-size:9px;color:#a9b6c4;margin-top:9px;letter-spacing:.3px;}
+.rc-footer{text-align:center;font-size:11px;color:#a9b6c4;margin-top:12px;letter-spacing:.3px;}
 .chip{display:inline-block;background:#e7edf5;padding:3px 9px;border-radius:12px;font-size:11px;margin:2px;font-weight:600;color:var(--navy);}
 canvas{max-width:100%;}
 .close-x{float:right;cursor:pointer;font-weight:800;color:#b23b3b;}
@@ -136,17 +140,18 @@ canvas{max-width:100%;}
   .report-card{page-break-inside:avoid;break-inside:avoid;border-width:1px;transform-origin:top left;
     height:281mm;display:flex;flex-direction:column;box-sizing:border-box;}
   .report-card .rc-body{flex:1;display:flex;flex-direction:column;box-sizing:border-box;}
-  .rc-body{padding:9px 12px 8px;}
-  .report-card table{font-size:9.5px;}
-  .report-card th,.report-card td{padding:2.5px 4px;}
-  .report-card .report-header h2{font-size:15px;margin:1px 0;}
-  .report-card .report-header p{margin:1px 0;font-size:10.5px;}
-  .rc-doctitle{font-size:10px;}
-  .rc-info-grid{font-size:10.5px;padding:5px 9px;}
-  .rc-overall-box .rc-grade{font-size:16px;}
-  .rc-overall-box .rc-sub{font-size:9px;}
-  .report-card canvas{max-height:78px;height:78px !important;}
-  .rc-remark{font-size:10px;padding:5px 8px;}
+  .rc-body{padding:11px 14px 10px;}
+  .report-card table{font-size:11px;}
+  .report-card th,.report-card td{padding:3.5px 5px;}
+  .report-card .report-header h2{font-size:18px;margin:1px 0;}
+  .report-card .report-header p{margin:1px 0;font-size:12px;}
+  .rc-doctitle{font-size:11.5px;}
+  .rc-info-grid{font-size:12px;padding:7px 11px;}
+  .rc-overall-box .rc-grade{font-size:19px;}
+  .rc-overall-box .rc-sub{font-size:10.5px;}
+  .report-card canvas{max-height:100px;height:100px !important;}
+  .rc-remark{font-size:11.5px;padding:6px 9px;}
+  .rc-chart-label{font-size:12px;}
   /* margin-top:auto turns these into flexible spacers inside the .rc-body flex column: any
      unused page height (short reports with few learning areas) gets split between the gap
      above the chart and the gap above the signature block, instead of sitting as one dead
@@ -154,8 +159,8 @@ canvas{max-width:100%;}
      small gap, same as before. */
   .rc-chartwrap{margin-top:auto;}
   .rc-sigrow{margin-top:auto;}
-  .rc-sigrow .sig-line{padding-top:2px;font-size:10px;}
-  .rc-footer{margin-top:5px;}
+  .rc-sigrow .sig-line{padding-top:3px;font-size:11.5px;}
+  .rc-footer{margin-top:6px;}
   .report-card .grid2{gap:6px;}
   .report-card .card{page-break-inside:avoid;}
 }
@@ -1905,7 +1910,7 @@ Amina Hassan"></textarea>
     return admOrName(a,b);
   }).map(s=>{
     const cls = school.classes.find(c=>c.id===s.classId);
-    return `<tr><td>${s.adm ? escapeHtml(s.adm) : '<span class="small">— none —</span>'}</td><td>${escapeHtml(s.name)}</td><td>${cls?escapeHtml(cls.name):'-'}</td>
+    return `<tr><td><input value="${escapeHtml(s.adm||'')}" placeholder="— none —" style="min-width:90px" onchange="updStudentAdm('${s.id}', this.value, this)"></td><td>${escapeHtml(s.name)}</td><td>${cls?escapeHtml(cls.name):'-'}</td>
     <td><button class="danger" onclick="delStudent('${s.id}')">✕</button></td></tr>`;
   }).join('') || '<tr><td colspan="4" class="small">No learners yet.</td></tr>'}
   </table></div>`;
@@ -1918,6 +1923,22 @@ function addStudent(){
   // learners are allowed to have no admission number at the same time.
   if(adm && school.students.some(s=>s.adm===adm)){ toast('Admission number already exists','err'); return; }
   school.students.push({id:uid('stu_'), adm, name, classId}); saveDB(DB); renderDOS();
+}
+// Lets HOI/DOS correct a learner's admission number directly from the Learners table
+// (e.g. it was mistyped or a number gets assigned later) without removing and re-adding
+// the learner — which would otherwise lose their marks history (marks are keyed on the
+// learner's internal id, not the admission number, so this is safe).
+function updStudentAdm(id, val, inputEl){
+  const adm = val.trim();
+  const school = currentSchool();
+  const s = school.students.find(x=>x.id===id);
+  if(!s) return;
+  if(adm && school.students.some(x=>x.id!==id && x.adm===adm)){
+    toast('Admission number already exists','err');
+    if(inputEl) inputEl.value = s.adm||''; // revert the field to the last saved value
+    return;
+  }
+  s.adm = adm; saveDB(DB); toast('Admission number updated');
 }
 function bulkAddStudents(){
   const classId = qs('#stuClass').value; const school = currentSchool();
@@ -2454,7 +2475,7 @@ function buildReportHTML(school, sid, examId){
     </table>
     ${!allMarked ? `<p class="small" style="color:#9c2c2c">⚠ Assessment incomplete: only ${n} of ${areas.length} learning area(s) marked so far. The Mean % and overall level above already reflect this — they are based on general performance across ALL learning areas for this grade, so they will read low/blank until every learning area is entered.</p>` : ''}
     <div class="rc-chartwrap"><span class="rc-chart-label">Performance Trend</span>
-    <canvas id="${chartId}" width="600" height="130"></canvas></div>
+    <canvas id="${chartId}" width="760" height="200"></canvas></div>
     <div class="rc-remark"><b>Class Teacher's Remark:</b> ${escapeHtml(remark)}</div>
     <div class="rc-sigrow">
       <div class="sig-line">Class Teacher: ${escapeHtml(classTeacher)}</div>
@@ -2476,18 +2497,18 @@ function drawProgressChart(chartId, data){
   const ctx = c.getContext('2d');
   ctx.clearRect(0,0,c.width,c.height);
   ctx.strokeStyle='#c9d3de'; ctx.strokeRect(0,0,c.width,c.height);
-  if(!data || data.length===0){ ctx.fillStyle='#888'; ctx.font='12px Arial'; ctx.fillText('No historical data yet',10,90); return; }
-  const padL=40,padB=30,padT=10,w=c.width-padL-10,h=c.height-padT-padB;
-  ctx.strokeStyle='#123a63'; ctx.fillStyle='#123a63'; ctx.font='10px Arial';
-  for(let g=0; g<=4; g++){ const y=padT+h-h*(g/4); ctx.fillText((g*25)+'%', 2, y+3); ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(c.width-5,y); ctx.strokeStyle='#eef2f7'; ctx.stroke(); }
-  ctx.beginPath(); ctx.strokeStyle='#d9a441'; ctx.lineWidth=2;
+  if(!data || data.length===0){ ctx.fillStyle='#888'; ctx.font='14px Arial'; ctx.fillText('No historical data yet',16,c.height/2); return; }
+  const padL=54,padB=40,padT=16,w=c.width-padL-16,h=c.height-padT-padB;
+  ctx.strokeStyle='#123a63'; ctx.fillStyle='#123a63'; ctx.font='12px Arial';
+  for(let g=0; g<=4; g++){ const y=padT+h-h*(g/4); ctx.fillText((g*25)+'%', 4, y+4); ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(c.width-8,y); ctx.strokeStyle='#eef2f7'; ctx.stroke(); }
+  ctx.beginPath(); ctx.strokeStyle='#d9a441'; ctx.lineWidth=3;
   data.forEach((d,i)=>{ const x=padL + (data.length>1? (w*i/(data.length-1)) : w/2); const y=padT+h-h*(d.pct/100);
     if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
   ctx.stroke();
   ctx.fillStyle='#123a63';
   data.forEach((d,i)=>{ const x=padL + (data.length>1? (w*i/(data.length-1)) : w/2); const y=padT+h-h*(d.pct/100);
-    ctx.beginPath(); ctx.arc(x,y,3,0,7); ctx.fill();
-    ctx.save(); ctx.translate(x,c.height-6); ctx.font='8px Arial'; ctx.textAlign='center'; ctx.fillText(d.label, 0, 0); ctx.restore();
+    ctx.beginPath(); ctx.arc(x,y,4.5,0,7); ctx.fill();
+    ctx.save(); ctx.translate(x,c.height-10); ctx.font='11px Arial'; ctx.textAlign='center'; ctx.fillText(d.label, 0, 0); ctx.restore();
   });
 }
 /* ============================= PRINT: FIT REPORT CARD TO ONE PAGE =============================
