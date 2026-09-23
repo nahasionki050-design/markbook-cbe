@@ -80,10 +80,29 @@ tr:hover td{background:#eef4fb;}
 .school-code{font-size:22px;letter-spacing:3px;font-weight:800;color:var(--navy);}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
 @media(max-width:700px){.grid2{grid-template-columns:1fr;}}
-.report-card{border:2px solid var(--navy);padding:16px;border-radius:10px;}
+.report-card{border:1.5px solid var(--navy);border-radius:12px;overflow:hidden;background:#fff;}
+.rc-topband{height:6px;background:linear-gradient(90deg,var(--gold) 0%,var(--navy) 55%,var(--navy2) 100%);}
+.rc-body{padding:14px 18px 12px;}
 .report-header{text-align:center;border-bottom:3px double var(--navy);padding-bottom:8px;margin-bottom:10px;}
 .report-header h2{margin:2px 0;color:var(--navy);}
+.report-card .report-header{border-bottom:2px solid var(--gold);padding-bottom:7px;margin-bottom:9px;}
+.report-card .report-header h2{font-size:19px;font-weight:800;letter-spacing:.3px;}
+.rc-doctitle{font-size:12px;color:var(--navy2);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin:2px 0;}
+.rc-code{font-size:10.5px;color:#8a9bad;letter-spacing:.8px;}
+.rc-info{display:grid;grid-template-columns:1.5fr 1fr;gap:10px;margin-bottom:9px;}
+.rc-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px 12px;background:#f5f8fc;border:1px solid var(--border);border-radius:9px;padding:8px 12px;font-size:12px;align-content:center;}
+.rc-info-grid b{color:var(--navy);}
+.rc-overall-box{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border-radius:9px;padding:8px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
+.rc-overall-box .rc-grade{font-size:21px;font-weight:800;letter-spacing:.5px;}
+.rc-overall-box .rc-sub{font-size:10px;opacity:.88;margin-top:2px;}
+table.rc-table th{background:var(--navy);color:#fff;font-size:10.5px;text-transform:uppercase;letter-spacing:.2px;border-color:var(--navy2);}
+table.rc-table tr.rc-total td{background:#fdf6e5;font-weight:800;border-top:2px solid var(--gold);}
+.rc-remark{margin-top:8px;background:#fbf8ef;border-left:4px solid var(--gold);border-radius:0 8px 8px 0;padding:6px 10px;font-size:11.5px;}
+.rc-chart-label{font-size:11px;font-weight:700;color:var(--navy);display:block;margin-bottom:1px;}
+.rc-sigrow{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px;}
 .sig-line{border-top:1px solid #333;margin-top:36px;padding-top:4px;font-size:12px;text-align:center;}
+.rc-sigrow .sig-line{border-top:1px dotted #8a9bad;margin-top:0;}
+.rc-footer{text-align:center;font-size:9px;color:#a9b6c4;margin-top:9px;letter-spacing:.3px;}
 .chip{display:inline-block;background:#e7edf5;padding:3px 9px;border-radius:12px;font-size:11px;margin:2px;font-weight:600;color:var(--navy);}
 canvas{max-width:100%;}
 .close-x{float:right;cursor:pointer;font-weight:800;color:#b23b3b;}
@@ -104,14 +123,25 @@ canvas{max-width:100%;}
   .print-only-block{page-break-after:always; break-after:page;}
   /* ...but not after the very last one, or a trailing blank page gets printed. */
   .print-only-block:last-of-type{page-break-after:auto; break-after:auto;}
-  @page{size:A4;margin:10mm;}
-  .report-card{page-break-inside:avoid;break-inside:avoid;padding:8px;font-size:11px;}
-  .report-card table{font-size:10px;}
-  .report-card th,.report-card td{padding:3px 4px;}
+  @page{size:A4;margin:8mm;}
+  /* The learner report card is scaled to guarantee it always lands on exactly one page
+     (see fitReportCardsToPage() in the script) — transform-origin top-left plus a fixed
+     wrapper height is what makes that scaling reliable in print. */
+  .report-card{page-break-inside:avoid;break-inside:avoid;border-width:1px;transform-origin:top left;}
+  .rc-body{padding:9px 12px 8px;}
+  .report-card table{font-size:9.5px;}
+  .report-card th,.report-card td{padding:2.5px 4px;}
   .report-card .report-header h2{font-size:15px;margin:1px 0;}
-  .report-card .report-header p{margin:1px 0;font-size:11px;}
-  .report-card canvas{max-height:110px;height:110px !important;}
-  .report-card .sig-line{margin-top:18px;padding-top:2px;}
+  .report-card .report-header p{margin:1px 0;font-size:10.5px;}
+  .rc-doctitle{font-size:10px;}
+  .rc-info-grid{font-size:10.5px;padding:5px 9px;}
+  .rc-overall-box .rc-grade{font-size:16px;}
+  .rc-overall-box .rc-sub{font-size:9px;}
+  .report-card canvas{max-height:78px;height:78px !important;}
+  .rc-remark{font-size:10px;padding:5px 8px;}
+  .rc-sigrow{margin-top:12px;}
+  .rc-sigrow .sig-line{padding-top:2px;font-size:10px;}
+  .rc-footer{margin-top:5px;}
   .report-card .grid2{gap:6px;}
   .report-card .card{page-break-inside:avoid;}
 }
@@ -390,20 +420,62 @@ function hasPlatformConfig(){ return !!(window.PLATFORM_FIREBASE_CONFIG && windo
 // Used by admin actions (create/suspend/activate/delete/reset password/etc.) which don't
 // go through the DOS/teacher session's own scheduleCloudPush().
 function pushSchoolDataToPlatform(code){
-  if(!hasPlatformConfig()) return;
   const school = DB.schools[code]; if(!school) return;
-  initSync(window.PLATFORM_FIREBASE_CONFIG).then(()=>{
-    schoolDataRef(code).set(nonMarksSnapshot(school)).catch(e=>console.warn('Platform directory push failed', e));
-  }).catch(e=>console.warn('Platform directory connect failed', e));
+  // This runs for admin-driven edits (create/suspend/activate/delete/reset password,
+  // edit trial, etc.), which never pass through a DOS/teacher session's saveDB stamp
+  // (see saveDB above — it only bumps _updatedAt for the active dos/teacher session's
+  // own school). Without a fresh stamp here, nonMarksSnapshot() would resend the OLD
+  // timestamp alongside the NEW status, and a DOS/HOI or Teacher device whose local copy
+  // happens to carry a newer timestamp (from its own last edit) would treat the admin's
+  // suspend/activate/edit as stale and silently ignore it — which is exactly how a
+  // suspended school could keep letting people log in. Stamping it fresh here guarantees
+  // an admin action always wins.
+  school._updatedAt = Date.now();
+  saveDB(DB, {skipCloud:true});
+  const snapshot = nonMarksSnapshot(school);
+  // Push to EVERY project this school's data could be read from: the deployment's shared
+  // platform project (if configured), AND — separately — the school's own private
+  // Firebase project if it set up its own Multi-Device Sync instead of (or in addition
+  // to) the shared one. Without this second leg, an admin action taken on a school that
+  // opted into its own private project would only ever update the admin's local copy and
+  // would never actually reach that school's own devices.
+  const targets = [];
+  if(hasPlatformConfig()) targets.push(window.PLATFORM_FIREBASE_CONFIG);
+  const ownConfig = school.syncConfig && school.syncConfig.config;
+  if(ownConfig && (!hasPlatformConfig() || JSON.stringify(ownConfig)!==JSON.stringify(window.PLATFORM_FIREBASE_CONFIG))){
+    targets.push(ownConfig);
+  }
+  if(!targets.length) return;
+  (async ()=>{
+    for(const config of targets){
+      try{
+        await initSync(config);
+        await schoolDataRef(code).set(snapshot);
+      }catch(e){ console.warn('Directory push to a sync target failed', e); }
+    }
+  })();
 }
-// Fire-and-forget: removes a school's entry from the shared project (used when a school
-// is deleted, or moved to a new code, so the old code stops resolving anywhere).
-function removeSchoolFromPlatform(code){
-  if(!hasPlatformConfig()) return;
-  initSync(window.PLATFORM_FIREBASE_CONFIG).then(()=>{
-    schoolDataRef(code).remove().catch(()=>{});
-    schoolMarksRef(code).remove().catch(()=>{});
-  }).catch(()=>{});
+// Fire-and-forget: removes a school's entry from every project it could be resolved
+// from — the shared platform project (if configured) and, if the school had set up its
+// own private Firebase project, that one too. Pass the school's syncConfig.config
+// (captured BEFORE deleting the school locally) as ownConfig so a private-project school
+// is fully cleaned up, not just removed from the shared directory.
+function removeSchoolFromPlatform(code, ownConfig){
+  const targets = [];
+  if(hasPlatformConfig()) targets.push(window.PLATFORM_FIREBASE_CONFIG);
+  if(ownConfig && (!hasPlatformConfig() || JSON.stringify(ownConfig)!==JSON.stringify(window.PLATFORM_FIREBASE_CONFIG))){
+    targets.push(ownConfig);
+  }
+  if(!targets.length) return;
+  (async ()=>{
+    for(const config of targets){
+      try{
+        await initSync(config);
+        await schoolDataRef(code).remove();
+        await schoolMarksRef(code).remove();
+      }catch(e){ console.warn('Remove from a sync target failed', e); }
+    }
+  })();
 }
 function softRefresh(){
   if(!session) return;
@@ -440,6 +512,7 @@ function mergeDataFromCloud(code, remote){
     scheduleCloudPush();
   }
   syncState.dataReady = true;
+  enforceAccessForActiveSession(code);
 }
 function withTimeout(promise, ms, label){
   return new Promise((resolve, reject)=>{
@@ -710,10 +783,50 @@ function schoolStatusLabel(s){
 
 /* ============================= SESSION ============================= */
 let session = JSON.parse(sessionStorage.getItem('cbc_session')||'null');
-function setSession(s){ session = s; sessionStorage.setItem('cbc_session', JSON.stringify(s)); }
-function logout(){ session=null; sessionStorage.removeItem('cbc_session'); syncState.enabled=false; syncState.connectedCode=null; detachLiveListeners(); detachAdminLiveListener(); route(); }
+function setSession(s){ session = s; sessionStorage.setItem('cbc_session', JSON.stringify(s)); resetInactivityTimer(); }
+function logout(){ session=null; sessionStorage.removeItem('cbc_session'); syncState.enabled=false; syncState.connectedCode=null; detachLiveListeners(); detachAdminLiveListener(); clearTimeout(inactivityTimer); route(); }
 
 function currentSchool(){ return session && session.schoolCode ? DB.schools[session.schoolCode] : null; }
+
+/* ============================= INACTIVITY AUTO-LOGOUT =============================
+   Any signed-in session (Admin, DOS/HOI, or Teacher) is signed out automatically after
+   15 minutes with no mouse/keyboard/touch/scroll activity — both for security on shared
+   school computers and so a suspended/expired account isn't left logged in indefinitely. */
+const INACTIVITY_LIMIT_MS = 15*60*1000;
+let inactivityTimer = null;
+function resetInactivityTimer(){
+  clearTimeout(inactivityTimer);
+  if(!session) return;
+  inactivityTimer = setTimeout(()=>{
+    if(session){
+      logout();
+      setTimeout(()=>toast('You were signed out after 15 minutes of inactivity.','err'), 50);
+    }
+  }, INACTIVITY_LIMIT_MS);
+}
+['mousemove','mousedown','keydown','scroll','touchstart','click'].forEach(evt=>{
+  window.addEventListener(evt, resetInactivityTimer, {passive:true});
+});
+// Also re-arm whenever the tab regains focus/visibility, in case timers were throttled
+// while the tab was backgrounded.
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) resetInactivityTimer(); });
+
+/* ============================= LIVE ACCESS ENFORCEMENT =============================
+   Suspending a school (or letting a trial expire) should lock out anyone already signed
+   in on that school immediately — not just block their *next* login. When synced school
+   data changes (see mergeDataFromCloud below), this checks whether the currently active
+   DOS/HOI or Teacher session on this device still has access, and force-logs them out
+   right away if not. */
+function enforceAccessForActiveSession(code){
+  if(!session || session.schoolCode !== code) return;
+  if(session.role !== 'dos' && session.role !== 'teacher') return;
+  const access = schoolAccessStatus(DB.schools[code]);
+  if(!access.ok){
+    const msg = access.msg;
+    logout();
+    setTimeout(()=>toast(msg,'err'), 50);
+  }
+}
 
 /* ============================= HELPERS ============================= */
 function gradeFor(school, pct, classId){
@@ -1317,7 +1430,8 @@ function showCredentials(code){
 }
 function deleteSchool(code){
   if(!confirm('Delete this school and ALL its data permanently?')) return;
-  delete DB.schools[code]; saveDB(DB); removeSchoolFromPlatform(code); renderAdmin();
+  const ownConfig = DB.schools[code] && DB.schools[code].syncConfig && DB.schools[code].syncConfig.config;
+  delete DB.schools[code]; saveDB(DB); removeSchoolFromPlatform(code, ownConfig); renderAdmin();
 }
 // Lets the admin replace the auto-generated 8-digit school code with one the school
 // prefers (e.g. their own registration number or a short name). The code is the key
@@ -1336,11 +1450,12 @@ function editSchoolCode(oldCode){
   if(newCode===oldCode) return;
   if(DB.schools[newCode]){ toast('That school code is already in use by another school','err'); return; }
   if(!confirm(`Change school code from ${oldCode} to ${newCode}? Existing login links using ${oldCode} will stop working.`)) return;
+  const ownConfig = s.syncConfig && s.syncConfig.config;
   delete DB.schools[oldCode];
   s.code = newCode;
   DB.schools[newCode] = s;
   saveDB(DB);
-  removeSchoolFromPlatform(oldCode);
+  removeSchoolFromPlatform(oldCode, ownConfig);
   pushSchoolDataToPlatform(newCode);
   toast(`School code updated to ${newCode}`);
   renderAdmin();
@@ -1902,15 +2017,15 @@ function renderTeacher(){
     return `<span class="chip">${c?escapeHtml(c.name):''} · ${ar?escapeHtml(ar.name):''}</span>`;
   }).join(' ') || '<span class="small">No assignments yet — contact your DOS/HOI.</span>'}
   </div>
-  <div class="card no-print"><h2>✏️ Enter Marks</h2>
-  <div class="row">
+  <div class="card"><h2 class="no-print">✏️ Enter Marks</h2>
+  <div class="row no-print">
     <div><label>Class</label><select id="tClass" onchange="renderTeacherAreaOptions()">
       ${myClasses.map(cid=>{const c=school.classes.find(x=>x.id===cid);return `<option value="${cid}">${escapeHtml(c.name)}</option>`;}).join('')}
     </select></div>
     <div><label>Learning Area</label><select id="tArea"></select></div>
     <div><label>Exam</label><select id="tExam"></select></div>
   </div>
-  <div class="flexbtns"><button onclick="loadMarksGrid()">Load Marks Sheet</button></div>
+  <div class="flexbtns no-print"><button onclick="loadMarksGrid()">Load Marks Sheet</button></div>
   <div id="marksGridArea"></div>
   </div>
   ${t.canPrint ? `<div class="card"><h2 class="no-print">📄 Print Learner Reports</h2>
@@ -1979,7 +2094,8 @@ function loadMarksGrid(){
   const learners = studentsInClass(school, classId);
   school.marks[examId] = school.marks[examId] || {};
   qs('#marksGridArea').innerHTML = `
-  <p class="small">Max marks for this learning area in this exam: <b>${max}</b> (editable by DOS/HOI in Exams tab)</p>
+  <p class="small no-print">Max marks for this learning area in this exam: <b>${max}</b> (editable by DOS/HOI in Exams tab)</p>
+  <div class="print-only-block">
   <table><tr><th>Adm No.</th><th>Name</th><th>Score (out of ${max})</th><th>%</th><th>Level</th></tr>
   ${learners.map(s=>{
     const score = (school.marks[examId][s.id]||{})[areaId];
@@ -1989,7 +2105,8 @@ function loadMarksGrid(){
     <td class="lvlCell-${s.id}">${score!=null?levelBadge(school,pctOf(score,max),classId):'-'}</td></tr>`;
   }).join('') || '<tr><td colspan="5" class="small">No learners in this class.</td></tr>'}
   </table>
-  <div class="flexbtns"><button class="gold" onclick="window.print()">🖨 Print This Sheet</button></div>`;
+  </div>
+  <div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print This Sheet</button></div>`;
 }
 function levelBadge(school,pct,classId){
   const g = gradeFor(school,pct,classId);
@@ -2212,31 +2329,42 @@ function buildReportHTML(school, sid, examId){
   const chartId = 'chart_'+sid.replace(/\W/g,'');
   const html = `
   <div class="report-card print-only-block">
+    <div class="rc-topband"></div>
+    <div class="rc-body">
     <div class="report-header">
       <h2>${escapeHtml(school.name)}</h2>
       ${schoolContactLine(school)}
-      <p>Learner Progress Report — ${escapeHtml(exam.name)} (${exam.term} ${exam.year})</p>
-      <p class="small">School Code: ${school.code}</p>
+      <p class="rc-doctitle">Learner Progress Report</p>
+      <p class="small">${escapeHtml(exam.name)} &nbsp;·&nbsp; ${exam.term} ${exam.year}</p>
+      <p class="rc-code">School Code: ${school.code}</p>
     </div>
-    <div class="grid2">
-      <div><b>Name:</b> ${escapeHtml(student.name)}</div>
-      <div><b>Admission No.:</b> ${student.adm ? escapeHtml(student.adm) : 'Not assigned'}</div>
-      <div><b>Class:</b> ${escapeHtml(cls.name)}</div>
-      <div><b>Position:</b> ${position} out of ${learners.length}</div>
+    <div class="rc-info">
+      <div class="rc-info-grid">
+        <div><b>Name:</b> ${escapeHtml(student.name)}</div>
+        <div><b>Adm. No.:</b> ${student.adm ? escapeHtml(student.adm) : 'Not assigned'}</div>
+        <div><b>Class:</b> ${escapeHtml(cls.name)}</div>
+        <div><b>Position:</b> ${position} of ${learners.length}</div>
+      </div>
+      <div class="rc-overall-box">
+        <div class="rc-grade">${overallGrade.level}</div>
+        <div class="rc-sub">${meanPct.toFixed(1)}% Mean &nbsp;·&nbsp; ${totalPts} Pts</div>
+      </div>
     </div>
-    <table style="margin-top:10px"><tr><th>Learning Area</th><th>Marks</th><th>%</th><th>Level</th><th>Points</th><th>Teacher</th></tr>
-    ${subjectRows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${r.score??'-'}/${r.max}</td><td>${r.pct!=null?r.pct.toFixed(1)+'%':'-'}</td>
+    <table class="rc-table"><tr><th>Learning Area</th><th>Marks</th><th>%</th><th>Level</th><th>Points</th><th>Teacher</th></tr>
+    ${subjectRows.map(r=>`<tr><td style="text-align:left">${escapeHtml(r.name)}</td><td>${r.score??'-'}/${r.max}</td><td>${r.pct!=null?r.pct.toFixed(1)+'%':'-'}</td>
     <td>${r.g?`<span class="badge ${r.g.level}">${r.g.level}</span>`:'-'}</td><td>${r.g?r.g.points:'-'}</td><td>${escapeHtml(r.teacher)}</td></tr>`).join('')}
-    <tr style="font-weight:700"><td>TOTAL / MEAN</td><td>${totalScore}</td><td>${meanPct.toFixed(1)}%</td>
+    <tr class="rc-total"><td style="text-align:left">TOTAL / MEAN</td><td>${totalScore}</td><td>${meanPct.toFixed(1)}%</td>
     <td><span class="badge ${overallGrade.level}">${overallGrade.level}</span></td><td>${totalPts}</td><td>-</td></tr>
     </table>
     ${!allMarked ? `<p class="small" style="color:#9c2c2c">⚠ Assessment incomplete: only ${n} of ${areas.length} learning area(s) marked so far. The Mean % and overall level above already reflect this — they are based on general performance across ALL learning areas for this grade, so they will read low/blank until every learning area is entered.</p>` : ''}
-    <div style="margin-top:14px"><b>Performance Trend (all exams recorded):</b>
-    <canvas id="${chartId}" width="600" height="180"></canvas></div>
-    <div class="card" style="background:#f7f9fc;margin-top:10px"><b>Class Teacher's Remark:</b> ${escapeHtml(remark)}</div>
-    <div class="grid2" style="margin-top:30px">
+    <div class="rc-chartwrap"><span class="rc-chart-label">Performance Trend</span>
+    <canvas id="${chartId}" width="600" height="130"></canvas></div>
+    <div class="rc-remark"><b>Class Teacher's Remark:</b> ${escapeHtml(remark)}</div>
+    <div class="rc-sigrow">
       <div class="sig-line">Class Teacher: ${escapeHtml(classTeacher)}</div>
       <div class="sig-line">Head of Institution: ${escapeHtml(school.hoiName)}</div>
+    </div>
+    <div class="rc-footer">Generated by CBC Markbook &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
     </div>
   </div>`;
   // Returned alongside the HTML (instead of an inline <script> tag) because content
@@ -2266,6 +2394,29 @@ function drawProgressChart(chartId, data){
     ctx.save(); ctx.translate(x,c.height-6); ctx.font='8px Arial'; ctx.textAlign='center'; ctx.fillText(d.label, 0, 0); ctx.restore();
   });
 }
+/* ============================= PRINT: FIT REPORT CARD TO ONE PAGE =============================
+   Guarantees a learner report always lands on exactly one A4 page, however many learning
+   areas a school has configured. Right before printing, this measures each .report-card's
+   actual rendered height against the printable page height and, if it's even slightly too
+   tall, shrinks it with CSS zoom — which (unlike transform:scale) causes a real reflow, so
+   nothing gets clipped, cut off, or spills a sliver onto a second page. Resets back to normal
+   size again once printing is done, so on-screen viewing is unaffected. */
+function fitReportCardsToPage(){
+  const mmToPx = mm => mm * 96/25.4;
+  const pageHeightPx = mmToPx(297) - mmToPx(8)*2; // A4 height minus the 8mm @page margins
+  document.querySelectorAll('.report-card').forEach(el=>{
+    el.style.zoom = 1;
+    const h = el.scrollHeight;
+    if(h > pageHeightPx){
+      const ratio = Math.max(0.55, pageHeightPx / h); // never shrink past ~55% — stays legible
+      el.style.zoom = ratio;
+    }
+  });
+}
+window.addEventListener('beforeprint', fitReportCardsToPage);
+window.addEventListener('afterprint', ()=>{
+  document.querySelectorAll('.report-card').forEach(el=>{ el.style.zoom = 1; });
+});
 function generateReport(sid, examId){
   if(!sid||!examId){ toast('Select learner & exam','err'); return; }
   const school = currentSchool();
@@ -2296,6 +2447,7 @@ function tplHistory(school){
 }
 
 /* ============================= INIT ============================= */
+resetInactivityTimer(); // arm the 15-minute timeout right away if a session survived a page refresh
 route();
 </script>
 </body>
