@@ -126,8 +126,16 @@ canvas{max-width:100%;}
   @page{size:A4;margin:8mm;}
   /* The learner report card is scaled to guarantee it always lands on exactly one page
      (see fitReportCardsToPage() in the script) — transform-origin top-left plus a fixed
-     wrapper height is what makes that scaling reliable in print. */
-  .report-card{page-break-inside:avoid;break-inside:avoid;border-width:1px;transform-origin:top left;}
+     wrapper height is what makes that scaling reliable in print.
+     It's also given the FULL printable page height (297mm - 2*8mm margin) and laid out as
+     a flex column so a short report (few learning areas) stretches to fill the page instead
+     of leaving a big blank gap at the bottom — the auto-margins on .rc-chartwrap/.rc-sigrow
+     soak up any spare space as breathing room rather than as dead space below the content.
+     A report with too much content still shrinks to fit via fitReportCardsToPage(); this
+     flex layout only ever adds space, it never causes overflow. */
+  .report-card{page-break-inside:avoid;break-inside:avoid;border-width:1px;transform-origin:top left;
+    height:281mm;display:flex;flex-direction:column;box-sizing:border-box;}
+  .report-card .rc-body{flex:1;display:flex;flex-direction:column;box-sizing:border-box;}
   .rc-body{padding:9px 12px 8px;}
   .report-card table{font-size:9.5px;}
   .report-card th,.report-card td{padding:2.5px 4px;}
@@ -139,7 +147,13 @@ canvas{max-width:100%;}
   .rc-overall-box .rc-sub{font-size:9px;}
   .report-card canvas{max-height:78px;height:78px !important;}
   .rc-remark{font-size:10px;padding:5px 8px;}
-  .rc-sigrow{margin-top:12px;}
+  /* margin-top:auto turns these into flexible spacers inside the .rc-body flex column: any
+     unused page height (short reports with few learning areas) gets split between the gap
+     above the chart and the gap above the signature block, instead of sitting as one dead
+     blank strip below the footer. Content that already fills the page just gets its normal
+     small gap, same as before. */
+  .rc-chartwrap{margin-top:auto;}
+  .rc-sigrow{margin-top:auto;}
   .rc-sigrow .sig-line{padding-top:2px;font-size:10px;}
   .rc-footer{margin-top:5px;}
   .report-card .grid2{gap:6px;}
@@ -476,6 +490,82 @@ function removeSchoolFromPlatform(code, ownConfig){
       }catch(e){ console.warn('Remove from a sync target failed', e); }
     }
   })();
+}
+// Fetches the freshest non-marks snapshot for one school directly from whichever
+// sync target(s) apply, WITHOUT touching local storage. Checks both the shared
+// platform project (if configured) and the school's own private project (if it set
+// one up) and returns whichever copy has the newer _updatedAt. Returns null if the
+// school isn't using sync at all, or nothing was reachable.
+async function fetchRemoteSchoolData(code){
+  const school = DB.schools[code];
+  const targets = [];
+  if(hasPlatformConfig()) targets.push(window.PLATFORM_FIREBASE_CONFIG);
+  const ownConfig = school && school.syncConfig && school.syncConfig.config;
+  if(ownConfig && (!hasPlatformConfig() || JSON.stringify(ownConfig)!==JSON.stringify(window.PLATFORM_FIREBASE_CONFIG))){
+    targets.push(ownConfig);
+  }
+  let best = null;
+  for(const config of targets){
+    try{
+      await initSync(config);
+      const snap = await schoolDataRef(code).once('value');
+      const remote = snap.val();
+      if(remote && (!best || (remote._updatedAt||0) > (best._updatedAt||0))) best = remote;
+    }catch(e){ console.warn('Fetching latest school data from a sync target failed', e); }
+  }
+  return best;
+}
+// Pulls the freshest copy of a school's data (classes, students, teachers, exams,
+// grading, etc.) from the cloud into local storage, if the cloud copy is newer than
+// what this device is holding. Returns true if local storage was updated.
+//
+// WHY THIS EXISTS: the admin dashboard never attaches a live listener to a school's
+// data node the way a DOS/teacher session does (see ensureSyncConnected, only called
+// for session.role 'dos'/'teacher') — so an admin device's local copy of a school can
+// silently go stale (e.g. missing learners the DOS added on their own device). Admin
+// actions like Suspend re-push the school's local object stamped with a brand-new
+// timestamp so it "wins" over the school's own device (see pushSchoolDataToPlatform).
+// Pushing a STALE local copy with a winning timestamp is exactly what overwrites and
+// deletes real, newer data — so every admin edit must call this first.
+async function refreshSchoolFromCloud(code){
+  const remote = await fetchRemoteSchoolData(code);
+  if(!remote) return false;
+  const local = DB.schools[code];
+  if(local && (local._updatedAt||0) >= (remote._updatedAt||0)) return false; // local already at least as fresh
+  const marks = local ? local.marks : {};
+  const syncConfig = local ? local.syncConfig : null;
+  DB.schools[code] = ensureSchoolShape(Object.assign({}, remote, {marks: marks||{}, syncConfig}));
+  saveDB(DB, {skipCloud:true});
+  return true;
+}
+// Wraps a one-field (or few-field) admin edit — activate, suspend, reset password,
+// edit trial, etc. Refreshes from the cloud FIRST so the edit, and the re-push that
+// follows it, build on the school's actual current data instead of whatever stale
+// snapshot this admin device happened to be holding. `mutate` receives the freshened
+// school object and should apply the admin's change to it directly.
+async function adminEditAndPush(code, mutate){
+  await refreshSchoolFromCloud(code);
+  const school = DB.schools[code];
+  if(!school) return null;
+  mutate(school);
+  saveDB(DB);
+  pushSchoolDataToPlatform(code);
+  return school;
+}
+// Refreshes every school's data from the cloud (see refreshSchoolFromCloud) and
+// re-renders the admin dashboard if anything changed, so learner/class counts shown
+// to the admin reflect what's actually on each school's own device(s) rather than a
+// stale local cache. `silent` suppresses the "already up to date" toast — used for
+// the automatic background refresh on admin login, as opposed to a manual click.
+async function refreshAllSchoolsFromCloud(silent){
+  const codes = Object.keys(DB.schools);
+  let anyUpdated = false;
+  for(const code of codes){
+    try{ if(await refreshSchoolFromCloud(code)) anyUpdated = true; }
+    catch(e){ console.warn('Refresh failed for', code, e); }
+  }
+  if(anyUpdated){ if(session && session.role==='admin') renderAdmin(); if(!silent) toast('School data refreshed from cloud'); }
+  else if(!silent) toast('Already up to date');
 }
 function softRefresh(){
   if(!session) return;
@@ -935,7 +1025,7 @@ function route(){
   else if(session.role==='dos') renderDOS();
   else if(session.role==='teacher') renderTeacher();
   if(session.role==='dos' || session.role==='teacher') ensureSyncConnected(DB.schools[session.schoolCode]);
-  if(session.role==='admin') ensureAdminSyncConnected();
+  if(session.role==='admin'){ ensureAdminSyncConnected(); refreshAllSchoolsFromCloud(true); }
 }
 
 /* ============================= LOGIN ============================= */
@@ -1192,7 +1282,8 @@ function renderAdmin(){
     <div id="adminMsg"></div>
   </div>
   <div class="card">
-    <h2>📋 All Schools (${schools.length})</h2>
+    <h2>📋 All Schools (${schools.length}) ${schools.some(s=>s.syncConfig&&s.syncConfig.enabled)?`<button class="ghost" style="font-size:11px;padding:3px 8px;font-weight:600" onclick="refreshAllSchoolsFromCloud(false)">🔄 Refresh from cloud</button>`:''}</h2>
+    <p class="small" style="margin-top:-6px">Class/Student counts are pulled from the cloud automatically when you open this page; use Refresh if a school's DOS just added data on their own device.</p>
     <table>
       <tr><th>Code</th><th>Name</th><th>HOI</th><th>DOS Username</th><th>Status</th><th>Classes</th><th>Students</th><th>Actions</th></tr>
       ${schools.map(s=>`
@@ -1333,17 +1424,16 @@ function doChangeAdminCloudPassword(){
     qs('#cloudPwMsg').innerHTML = `<div class="msg err">Could not update — ${escapeHtml((e&&e.message)||'check your current password')}.</div>`;
   });
 }
-function resetDosPasswordAdmin(code){
+async function resetDosPasswordAdmin(code){
   const s = DB.schools[code];
-  if(!s.dos.length){ toast('This school has no DOS/HOI account to reset','err'); return; }
+  if(!s || !s.dos.length){ toast('This school has no DOS/HOI account to reset','err'); return; }
   const custom = prompt("Enter a new DOS/HOI password for "+s.name+" (leave blank to auto-generate one):");
   if(custom===null) return;
   const newPw = custom.trim() || Math.random().toString(36).slice(2,8);
-  s.dos[0].password = newPw;
-  saveDB(DB);
-  pushSchoolDataToPlatform(code);
-  qs('#linkArea').innerHTML = `<div class="card"><b>New DOS/HOI Password for ${escapeHtml(s.name)}:</b>
-  <div class="linkbox">Username: ${escapeHtml(s.dos[0].username)} &nbsp;|&nbsp; New Password: <b>${escapeHtml(newPw)}</b></div>
+  const fresh = await adminEditAndPush(code, sc=>{ sc.dos[0].password = newPw; });
+  if(!fresh || !fresh.dos.length){ toast('This school has no DOS/HOI account to reset','err'); return; }
+  qs('#linkArea').innerHTML = `<div class="card"><b>New DOS/HOI Password for ${escapeHtml(fresh.name)}:</b>
+  <div class="linkbox">Username: ${escapeHtml(fresh.dos[0].username)} &nbsp;|&nbsp; New Password: <b>${escapeHtml(newPw)}</b></div>
   <p class="small">Share this with the school's DOS/HOI. They can change it themselves afterwards from their own "My Account" tab.</p></div>`;
   toast('DOS/HOI password reset');
 }
@@ -1439,7 +1529,7 @@ function deleteSchool(code){
 // new key and updates its own .code field — any DOS/HOI or Teacher login link built on
 // the OLD code (already shared with the school, or open in someone else's browser right
 // now) will stop working and needs to be regenerated/re-shared via "🪪 Credentials".
-function editSchoolCode(oldCode){
+async function editSchoolCode(oldCode){
   const s = DB.schools[oldCode];
   if(!s) return;
   const input = prompt(`Enter the new school code for "${s.name}".\n\nThis replaces the current code (${oldCode}). Any login link already shared using the old code will stop working — you'll need to share the new one from "🪪 Credentials" afterwards.`, oldCode);
@@ -1450,10 +1540,12 @@ function editSchoolCode(oldCode){
   if(newCode===oldCode) return;
   if(DB.schools[newCode]){ toast('That school code is already in use by another school','err'); return; }
   if(!confirm(`Change school code from ${oldCode} to ${newCode}? Existing login links using ${oldCode} will stop working.`)) return;
-  const ownConfig = s.syncConfig && s.syncConfig.config;
+  await refreshSchoolFromCloud(oldCode); // pull the school's latest data before moving it to the new code
+  const fresh = DB.schools[oldCode];
+  const ownConfig = fresh.syncConfig && fresh.syncConfig.config;
   delete DB.schools[oldCode];
-  s.code = newCode;
-  DB.schools[newCode] = s;
+  fresh.code = newCode;
+  DB.schools[newCode] = fresh;
   saveDB(DB);
   removeSchoolFromPlatform(oldCode, ownConfig);
   pushSchoolDataToPlatform(newCode);
@@ -1461,27 +1553,31 @@ function editSchoolCode(oldCode){
   renderAdmin();
   showCredentials(newCode);
 }
-function activateSchool(code){
-  DB.schools[code].status='active'; saveDB(DB); pushSchoolDataToPlatform(code); toast('School activated (marked as paid)'); renderAdmin();
+async function activateSchool(code){
+  await adminEditAndPush(code, s=>{ s.status='active'; });
+  toast('School activated (marked as paid)'); renderAdmin();
 }
-function suspendSchool(code){
+async function suspendSchool(code){
   if(!confirm("Suspend this school's access? Their DOS/HOI and teachers will be locked out immediately until reactivated.")) return;
-  DB.schools[code].status='suspended'; saveDB(DB); pushSchoolDataToPlatform(code); toast('School suspended'); renderAdmin();
+  await adminEditAndPush(code, s=>{ s.status='suspended'; });
+  toast('School suspended'); renderAdmin();
 }
-function unsuspendSchool(code){
-  DB.schools[code].status = 'trial';
-  saveDB(DB); pushSchoolDataToPlatform(code); toast('School unsuspended. If their trial already expired, use "Activate" or "Edit Trial" to restore access.'); renderAdmin();
+async function unsuspendSchool(code){
+  await adminEditAndPush(code, s=>{ s.status='trial'; });
+  toast('School unsuspended. If their trial already expired, use "Activate" or "Edit Trial" to restore access.'); renderAdmin();
 }
-function editSchoolTrialDays(code){
+async function editSchoolTrialDays(code){
   const s = DB.schools[code];
   const val = prompt("Set this school's trial length in days (counted from its creation date):", s.trialDays);
   if(val===null) return;
   const days = Number(val);
   if(isNaN(days)||days<0){ toast('Enter a valid number','err'); return; }
-  s.trialDays = days;
-  s.trialEndsAt = s.createdAt + days*24*60*60*1000;
-  if(s.status==='active'){ /* leave paid schools as active regardless of trial math */ }
-  saveDB(DB); pushSchoolDataToPlatform(code); toast('Trial period updated'); renderAdmin();
+  await adminEditAndPush(code, fresh=>{
+    fresh.trialDays = days;
+    fresh.trialEndsAt = fresh.createdAt + days*24*60*60*1000;
+    if(fresh.status==='active'){ /* leave paid schools as active regardless of trial math */ }
+  });
+  toast('Trial period updated'); renderAdmin();
 }
 function showLink(code, role){
   const url = location.origin + location.pathname + `?school=${code}&role=${role}`;
