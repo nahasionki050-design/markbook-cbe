@@ -62,7 +62,7 @@ th,td{border:1px solid #c9d3de;padding:6px 7px;text-align:center;}
 th{background:#e7edf5;color:var(--navy);font-weight:700;}
 tr:nth-child(even) td{background:#fafcfe;}
 tr:hover td{background:#eef4fb;}
-.badge{display:inline-block;padding:3px 11px;border-radius:10px;font-size:12px;font-weight:700;color:#fff;letter-spacing:.3px;box-shadow:0 1px 2px rgba(0,0,0,.12);}
+.badge{display:inline-block;padding:3px 11px;border-radius:10px;font-size:12px;font-weight:700;color:#fff;letter-spacing:.3px;box-shadow:0 1px 2px rgba(0,0,0,.12);border:1px solid rgba(0,0,0,.35);}
 .EE{background:var(--ee);} .ME{background:var(--me);} .AE{background:var(--ae);} .BE{background:var(--be);}
 .small{font-size:12px;color:#5a6b7c;}
 .flexbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
@@ -93,7 +93,7 @@ tr:hover td{background:#eef4fb;}
 .rc-info{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin-bottom:14px;}
 .rc-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;background:#f5f8fc;border:1px solid var(--border);border-radius:10px;padding:12px 16px;font-size:14px;align-content:center;line-height:1.5;}
 .rc-info-grid b{color:var(--navy);}
-.rc-overall-box{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
+.rc-overall-box{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border:1px solid var(--navy);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
 .rc-overall-box .rc-grade{font-size:28px;font-weight:800;letter-spacing:.5px;}
 .rc-overall-box .rc-sub{font-size:13px;opacity:.92;margin-top:4px;}
 table.rc-table{font-size:14px;}
@@ -102,6 +102,7 @@ table.rc-table td{padding:9px 8px;}
 table.rc-table tr.rc-total td{background:#fdf6e5;font-weight:800;border-top:2px solid var(--gold);}
 .rc-remark{margin-top:12px;background:#fbf8ef;border-left:4px solid var(--gold);border-radius:0 8px 8px 0;padding:10px 14px;font-size:14px;line-height:1.5;}
 .rc-chartwrap{margin-top:16px;}
+.rc-chartwrap canvas{display:block;width:100%;height:auto;}
 .rc-chart-label{font-size:14px;font-weight:700;color:var(--navy);display:block;margin-bottom:6px;}
 .rc-sigrow{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:28px;}
 .sig-line{border-top:1px solid #333;margin-top:42px;padding-top:6px;font-size:14px;text-align:center;}
@@ -113,6 +114,12 @@ canvas{max-width:100%;}
 @keyframes storageBannerIn{from{transform:translateY(-100%);}to{transform:translateY(0);}}
 .storage-warning{background:#7a2323;color:#fff;text-align:center;font-size:12px;padding:6px 12px;animation:storageBannerIn .25s ease;}
 @media print{
+  /* Forces backgrounds/colors to still be sent to the printer even when the browser's own
+     "background graphics" print option is off — otherwise a badge or the navy grade box
+     prints as pure white and its white text disappears entirely. This doesn't make a
+     black-and-white/grayscale printer output color; it just guarantees the shaded boxes
+     and their light text stay visible (as gray fills) instead of vanishing. */
+  *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important;}
   /* Only the generated report/sheet (.print-only-block) should ever hit paper — everything
      else (topbar, tabs, nav/header cards, form controls, history tables) is UI chrome and is
      marked .no-print so it never eats page space or shifts the report onto a later page. */
@@ -127,6 +134,16 @@ canvas{max-width:100%;}
   .print-only-block{page-break-after:always; break-after:page;}
   /* ...but not after the very last one, or a trailing blank page gets printed. */
   .print-only-block:last-of-type{page-break-after:auto; break-after:auto;}
+  /* The Assessment Sheets page keeps the Class Assessment Sheet, Cumulative Sheet and
+     Blank Class List as three separate previews on screen at once (each has its own
+     "Print" button), so more than one could be sitting in the page at the same time.
+     Without this, clicking Print on any one of them would print EVERY generated sheet
+     together (e.g. the blank manual-marking sheet tacked onto the assessment results) —
+     printSection() in the script tags whichever one the user wants as the one to keep and
+     marks every OTHER .print-only-block .print-hide-temp for the duration of the print,
+     so only the sheet actually being printed goes to paper; the others simply stay on
+     screen exactly as before, untouched. */
+  .print-hide-temp{display:none !important;}
   @page{size:A4;margin:8mm;}
   /* The learner report card is scaled to guarantee it always lands on exactly one page
      (see fitReportCardsToPage() in the script) — transform-origin top-left plus a fixed
@@ -149,7 +166,7 @@ canvas{max-width:100%;}
   .rc-info-grid{font-size:12px;padding:7px 11px;}
   .rc-overall-box .rc-grade{font-size:19px;}
   .rc-overall-box .rc-sub{font-size:10.5px;}
-  .report-card canvas{max-height:100px;height:100px !important;}
+  .report-card canvas{display:block;width:100% !important;max-width:100%;max-height:120px;height:120px !important;}
   .rc-remark{font-size:11.5px;padding:6px 9px;}
   .rc-chart-label{font-size:12px;}
   /* margin-top:auto turns these into flexible spacers inside the .rc-body flex column: any
@@ -286,6 +303,25 @@ function migrateDB(db){
     if(s.syncConfig===undefined && hasPlatformConfig()){
       s.syncConfig = {enabled:true, config: window.PLATFORM_FIREBASE_CONFIG};
     }
+    // One-time: a learning area used to apply to EVERY class as long as none of the
+    // per-class ticks in Learning Areas were checked — which is exactly how a subject a
+    // class never actually takes could end up counted in that class's assessment sheet
+    // and Mean %/overall level. Areas now only apply to classes explicitly ticked (see
+    // areasForClass), so this materializes each existing, never-ticked area's old "every
+    // class" behaviour into an explicit list of the classes that existed at the time —
+    // preserving today's reports exactly as they are — and marks it `_scoped` so it's
+    // only ever done once per area. It's deliberately skipped for a school with no
+    // classes yet (nothing to materialize onto), and retried on a later load once classes
+    // exist, so a brand-new school's default subjects still "just work" out of the box.
+    // Any area added from now on starts pre-scoped with nothing ticked — see addArea() —
+    // so going forward, an untouched tick box really does mean "not assigned here".
+    (s.learningAreas||[]).forEach(a=>{
+      if(!Array.isArray(a.classIds)) a.classIds = [];
+      if(!a._scoped && s.classes.length){
+        if(a.classIds.length===0) a.classIds = s.classes.map(c=>c.id);
+        a._scoped = true;
+      }
+    });
     // migrate students to have a stable internal id, separate from admission number.
     // Admission number is now optional and no longer guaranteed unique, so it can no
     // longer safely be used as the key marks/reports are stored against — every learner
@@ -572,20 +608,86 @@ async function refreshAllSchoolsFromCloud(silent){
   if(anyUpdated){ if(session && session.role==='admin') renderAdmin(); if(!silent) toast('School data refreshed from cloud'); }
   else if(!silent) toast('Already up to date');
 }
+// Re-renders just enough to reflect a cloud update, without discarding whatever the
+// user currently has open or interrupting anyone actively typing. Two teachers (or a
+// teacher and the HOI/DOS) can be entering marks for the same class — sometimes even the
+// same learning area — at the same time, and the old approach of tearing down and
+// rebuilding the whole marks table on every remote change made the grid visibly
+// "shake"/flicker and could yank focus (and any unsaved keystroke) out of whichever cell
+// someone was mid-edit in. patchMarksGrid() below updates only the cells that actually
+// changed, in place, and always skips the cell the user is currently focused on — so a
+// colleague's save just quietly appears next to the row they're on, instead of disturbing
+// the sheet. A full reload only happens when patching isn't safe (nothing loaded yet, or
+// the roster itself changed under us).
 function softRefresh(){
   if(!session) return;
   if(session.role==='teacher'){
-    const grid = qs('#marksGridArea');
-    if(grid && grid.innerHTML.trim() && qs('#tExam')) { try{ loadMarksGrid(); }catch(e){} }
-    else { try{ renderTeacherHistory(); }catch(e){} }
+    softRefreshMarksGrid('#marksGridArea', ()=>({examId: qs('#tExam')&&qs('#tExam').value, areaId: qs('#tArea')&&qs('#tArea').value, classId: qs('#tClass')&&qs('#tClass').value}), loadMarksGrid);
   } else if(session.role==='dos'){
-    renderDOS();
+    if(dosTab==='marks'){
+      softRefreshMarksGrid('#dosMarksGridArea', ()=>({examId: qs('#dmExam')&&qs('#dmExam').value, areaId: qs('#dmArea')&&qs('#dmArea').value, classId: qs('#dmClass')&&qs('#dmClass').value}), loadDosMarksGrid);
+    } else {
+      renderDOS();
+    }
   }
+}
+function softRefreshMarksGrid(containerSel, readSelection, fullReloadFn){
+  const container = qs(containerSel);
+  const {examId, areaId, classId} = readSelection();
+  if(!container || !container.innerHTML.trim() || !examId || !areaId || !classId){
+    // Nothing loaded (or nothing selected yet) — no sheet on screen to disturb either way.
+    if(containerSel==='#marksGridArea'){ try{ renderTeacherHistory(); }catch(e){} }
+    return;
+  }
+  const school = currentSchool();
+  const exam = school.exams.find(e=>e.id===examId);
+  const inputs = container.querySelectorAll('.markInput');
+  const learners = studentsInClass(school, classId);
+  if(!exam || inputs.length !== learners.length){
+    // The roster or exam changed under us (a learner was added/removed elsewhere) — a
+    // patch can't safely add/remove rows, so fall back to a full reload just this once.
+    try{ fullReloadFn(); }catch(e){}
+    return;
+  }
+  const max = exam.maxMarksByArea[areaId] ?? 100;
+  const marksForExam = school.marks[examId] || {};
+  inputs.forEach(input=>{
+    if(document.activeElement===input) return; // never touch the cell someone is actively typing into
+    const sid = input.dataset.sid;
+    const score = (marksForExam[sid]||{})[areaId];
+    const newVal = score==null ? '' : String(score);
+    if(input.value === newVal) return; // already showing the current value — leave it alone
+    input.value = newVal;
+    const pctCell = container.querySelector('.pctCell-'+sid);
+    const lvlCell = container.querySelector('.lvlCell-'+sid);
+    if(score!=null){
+      const pct = pctOf(score,max);
+      if(pctCell) pctCell.textContent = pct.toFixed(1)+'%';
+      if(lvlCell) lvlCell.innerHTML = levelBadge(school,pct,classId);
+    } else {
+      if(pctCell) pctCell.textContent = '-';
+      if(lvlCell) lvlCell.innerHTML = '-';
+    }
+  });
+}
+// Plain JSON.stringify(a) !== JSON.stringify(b) is not a safe way to detect a real change:
+// Firebase can return an object's keys in a different order than they were inserted
+// locally (it tends to sort them), so the exact same marks data round-tripping back from
+// the DOS/HOI's own save could stringify differently and look "changed" even though
+// nothing actually changed — triggering a pointless reload after every single score.
+// This compares by value instead of by key order.
+function deepEqual(a,b){
+  if(a===b) return true;
+  if(typeof a!=='object'||typeof b!=='object'||a===null||b===null) return false;
+  const ka=Object.keys(a), kb=Object.keys(b);
+  if(ka.length!==kb.length) return false;
+  for(const k of ka){ if(!deepEqual(a[k], b[k])) return false; }
+  return true;
 }
 function mergeMarksFromCloud(code, remote){
   const school = DB.schools[code]; if(!school) return;
   const incoming = remote || {};
-  const changed = JSON.stringify(school.marks||{}) !== JSON.stringify(incoming);
+  const changed = !deepEqual(school.marks||{}, incoming);
   if(changed){
     school.marks = incoming;
     saveDB(DB, {skipCloud:true});
@@ -931,9 +1033,16 @@ function gradeFor(school, pct, classId){
 }
 function pctOf(score,max){ return max>0 ? (score/max*100) : 0; }
 // Returns the learning areas that apply to a given class/grade.
-// A learning area with no classIds set (or an empty list) is treated as applying to every class — this keeps existing schools working unchanged.
+// Only a learning area explicitly ticked for this class is included — an area with no
+// classes ticked applies to NONE (see migrateDB's one-time "_scoped" step for why old
+// schools whose subjects were never ticked at all still keep working exactly as before).
+// This used to fall back to "an empty classIds list means every class", which silently
+// counted an area a class was never actually assigned toward that class's overall
+// performance the moment someone created it and forgot (or didn't get round) to tick
+// anything — exactly what dragged a class's Mean %/level down for a subject its learners
+// were never being taught.
 function areasForClass(school, classId){
-  return school.learningAreas.filter(a => !a.classIds || a.classIds.length===0 || a.classIds.includes(classId));
+  return school.learningAreas.filter(a => a.classIds && a.classIds.includes(classId));
 }
 // Learners in a class, ordered by admission number ascending (smallest first) — used
 // everywhere a class roster is listed (marks entry, reports, sheets) for a consistent,
@@ -1769,18 +1878,62 @@ function showLinkDos(){
 /* --- Classes --- */
 function tplClasses(school){
   return `<div class="card"><h2>🏷 Classes</h2>
+  <p class="small">Use <b>Promote</b> at year/term end to move every learner in a class up to the next grade in one go — e.g. all of Grade 7 into Grade 8 — without re-typing the class list. Past exams and reports stay exactly as they were, filed under the old class.</p>
   <div class="row"><div><label>Class Name</label><input id="clsName" placeholder="e.g. Grade 6 Blue"></div>
   <div style="align-self:flex-end"><button onclick="addClass()">Add Class</button></div></div>
   <table style="margin-top:10px"><tr><th>Class</th><th>Class Teacher</th><th>Learners</th><th>Actions</th></tr>
   ${school.classes.map(c=>`<tr><td>${escapeHtml(c.name)}</td>
     <td><input value="${escapeHtml((school.classTeachers||{})[c.id]||'')}" onchange="setClassTeacher('${c.id}',this.value)"></td>
     <td>${school.students.filter(s=>s.classId===c.id).length}</td>
-    <td><button class="danger" onclick="delClass('${c.id}')">Delete</button></td></tr>`).join('') || '<tr><td colspan="4" class="small">No classes yet.</td></tr>'}
+    <td><button class="ghost" onclick="promoteClass('${c.id}')">🎓 Promote</button> <button class="danger" onclick="delClass('${c.id}')">Delete</button></td></tr>`).join('') || '<tr><td colspan="4" class="small">No classes yet.</td></tr>'}
   </table></div>`;
 }
 function addClass(){
   const name = qs('#clsName').value.trim(); if(!name) return;
   currentSchool().classes.push({id:uid('cls_'), name}); saveDB(DB); renderDOS();
+}
+// Guesses the next grade's name from the current one by incrementing its LAST number —
+// "Grade 7" → "Grade 8", "Grade 7 Blue" → "Grade 8 Blue". Just a starting suggestion in
+// the promote prompt; the DOS/HOI can type over it with anything they like.
+function suggestNextClassName(name){
+  const m = name.match(/(\d+)(?!.*\d)/);
+  if(!m) return '';
+  return name.slice(0,m.index) + (parseInt(m[1],10)+1) + name.slice(m.index+m[1].length);
+}
+// Moves every learner currently in `classId` into another class — an existing one picked
+// by name, or a brand-new one typed in, which is created automatically. This is what lets
+// a whole class be promoted to the next grade (Grade 7 → Grade 8) in one action instead of
+// re-adding each learner by hand. The class being promoted FROM is deliberately left in
+// place afterwards (now with no learners) rather than deleted — its exam history, past
+// assessment sheets and report cards all stay exactly as they were, and the DOS/HOI can
+// reuse it for next year's intake into that grade or delete it themselves once they're
+// sure they're done with it. A newly-created destination class inherits the same learning
+// areas (and any custom grading table) the source class had, so it isn't left with zero
+// subjects until someone configures it by hand.
+function promoteClass(classId){
+  const school = currentSchool();
+  const cls = school.classes.find(c=>c.id===classId);
+  if(!cls) return;
+  const learners = school.students.filter(s=>s.classId===classId);
+  if(!learners.length){ toast('This class has no learners to promote','err'); return; }
+  const destName = prompt(`Promote all ${learners.length} learner(s) in "${cls.name}" to which class?\n\nType the name of an EXISTING class to move them into it, or a brand-new name to create that class automatically.`, suggestNextClassName(cls.name));
+  if(destName===null) return;
+  const trimmed = destName.trim();
+  if(!trimmed){ toast('Enter a class name','err'); return; }
+  let destCls = school.classes.find(c=>c.name.toLowerCase()===trimmed.toLowerCase());
+  if(destCls && destCls.id===classId){ toast('Pick a different class to promote into','err'); return; }
+  const willCreate = !destCls;
+  if(!confirm(`Move all ${learners.length} learner(s) from "${cls.name}" into ${willCreate?`a new class "${trimmed}"`:`"${destCls.name}"`}? Their past exam results and report history stay exactly as they were, filed under "${cls.name}".`)) return;
+  if(!destCls){
+    destCls = {id:uid('cls_'), name: trimmed};
+    school.classes.push(destCls);
+    school.learningAreas.forEach(a=>{ if(a.classIds && a.classIds.includes(classId) && !a.classIds.includes(destCls.id)) a.classIds.push(destCls.id); });
+    if(cls.gradingSystem && cls.gradingSystem.length){ destCls.gradingSystem = JSON.parse(JSON.stringify(cls.gradingSystem)); }
+  }
+  learners.forEach(s=>{ s.classId = destCls.id; });
+  saveDB(DB);
+  toast(`${learners.length} learner(s) promoted to "${destCls.name}"${willCreate?' (new class created)':''}`);
+  renderDOS();
 }
 function delClass(id){
   if(!confirm('Delete this class? Learners in it will remain unassigned.')) return;
@@ -1791,16 +1944,16 @@ function setClassTeacher(id,val){ const s=currentSchool(); if(!s.classTeachers) 
 /* --- Learning Areas --- */
 function tplAreas(school){
   return `<div class="card"><h2>📚 Learning Areas (Subjects)</h2>
-  <p class="small">Add a learning area, then tick which class(es)/grade(s) take it. Leave none ticked to apply it to every class (the default) — ticking one or more restricts it to just those grades.</p>
+  <p class="small">Add a learning area, then tick which class(es)/grade(s) take it. Only ticked classes will include it in their assessment sheets, reports and overall performance — leave a class unticked and this area is left out for that class entirely.</p>
   <div class="row"><div><label>New Learning Area</label><input id="areaName" placeholder="e.g. Home Science"></div>
   <div style="align-self:flex-end"><button onclick="addArea()">Add</button></div></div>
   <table style="margin-top:10px"><tr><th>Learning Area</th><th>Applies To</th><th></th></tr>
   ${school.learningAreas.map(a=>`<tr>
-    <td>${escapeHtml(a.name)}</td>
+    <td><input value="${escapeHtml(a.name)}" style="min-width:130px" onchange="renameArea('${a.id}', this.value, this)"></td>
     <td>${school.classes.length? school.classes.map(c=>{
         const checked = a.classIds && a.classIds.includes(c.id);
         return `<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${checked?'checked':''} onchange="toggleAreaClass('${a.id}','${c.id}',this.checked)">${escapeHtml(c.name)}</label>`;
-      }).join(' ') : '<span class="small">Add classes first to restrict by grade — for now this applies to all.</span>'}
+      }).join(' ') : '<span class="small">Add classes first, then come back here to tick which ones take this subject.</span>'}
     </td>
     <td><button class="danger" onclick="delArea('${a.id}')">✕</button></td>
   </tr>`).join('') || '<tr><td colspan="3" class="small">No learning areas yet.</td></tr>'}
@@ -1809,7 +1962,23 @@ function tplAreas(school){
 }
 function addArea(){
   const name = qs('#areaName').value.trim(); if(!name) return;
-  currentSchool().learningAreas.push({id:uid('la_'), name, classIds: []}); saveDB(DB); renderDOS();
+  // _scoped:true from the start — a brand-new area applies to nothing until a class is
+  // explicitly ticked below (see areasForClass/migrateDB for why older, never-ticked
+  // areas are handled differently, for backward compatibility).
+  currentSchool().learningAreas.push({id:uid('la_'), name, classIds: [], _scoped:true}); saveDB(DB); renderDOS();
+}
+// Lets DOS/HOI correct a learning area's name directly (e.g. a typo, or a subject was
+// renamed) without deleting and re-adding it — which would generate a new internal id and
+// silently orphan every exam's max-marks setting and every learner's recorded marks for
+// that area, since both are keyed on the area's id, not its name.
+function renameArea(id, newName, inputEl){
+  const name = newName.trim();
+  const school = currentSchool();
+  const a = school.learningAreas.find(x=>x.id===id);
+  if(!a) return;
+  if(!name){ toast('Learning area name cannot be empty','err'); if(inputEl) inputEl.value = a.name; return; }
+  a.name = name; saveDB(DB);
+  toast('Learning area updated');
 }
 function toggleAreaClass(areaId, classId, checked){
   const school = currentSchool();
@@ -2294,8 +2463,23 @@ function viewBlankClassList(classId){
   <table><tr><th>S/N</th><th>Adm No.</th><th>Name</th>${areas.map(a=>`<th>${escapeHtml(a.name)}</th>`).join('')}<th>Total</th></tr>
   ${learners.map((s,i)=>`<tr><td>${i+1}</td><td>${s.adm?escapeHtml(s.adm):'<span style="display:inline-block;height:26px"></span>'}</td><td style="text-align:left">${escapeHtml(s.name)}</td>${areas.map(()=>'<td style="height:26px">&nbsp;</td>').join('')}<td>&nbsp;</td></tr>`).join('') || `<tr><td colspan="${4+areas.length}" class="small">No learners in this class.</td></tr>`}
   </table>
-  <div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print</button></div>
+  <div class="flexbtns no-print"><button class="gold" onclick="printSection('blankListArea')">🖨 Print</button></div>
   </div>`;
+}
+// Prints only the sheet inside containerId, even if other generated sheets (e.g. the
+// Class Assessment Sheet, Cumulative Sheet, or Blank Class List all live on the same
+// page) are also currently showing on screen. Temporarily hides every OTHER
+// .print-only-block for the print, then restores them right after — nothing on screen
+// changes except for the brief moment the print dialog is open.
+function printSection(containerId){
+  const target = qs('#'+containerId);
+  if(!target) return;
+  const others = [...document.querySelectorAll('.print-only-block')].filter(b=>!target.contains(b));
+  others.forEach(b=>b.classList.add('print-hide-temp'));
+  const restore = ()=>{ others.forEach(b=>b.classList.remove('print-hide-temp')); window.removeEventListener('afterprint', restore); };
+  window.addEventListener('afterprint', restore);
+  window.print();
+  restore(); // covers browsers where print() blocks until the dialog closes; harmless to call twice
 }
 function viewClassAssessment(examId){
   if(!examId) return;
@@ -2332,7 +2516,7 @@ function viewClassAssessment(examId){
     <td>${r.total}</td><td>${r.totalPts}</td><td>${meanPct.toFixed(1)}%</td><td><span class="badge ${g.level}">${g.level}</span></td></tr>`;
   }).join('')}
   </table>
-  <div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print</button></div>
+  <div class="flexbtns no-print"><button class="gold" onclick="printSection('assessArea')">🖨 Print</button></div>
   </div>`;
 }
 function viewCumulative(){
@@ -2371,7 +2555,7 @@ function viewCumulative(){
     ${r.cells.map(c=>`<td>${c!=null?c.toFixed(1):'-'}</td>`).join('')}
     <td>${r.meanPct.toFixed(1)}%</td><td>${r.grandTotalPts}</td><td><span class="badge ${g.level}">${g.level}</span></td></tr>`;}).join('')}
   </table>
-  <div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print</button></div>
+  <div class="flexbtns no-print"><button class="gold" onclick="printSection('cumArea')">🖨 Print</button></div>
   </div>`;
 }
 
@@ -2496,19 +2680,24 @@ function drawProgressChart(chartId, data){
   const c = document.getElementById(chartId); if(!c) return;
   const ctx = c.getContext('2d');
   ctx.clearRect(0,0,c.width,c.height);
-  ctx.strokeStyle='#c9d3de'; ctx.strokeRect(0,0,c.width,c.height);
-  if(!data || data.length===0){ ctx.fillStyle='#888'; ctx.font='14px Arial'; ctx.fillText('No historical data yet',16,c.height/2); return; }
+  ctx.strokeStyle='#123a63'; ctx.lineWidth=1; ctx.strokeRect(0,0,c.width,c.height);
+  if(!data || data.length===0){ ctx.fillStyle='#555'; ctx.font='14px Arial'; ctx.fillText('No historical data yet',16,c.height/2); return; }
   const padL=54,padB=40,padT=16,w=c.width-padL-16,h=c.height-padT-padB;
+  // Gridlines and axis labels use a mid-gray dark enough to survive black-and-white/
+  // grayscale printing (the previous very light tint was fine on a color screen but
+  // printed as good as invisible on paper).
   ctx.strokeStyle='#123a63'; ctx.fillStyle='#123a63'; ctx.font='12px Arial';
-  for(let g=0; g<=4; g++){ const y=padT+h-h*(g/4); ctx.fillText((g*25)+'%', 4, y+4); ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(c.width-8,y); ctx.strokeStyle='#eef2f7'; ctx.stroke(); }
-  ctx.beginPath(); ctx.strokeStyle='#d9a441'; ctx.lineWidth=3;
+  for(let g=0; g<=4; g++){ const y=padT+h-h*(g/4); ctx.fillText((g*25)+'%', 4, y+4); ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(c.width-8,y); ctx.strokeStyle='#a9b6c4'; ctx.lineWidth=1; ctx.stroke(); }
+  // The trend line itself is drawn in navy rather than gold: navy keeps strong contrast
+  // against white paper whether the report prints in color or in plain black-and-white,
+  // while the gold shade used elsewhere as an accent gets too pale once desaturated.
+  ctx.beginPath(); ctx.strokeStyle='#123a63'; ctx.lineWidth=3;
   data.forEach((d,i)=>{ const x=padL + (data.length>1? (w*i/(data.length-1)) : w/2); const y=padT+h-h*(d.pct/100);
     if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
   ctx.stroke();
-  ctx.fillStyle='#123a63';
   data.forEach((d,i)=>{ const x=padL + (data.length>1? (w*i/(data.length-1)) : w/2); const y=padT+h-h*(d.pct/100);
-    ctx.beginPath(); ctx.arc(x,y,4.5,0,7); ctx.fill();
-    ctx.save(); ctx.translate(x,c.height-10); ctx.font='11px Arial'; ctx.textAlign='center'; ctx.fillText(d.label, 0, 0); ctx.restore();
+    ctx.beginPath(); ctx.arc(x,y,5,0,7); ctx.fillStyle='#d9a441'; ctx.fill(); ctx.lineWidth=1.5; ctx.strokeStyle='#123a63'; ctx.stroke();
+    ctx.save(); ctx.translate(x,c.height-10); ctx.fillStyle='#123a63'; ctx.font='11px Arial'; ctx.textAlign='center'; ctx.fillText(d.label, 0, 0); ctx.restore();
   });
 }
 /* ============================= PRINT: FIT REPORT CARD TO ONE PAGE =============================
@@ -2554,11 +2743,12 @@ function generateAllReports(classId, examId){
 /* ============================= EXAM HISTORY ============================= */
 function tplHistory(school){
   return `<div class="card"><h2>🗂 Saved Exam History (All Classes)</h2>
+  <p class="small">Delete an exam here to permanently remove it and every learner's recorded marks for it — e.g. a duplicate or a test entry made by mistake.</p>
   <table><tr><th>Exam</th><th>Class</th><th>Term/Year</th><th>Date Created</th><th></th></tr>
   ${school.exams.slice().reverse().map(e=>{
     const c = school.classes.find(x=>x.id===e.classId);
     return `<tr><td>${escapeHtml(e.name)}</td><td>${c?escapeHtml(c.name):'-'}</td><td>${e.term} ${e.year}</td><td>${new Date(e.date).toLocaleDateString()}</td>
-    <td><button class="ghost" onclick="dosTab='assess';renderDOS();setTimeout(()=>{qs('#asExam').value='${e.id}';viewClassAssessment('${e.id}')},50)">View</button></td></tr>`;
+    <td><button class="ghost" onclick="dosTab='assess';renderDOS();setTimeout(()=>{qs('#asExam').value='${e.id}';viewClassAssessment('${e.id}')},50)">View</button> <button class="danger" onclick="delExam('${e.id}')">✕ Delete</button></td></tr>`;
   }).join('') || '<tr><td colspan="5" class="small">No exams recorded yet.</td></tr>'}
   </table></div>`;
 }
