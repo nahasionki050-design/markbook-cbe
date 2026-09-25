@@ -68,24 +68,25 @@ tr:nth-child(even) td{background:#fafcfe;}
 tr:hover td{background:#eef4fb;}
 .badge{background:#6b7c8f;display:inline-block;padding:3px 11px;border-radius:10px;font-size:12px;font-weight:700;color:#fff;letter-spacing:.3px;box-shadow:0 1px 2px rgba(0,0,0,.12);border:1px solid rgba(0,0,0,.35);}
 .EE{background:var(--ee);} .ME{background:var(--me);} .AE{background:var(--ae);} .BE{background:var(--be);}
-/* Performance-level badges (EE/ME/AE/BE) carry a shape icon + a distinct border style on
-   top of their color, so the four levels stay tellable apart even on a printer with no
-   color cartridge — two similarly-dark colors can print as near-identical gray, but a
-   check mark next to a solid border reads nothing like a cross next to a dotted one.
+/* Performance-level badges show the level code exactly as typed in the Grading table
+   (e.g. "EE1", "ME2") — no forced tick/cross glyph. A distinct border style still rides
+   on top of the color by rank, so the four bands stay tellable apart even on a printer
+   with no color cartridge (two similarly-dark colors can print as near-identical gray).
    .lvl-badge is added only to real performance-level badges, not the reused EE/AE/BE
    status-color classes elsewhere (Active/Suspended/Approved etc.), which already carry
-   their own emoji and don't need a second icon. lvl-0..lvl-3 give raBadge() (custom,
-   inline-colored per school grading table) the same treatment by rank rather than code. */
+   their own emoji. lvl-0..lvl-3 give raBadge() (custom, inline-colored per school grading
+   table) the same border treatment by rank rather than code. Any icon shown before the
+   level text comes from that level's own editable "Icon" field (see .lvl-icon-input) and
+   is plain text in the badge itself, not CSS content — so it's whatever the school set,
+   or nothing at all. */
 .lvl-badge{border-width:2px;border-color:rgba(0,0,0,.55);}
-.lvl-badge::before{margin-right:3px;font-weight:900;}
 .EE.lvl-badge,.lvl-badge.lvl-0{border-style:solid;}
-.EE.lvl-badge::before,.lvl-badge.lvl-0::before{content:'✓';}
 .ME.lvl-badge,.lvl-badge.lvl-1{border-style:double;border-width:3px;}
-.ME.lvl-badge::before,.lvl-badge.lvl-1::before{content:'●';}
 .AE.lvl-badge,.lvl-badge.lvl-2{border-style:dashed;}
-.AE.lvl-badge::before,.lvl-badge.lvl-2::before{content:'▲';}
 .BE.lvl-badge,.lvl-badge.lvl-3{border-style:dotted;}
-.BE.lvl-badge::before,.lvl-badge.lvl-3::before{content:'✕';}
+.lvl-icon-input{width:100%;text-align:center;font-size:15px;padding:6px 4px;}
+.lvl-color-input{width:100%;height:34px;padding:2px;cursor:pointer;}
+.lvl-preview{display:flex;justify-content:center;padding-top:2px;}
 .small{font-size:12px;color:#5a6b7c;}
 .flexbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
 .linkbox{background:#eef4fb;border:1px dashed var(--navy);padding:8px;border-radius:7px;font-size:12px;word-break:break-all;}
@@ -375,9 +376,18 @@ function ensureSchoolShape(s){
     if(typeof e.approvedBy !== 'string') e.approvedBy = '';
     if(typeof e.approvalAt !== 'string') e.approvalAt = '';
     if(typeof e.stateAt !== 'number') e.stateAt = 0;
+    // Parent visibility: on by default (once results are otherwise released) — DOS/HOI can
+    // hide a specific exam from the Parent Portal without touching its approval state, e.g.
+    // a mock exam that shouldn't reach parents at all, or one still being double-checked.
+    if(typeof e.parentVisible !== 'boolean') e.parentVisible = true;
   });
   // Off by default: when on, results reach parents / teacher-printed reports only once approved.
   if(typeof s.requireApproval !== 'boolean') s.requireApproval = false;
+  // On by default: the master switch for the Parent Portal on this school. When a DOS/HOI
+  // turns it off, every parent is locked out of logging in (existing parent sessions are
+  // force-logged-out too, same as a suspended school) until it's turned back on — separate
+  // from and on top of the per-exam parentVisible toggle above.
+  if(typeof s.parentPortalEnabled !== 'boolean') s.parentPortalEnabled = true;
   return s;
 }
 function migrateDB(db){
@@ -613,7 +623,7 @@ function buildParentSafeSchool(fullSchool, student){
   // or promoted). Parents never receive unreleased exams (when approval is required) or the staff-only
   // edit-request log.
   const sat = e => !!((fullSchool.marks[e.id]||{})[student.id]);
-  const exams = fullSchool.exams.filter(e=>(e.classId===student.classId || sat(e)) && examReleased(fullSchool,e))
+  const exams = fullSchool.exams.filter(e=>(e.classId===student.classId || sat(e)) && examVisibleToParent(fullSchool,e))
     .map(e=>Object.assign({}, e, {editRequests: [], approvalNote: ''}));
   const examIds = new Set(exams.map(e=>e.id));
   const gradeIds = new Set([student.classId, ...exams.map(e=>e.classId)]);
@@ -909,6 +919,14 @@ function deepEqual(a,b){
 function touchExam(e){ e.stateAt = Date.now(); }
 // Is this exam's result allowed out to parents / teacher-printed reports?
 function examReleased(school, e){ return !school.requireApproval || e.resultsApproval==='approved'; }
+// Whether THIS exam should reach the Parent Portal specifically — everything examReleased()
+// already requires (results out of approval-hold), PLUS the exam's own parentVisible flag
+// (a DOS/HOI can hide one exam from parents, e.g. a mock, without touching its approval
+// state or hiding it from teachers/reports) AND the school-wide portal switch. Only ever
+// used for what a parent session can see — teacher/DOS views keep using examReleased().
+function examVisibleToParent(school, e){
+  return school.parentPortalEnabled!==false && e.parentVisible!==false && examReleased(school, e);
+}
 // How many marks are entered vs expected (every learner x every learning area of the class).
 function examCompletion(school, e){
   const learners = studentsInClass(school, e.classId), areas = areasForClass(school, e.classId);
@@ -1731,6 +1749,7 @@ async function doParentLogin(){
   if(cachedMatch){
     const access = schoolAccessStatus(cachedFull);
     if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
+    if(cachedFull.parentPortalEnabled===false){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">The Parent Portal has been closed by the school. Please contact the school directly for results.</div>'; return; }
     parentSchoolData = buildParentSafeSchool(cachedFull, cachedMatch);
     setSession({role:'parent', schoolCode:code, studentId:cachedMatch.id, label:`${cachedMatch.name} (Parent) · ${cachedFull.name}`});
     route();
@@ -1757,6 +1776,7 @@ async function doParentLogin(){
   if(!fullSchool){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
   const access = schoolAccessStatus(fullSchool);
   if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
+  if(fullSchool.parentPortalEnabled===false){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">The Parent Portal has been closed by the school. Please contact the school directly for results.</div>'; return; }
   const student = fullSchool.students.find(s => s.adm && norm(s.adm)===norm(admInput) && norm(s.name)===norm(nameInput));
   if(!student){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">No learner found matching that name and admission number. Please check the details with the school and try again.</div>'; return; }
   parentSchoolData = buildParentSafeSchool(fullSchool, student);
@@ -2190,6 +2210,8 @@ function tplSchoolProfile(school){
   </div>
   <div style="margin-top:8px"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="profReqApproval" ${school.requireApproval?'checked':''} style="width:auto"> Release results only after DOS/HOI approval</label>
   <p class="small">Parents & teachers only see approved results. Off by default.</p></div>
+  <div style="margin-top:8px"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="profParentPortal" ${school.parentPortalEnabled!==false?'checked':''} style="width:auto"> Allow parents to log in and view results (Parent Portal)</label>
+  <p class="small">Turn this off to close the Parent Portal entirely — parents won't be able to log in at all until it's turned back on. To hide only a single exam from parents while keeping the portal open, use "Parent Access" on that exam in the Exams tab instead.</p></div>
   <div class="flexbtns"><button onclick="saveSchoolProfile()">💾 Save School Details</button></div>
   <div id="profMsg"></div>
   </div>
@@ -2308,6 +2330,7 @@ function saveSchoolProfile(){
   school.email = qs('#profEmail').value.trim();
   school.phone = qs('#profPhone').value.trim();
   school.requireApproval = !!qs('#profReqApproval').checked;
+  school.parentPortalEnabled = !!qs('#profParentPortal').checked;
   saveDB(DB);
   qs('#profMsg').innerHTML = '<div class="msg ok">School details saved.</div>';
   renderDOS();
@@ -2627,7 +2650,8 @@ function tplGrading(school){
   <div class="flexbtns"><button onclick="customizeClassGrading('${cls.id}')">🔧 Customize Grading for ${escapeHtml(cls.name)}</button></div>` : ''}
   ${cls && editingCustom ? `<p class="msg ok">${escapeHtml(cls.name)} is using its own custom grading — changes below affect only this grade.</p>
   <div class="flexbtns"><button class="danger" onclick="revertClassGrading('${cls.id}')">↩ Revert ${escapeHtml(cls.name)} to School Default</button></div>` : ''}
-  <table style="margin-top:10px"><tr><th>Level Code</th><th>Label</th><th>Min %</th><th>Max %</th><th>Points</th><th>Auto Remark</th><th></th></tr>
+  <p class="small">Icon and Badge Color control how this level's badge looks wherever it's shown (reports, sheets, results analysis) — the level code itself is always shown exactly as typed here, e.g. "EE1".</p>
+  <table style="margin-top:10px"><tr><th>Level Code</th><th>Label</th><th>Min %</th><th>Max %</th><th>Points</th><th>Auto Remark</th><th>Icon</th><th>Badge Color</th><th>Preview</th><th></th></tr>
   ${rows.map((g,i)=>`<tr>
     <td><input value="${escapeHtml(g.level)}" ${cls&&!editingCustom?'disabled':''} onchange="updGrade(${i},'level',this.value)"></td>
     <td><input value="${escapeHtml(g.label)}" ${cls&&!editingCustom?'disabled':''} onchange="updGrade(${i},'label',this.value)"></td>
@@ -2635,6 +2659,9 @@ function tplGrading(school){
     <td><input type="number" value="${g.max}" ${cls&&!editingCustom?'disabled':''} onchange="updGrade(${i},'max',this.value)"></td>
     <td><input type="number" value="${g.points}" ${cls&&!editingCustom?'disabled':''} onchange="updGrade(${i},'points',this.value)"></td>
     <td><input value="${escapeHtml(g.remark)}" ${cls&&!editingCustom?'disabled':''} onchange="updGrade(${i},'remark',this.value)"></td>
+    <td><input class="lvl-icon-input" value="${escapeHtml(g.icon||'')}" placeholder="e.g. ⭐" maxlength="4" ${cls&&!editingCustom?'disabled':''} onchange="updGrade(${i},'icon',this.value)"></td>
+    <td><input type="color" class="lvl-color-input" value="${g.color||'#6b7c8f'}" ${cls&&!editingCustom?'disabled':''} onchange="updGrade(${i},'color',this.value)"></td>
+    <td class="lvl-preview">${raBadge(school,cls?cls.id:'',g.level)}</td>
     <td>${(!cls||editingCustom) ? `<button class="danger" onclick="delGrade(${i})">✕</button>` : ''}</td>
   </tr>`).join('')}
   </table>
@@ -2656,7 +2683,7 @@ function updGrade(i,field,val){
   saveDB(DB); renderDOS();
 }
 function addGrade(){
-  activeGradingArray(currentSchool()).push({level:'NL', label:'New Level', min:0, max:0, points:0, remark:''});
+  activeGradingArray(currentSchool()).push({level:'NL', label:'New Level', min:0, max:0, points:0, remark:'', icon:'', color:''});
   saveDB(DB); renderDOS();
 }
 function delGrade(i){ activeGradingArray(currentSchool()).splice(i,1); saveDB(DB); renderDOS(); }
@@ -2805,8 +2832,11 @@ function tplExams(school){
   const nAppr = school.exams.filter(e=>e.resultsApproval==='approved').length;
   const nDis = school.exams.filter(e=>e.resultsApproval==='disapproved').length;
   const nPendReq = school.exams.reduce((n,e)=>n+(e.editRequests||[]).filter(r=>r.status==='pending').length,0);
+  const nHiddenFromParents = school.exams.filter(e=>e.parentVisible===false).length;
   return `<div class="card"><h2>📝 Exams / Assessments</h2>
   ${school.exams.length ? `<p class="small">Approval overview: <b>${nAppr}</b> approved · <b>${school.exams.length-nAppr-nDis}</b> pending review · <b>${nDis}</b> disapproved${nPendReq?` · <span style="color:#9c2c2c"><b>${nPendReq}</b> teacher edit request(s) waiting for your decision</span>`:''}</p>` : ''}
+  ${school.parentPortalEnabled===false ? `<p class="msg err">🔒 Parent Portal is closed school-wide — no parent can log in, regardless of any exam's own Parent Access setting below. Turn it back on in School Details.</p>`
+    : (nHiddenFromParents ? `<p class="small">👁 Parent Portal is open · <b>${nHiddenFromParents}</b> exam(s) individually hidden from parents.</p>` : '')}
   <div class="row">
     <div><label>Exam Name</label><input id="exName" placeholder="e.g. Mid Term CAT 1"></div>
     <div><label>Term</label><select id="exTerm"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>
@@ -2890,6 +2920,14 @@ function tplExamCard(school, e){
       <p class="small">Approving locks marks as final. Disapproving needs a reason and reopens entry. Any later mark change resets approval to Pending.</p>
     </div>
   </div>
+  <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+    <p class="small" style="margin:0 0 4px"><b>Parent Access:</b> ${school.parentPortalEnabled===false ? '<span class="badge BE">🔒 Parent Portal closed school-wide</span>' : (e.parentVisible!==false ? '<span class="badge EE">👁 Visible to parents</span>' : '<span class="badge BE">🚫 Hidden from parents</span>')}</p>
+    <div class="flexbtns">
+      ${e.parentVisible!==false ? `<button class="danger ghost" onclick="setExamParentVisible('${e.id}',false)">🚫 Hide This Exam From Parents</button>`
+                                 : `<button class="ghost" onclick="setExamParentVisible('${e.id}',true)">👁 Show This Exam To Parents</button>`}
+    </div>
+    <p class="small">Choose which exams parents can look up, independent of Results Approval above — e.g. keep a mock or a still-being-checked exam out of the Parent Portal while marks stay visible to teachers. The school-wide Parent Portal switch in School Details overrides this for every exam.</p>
+  </div>
   ${pending.length ? `<div style="margin-top:10px">
     <p class="small" style="margin:0 0 4px"><b>⏳ Pending Edit Requests (${pending.length})</b></p>
     <table><tr><th>Teacher</th><th>Learner</th><th>Learning Area</th><th>Current</th><th>Requested</th><th>Actions</th></tr>
@@ -2967,6 +3005,17 @@ function reopenExam(id){
   if(e.resultsApproval==='approved'){ e.resultsApproval = 'pending'; e.approvedBy = ''; e.approvalAt = ''; }
   supersedePendingRequests(e, 'Entry was reopened — edit the mark directly.');
   touchExam(e); saveDB(DB); toast('Entry period reopened for '+e.name); renderCurrentPortal();
+}
+// Shows/hides this one exam in the Parent Portal, independent of its entry-closed state and
+// its Results Approval — a DOS/HOI-only control (this exam card only ever renders in the DOS
+// Exams tab), so a teacher granted other exam permissions still can't change what parents see.
+function setExamParentVisible(id, visible){
+  const school = currentSchool(); const e = school.exams.find(x=>x.id===id);
+  if(!e) return;
+  e.parentVisible = !!visible;
+  touchExam(e); saveDB(DB);
+  toast(visible ? 'This exam is now visible to parents' : 'This exam is now hidden from parents');
+  renderCurrentPortal();
 }
 function dosDisplayName(school){
   const rec = (school.dos||[]).find(d=>d.id===(session&&session.userId));
@@ -3079,7 +3128,7 @@ function addExam(){
   qsa('.examMax').forEach(inp=> maxMarksByArea[inp.dataset.area] = Math.max(1, Number(inp.value)||100));
   school.exams.push({id:uid('ex_'), name, term, year, classId, maxMarksByArea, date:new Date().toISOString(),
     closed:false, closingDate:'', editRequests:[], resultsApproval:'pending',
-    termCloseDate:'', nextTermDate:'', totalDays:0});
+    termCloseDate:'', nextTermDate:'', totalDays:0, parentVisible:true});
   saveDB(DB); renderDOS();
 }
 // Corrects the exam's own name/term/year after creation — without this, fixing a typo meant
@@ -3819,8 +3868,12 @@ function raRank(rows,key,rk){ rows.sort((a,b)=>b[key]-a[key]); rows.forEach((r,i
 // since a custom grading table may use different level codes than the CBC defaults.
 function raBadge(school,classId,level){
   const cols=['#1f8a4c','#2f7fd1','#e0a020','#d1473f'];
-  const i=gradingFor(school,classId).slice().sort((a,b)=>b.points-a.points).findIndex(g=>g.level===level);
-  return `<span class="badge lvl-badge ${i>=0&&i<4?'lvl-'+i:''}" style="background:${i>=0&&i<4?cols[i]:'#6b7c8f'}">${escapeHtml(level)}</span>`;
+  const sorted=gradingFor(school,classId).slice().sort((a,b)=>b.points-a.points);
+  const i=sorted.findIndex(g=>g.level===level);
+  const row=i>=0?sorted[i]:null;
+  const color=(row&&row.color)?row.color:(i>=0&&i<4?cols[i]:'#6b7c8f');
+  const icon=(row&&row.icon)?escapeHtml(row.icon)+' ':'';
+  return `<span class="badge lvl-badge ${i>=0&&i<4?'lvl-'+i:''}" style="background:${color}">${icon}${escapeHtml(level)}</span>`;
 }
 function tplResultsAnalysis(school){
   return `<div class="card"><h2 class="no-print">📈 Results Analysis</h2>
