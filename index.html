@@ -976,6 +976,21 @@ function withTimeout(promise, ms, label){
     promise.then(v=>{ clearTimeout(t); resolve(v); }, e=>{ clearTimeout(t); reject(e); });
   });
 }
+// Disables the login button and swaps its label while a login is in flight, so a slow
+// network can't be mistaken for a stuck app and a person can't double-submit (which
+// would fire two overlapping sync connections). Restores the original label on end;
+// harmless no-op once the login screen itself has already been replaced by route().
+function setLoginBusy(busy, text){
+  const b = qs('#loginBtn'); if(!b) return;
+  if(busy){
+    if(!b.dataset.origLabel) b.dataset.origLabel = b.textContent;
+    b.disabled = true;
+    b.textContent = text || 'Please wait…';
+  } else {
+    b.disabled = false;
+    if(b.dataset.origLabel) b.textContent = b.dataset.origLabel;
+  }
+}
 async function bootstrapFromCloudIfNeeded(code, config){
   if(!config) return;
   try{
@@ -1385,7 +1400,7 @@ function toast(msg,type='ok'){
 }
 function getQueryParams(){
   const p = new URLSearchParams(location.search);
-  return {school:p.get('school'), role:p.get('role'), sync:p.get('sync'), key:p.get('key')};
+  return {school:p.get('school'), role:p.get('role'), sync:p.get('sync'), key:p.get('key'), p:p.get('p')};
 }
 // Figures out which Firebase config (if any) should be used to bootstrap a login: a sync
 // link the person opened, a Sync Code they pasted on the login form, or a config this
@@ -1506,16 +1521,16 @@ function renderLogin(){
         <label>School Code (8-digit)</label><input id="scode" value="${escapeHtml(prefillCode)}" maxlength="8">
         <label>Username</label><input id="duser">
         <label>Password</label><input type="password" id="dpass">
-        ${syncFieldHtml(qp)}
-        <div class="flexbtns"><button onclick="doDosLogin()">Login</button></div>
+        ${syncFieldHtml(qp, true)}
+        <div class="flexbtns"><button id="loginBtn" onclick="doDosLogin()">Login</button></div>
         <div id="loginMsg"></div>`;
     } else if(activeRole==='teacher'){
       f.innerHTML = `
         <label>School Code (8-digit)</label><input id="scode" value="${escapeHtml(prefillCode)}" maxlength="8">
         <label>Username</label><input id="tuser">
         <label>Password</label><input type="password" id="tpass">
-        ${syncFieldHtml(qp)}
-        <div class="flexbtns"><button onclick="doTeacherLogin()">Login</button></div>
+        ${syncFieldHtml(qp, false)}
+        <div class="flexbtns"><button id="loginBtn" onclick="doTeacherLogin()">Login</button></div>
         <div id="loginMsg"></div>`;
     } else {
       // Parent Portal: no username/password — a parent identifies their child with the
@@ -1523,12 +1538,12 @@ function renderLogin(){
       // branch (not folded into the DOS/Teacher forms) so a parent never sees, and can
       // never reach, any staff-only field or button.
       f.innerHTML = `
-        <p class="small">Enter your child's details exactly as registered at school to view their report.</p>
+        <p class="small">Enter your child's details as registered at school.</p>
         <label>School Code (8-digit)</label><input id="pcode" value="${escapeHtml(prefillCode)}" maxlength="8">
         <label>Learner's Full Name</label><input id="pname" placeholder="As registered at school">
         <label>Admission Number</label><input id="padm">
-        ${syncFieldHtml(qp)}
-        <div class="flexbtns"><button onclick="doParentLogin()">View Report</button></div>
+        ${syncFieldHtml(qp, false)}
+        <div class="flexbtns"><button id="loginBtn" onclick="doParentLogin()">View Report</button></div>
         <div id="loginMsg"></div>`;
     }
   }
@@ -1537,8 +1552,9 @@ function renderLogin(){
 // Optional "Sync Code" field on the login form: auto-hidden (and pre-filled) when the link
 // already carries one, otherwise a collapsed field the person can open if their DOS/HOI
 // gave them a Sync Code to type in by hand instead of using a link.
-function syncFieldHtml(qp){
+function syncFieldHtml(qp, allowManual){
   if(qp.sync) return `<p class="small" style="color:#1f6a3a">🟢 Sync code detected in this link — this device will connect automatically.</p>`;
+  if(!allowManual) return '';
   return `<p class="small"><a href="#" onclick="document.getElementById('syncCodeWrap').classList.toggle('hidden');return false;">Have a Sync Code from your school? (optional)</a></p>
   <div id="syncCodeWrap" class="hidden"><label>Sync Code</label><input id="syncCodeInput" placeholder="Paste the code your DOS/HOI gave you"></div>`;
 }
@@ -1636,18 +1652,34 @@ async function doDosLogin(){
   const code = qs('#scode').value.trim();
   const u = qs('#duser').value.trim();
   const p = qs('#dpass').value;
+  setLoginBusy(true, 'Logging in…');
+  // Fast path: if this device already holds this school locally, check credentials
+  // against that copy immediately instead of waiting on the network — login is instant
+  // on a device that's been used before. A fresh cloud copy is still pulled in right
+  // after, in the background, so the session catches up with anything changed elsewhere.
+  const cached = DB.schools[code];
+  const cachedRec = cached && cached.dos.find(d=>d.username===u && d.password===p);
+  if(cachedRec){
+    const access = schoolAccessStatus(cached);
+    if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
+    setSession({role:'dos', schoolCode:code, userId:cachedRec.id, label:`${cachedRec.name} · ${cached.name}`});
+    route();
+    const config = resolveLoginSyncConfig(code);
+    if(config) bootstrapFromCloudIfNeeded(code, config).then(()=>{ if(session && session.role==='dos' && session.schoolCode===code) route(); });
+    return;
+  }
   const config = resolveLoginSyncConfig(code);
   if(config){
     qs('#loginMsg').innerHTML='<div class="msg ok">Connecting to sync…</div>';
     try{ await withTimeout(bootstrapFromCloudIfNeeded(code, config), 8000, 'Sync'); }
-    catch(e){ console.warn('Sync bootstrap did not complete in time, continuing with local login', e); }
+    catch(e){ console.warn('Sync bootstrap did not complete in time, continuing with local login', e); qs('#loginMsg').innerHTML='<div class="msg err">Sync is slow to respond — checking what\'s on this device instead.</div>'; }
   }
   const school = DB.schools[code];
-  if(!school){ qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
+  if(!school){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
   const rec = school.dos.find(d=>d.username===u && d.password===p);
-  if(!rec){ qs('#loginMsg').innerHTML='<div class="msg err">Invalid credentials.</div>'; return; }
+  if(!rec){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">Invalid credentials.</div>'; return; }
   const access = schoolAccessStatus(school);
-  if(!access.ok){ qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
+  if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
   setSession({role:'dos', schoolCode:code, userId:rec.id, label:`${rec.name} · ${school.name}`});
   route();
 }
@@ -1655,18 +1687,30 @@ async function doTeacherLogin(){
   const code = qs('#scode').value.trim();
   const u = qs('#tuser').value.trim();
   const p = qs('#tpass').value;
+  setLoginBusy(true, 'Logging in…');
+  const cached = DB.schools[code];
+  const cachedRec = cached && cached.teachers.find(t=>t.username===u && t.password===p);
+  if(cachedRec){
+    const access = schoolAccessStatus(cached);
+    if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
+    setSession({role:'teacher', schoolCode:code, userId:cachedRec.id, label:`${cachedRec.name} (Teacher) · ${cached.name}`});
+    route();
+    const config = resolveLoginSyncConfig(code);
+    if(config) bootstrapFromCloudIfNeeded(code, config).then(()=>{ if(session && session.role==='teacher' && session.schoolCode===code) route(); });
+    return;
+  }
   const config = resolveLoginSyncConfig(code);
   if(config){
     qs('#loginMsg').innerHTML='<div class="msg ok">Connecting to sync…</div>';
     try{ await withTimeout(bootstrapFromCloudIfNeeded(code, config), 8000, 'Sync'); }
-    catch(e){ console.warn('Sync bootstrap did not complete in time, continuing with local login', e); }
+    catch(e){ console.warn('Sync bootstrap did not complete in time, continuing with local login', e); qs('#loginMsg').innerHTML='<div class="msg err">Sync is slow to respond — checking what\'s on this device instead.</div>'; }
   }
   const school = DB.schools[code];
-  if(!school){ qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
+  if(!school){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
   const rec = school.teachers.find(t=>t.username===u && t.password===p);
-  if(!rec){ qs('#loginMsg').innerHTML='<div class="msg err">Invalid credentials.</div>'; return; }
+  if(!rec){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">Invalid credentials.</div>'; return; }
   const access = schoolAccessStatus(school);
-  if(!access.ok){ qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
+  if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
   setSession({role:'teacher', schoolCode:code, userId:rec.id, label:`${rec.name} (Teacher) · ${school.name}`});
   route();
 }
@@ -1678,6 +1722,20 @@ async function doParentLogin(){
   const nameInput = qs('#pname').value.trim();
   const admInput = qs('#padm').value.trim();
   if(!code || !nameInput || !admInput){ qs('#loginMsg').innerHTML='<div class="msg err">Enter the school code, learner\'s full name, and admission number.</div>'; return; }
+  setLoginBusy(true, 'Looking up…');
+  const norm = s => String(s||'').trim().toLowerCase();
+  // Fast path: a device that already holds this school locally (e.g. shared with staff,
+  // or looked up before) can resolve the learner without a network round trip.
+  const cachedFull = DB.schools[code];
+  const cachedMatch = cachedFull && cachedFull.students.find(s => s.adm && norm(s.adm)===norm(admInput) && norm(s.name)===norm(nameInput));
+  if(cachedMatch){
+    const access = schoolAccessStatus(cachedFull);
+    if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
+    parentSchoolData = buildParentSafeSchool(cachedFull, cachedMatch);
+    setSession({role:'parent', schoolCode:code, studentId:cachedMatch.id, label:`${cachedMatch.name} (Parent) · ${cachedFull.name}`});
+    route();
+    return;
+  }
   const config = resolveLoginSyncConfig(code);
   // Deliberately NOT bootstrapFromCloudIfNeeded (that pulls the whole school into the
   // shared DB/localStorage, which is right for staff but not for a public parent login —
@@ -1689,19 +1747,18 @@ async function doParentLogin(){
   if(config){
     qs('#loginMsg').innerHTML='<div class="msg ok">Looking up learner…</div>';
     try{ fullSchool = await withTimeout(parentCloudLookup(code, config), 8000, 'Sync'); }
-    catch(e){ console.warn('Parent cloud lookup did not complete in time, falling back to local data', e); }
+    catch(e){ console.warn('Parent cloud lookup did not complete in time, falling back to local data', e); qs('#loginMsg').innerHTML='<div class="msg err">Sync is slow to respond — checking what\'s on this device instead.</div>'; }
   }
   // Offline / no sync configured for this school: fall back to whatever this device
   // already has locally (e.g. a device previously used by staff already holds the full
   // school). Still routed through buildParentSafeSchool below either way, so the parent
   // session itself never ends up holding more than its one learner's own class.
   if(!fullSchool) fullSchool = DB.schools[code];
-  if(!fullSchool){ qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
+  if(!fullSchool){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
   const access = schoolAccessStatus(fullSchool);
-  if(!access.ok){ qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
-  const norm = s => String(s||'').trim().toLowerCase();
+  if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
   const student = fullSchool.students.find(s => s.adm && norm(s.adm)===norm(admInput) && norm(s.name)===norm(nameInput));
-  if(!student){ qs('#loginMsg').innerHTML='<div class="msg err">No learner found matching that name and admission number. Please check the details with the school and try again.</div>'; return; }
+  if(!student){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">No learner found matching that name and admission number. Please check the details with the school and try again.</div>'; return; }
   parentSchoolData = buildParentSafeSchool(fullSchool, student);
   setSession({role:'parent', schoolCode:code, studentId:student.id, label:`${student.name} (Parent) · ${fullSchool.name}`});
   route();
@@ -2132,13 +2189,13 @@ function tplSchoolProfile(school){
     <div><label>School Phone</label><input id="profPhone" value="${escapeHtml(school.phone)}" placeholder="e.g. 0712 345 678"></div>
   </div>
   <div style="margin-top:8px"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="profReqApproval" ${school.requireApproval?'checked':''} style="width:auto"> Release results only after DOS/HOI approval</label>
-  <p class="small">When on: parents see an exam only once its results are approved, teachers can print learner reports only for approved exams, you get a warning before printing reports for unapproved exams, and assessment sheets show an Approved / Provisional status. Off by default.</p></div>
+  <p class="small">Parents & teachers only see approved results. Off by default.</p></div>
   <div class="flexbtns"><button onclick="saveSchoolProfile()">💾 Save School Details</button></div>
   <div id="profMsg"></div>
   </div>
   <div class="card">
     <h2>🖼 School Logo / Badge</h2>
-    <p class="small">Uploaded once here, it's then printed at the top of every report card and assessment sheet, for every grade — above the school name.</p>
+    <p class="small">Printed above the school name on every report and sheet.</p>
     <div class="row">
       <div><label>Upload Logo (PNG/JPG, small square image works best)</label><input type="file" id="profLogoFile" accept="image/*" onchange="uploadSchoolLogo(this)"></div>
     </div>
@@ -2147,7 +2204,7 @@ function tplSchoolProfile(school){
   </div>
   <div class="card">
     <h2>✍️ HOI Signature</h2>
-    <p class="small">Draw the Head of Institution's signature once here and save it — it's then stamped automatically on every learner's report card, for every grade, without the HOI needing to sign each one by hand. Leave it blank and reports fall back to a plain signature line as before.</p>
+    <p class="small">Stamped automatically on every report card. Leave blank for a plain signature line.</p>
     <div class="sig-pad-wrap">
       <canvas id="hoiSigPad" width="600" height="180"></canvas>
     </div>
@@ -2260,12 +2317,12 @@ function tplAccount(school){
   const me = school.dos.find(d=>d.id===session.userId);
   const sc = school.syncConfig;
   return `<div class="card"><h2>🔑 My Account</h2>
-  <p class="small">Username: <b>${escapeHtml(me?me.username:'-')}</b>. If you ever forget your password, ask your platform administrator to reset it for you — they can see your username to help confirm it's you.</p>
+  <p class="small">Username: <b>${escapeHtml(me?me.username:'-')}</b>. Forgot your password? Ask your platform administrator to reset it.</p>
   <div class="row">
     <div><label>Your Display Name</label><input id="myName" value="${escapeHtml(me?me.name:'')}" placeholder="e.g. Mrs. Jane Doe"></div>
     <div style="align-self:flex-end"><button class="ghost" onclick="saveMyName()">Save Name</button></div>
   </div>
-  <p class="small">Shown on report cards and sheets you sign off, and to teachers reviewing decisions you've made.</p>
+  <p class="small">Shown on report cards and sheets you sign off.</p>
   <div class="row" style="margin-top:6px">
     <div><label>School Code</label><input value="${escapeHtml(school.code)}" readonly style="font-weight:700;letter-spacing:2px"></div>
     <div><label>Subscription Status</label><div style="padding:9px 0">${schoolStatusLabel(school)}</div></div>
@@ -2279,7 +2336,7 @@ function tplAccount(school){
   <div id="acctMsg"></div>
   </div>
   <div class="card"><h2>🔄 Multi-Device Sync</h2>
-  <p class="small">Turn this on so marks a teacher enters on their own phone appear automatically in the combined grade assessment sheet here — and on any other device logged in to this school. Needs a free Firebase project (one-time setup) and an internet connection on every device that syncs.</p>
+  <p class="small">Syncs teachers' marks across devices automatically. Needs a free Firebase project (one-time setup).</p>
   ${sc && sc.enabled ? `
     <div class="msg ok">🟢 Cloud sync is ON for this school.</div>
     <div class="flexbtns">
@@ -2352,7 +2409,7 @@ function showSyncCode(){
   const link = location.origin + location.pathname + `?school=${school.code}&p=${TEACHER_ACCESS_KEY}&sync=${encodeURIComponent(code)}`;
   qs('#syncCodeArea').innerHTML = `<label style="margin-top:10px">Teacher Login Link (sync built in — recommended, just share this instead of the plain one)</label><div class="linkbox">${escapeHtml(link)}</div>
   <label style="margin-top:10px">Or, Sync Code (for a teacher who already has the app/link and just needs to connect)</label><div class="linkbox">${escapeHtml(code)}</div>
-  <p class="small">Opening the link auto-connects a teacher's device. Pasting the Sync Code into "Have a Sync Code from your school?" on the login page does the same thing.</p>`;
+  <p class="small">Opening the link auto-connects a teacher's device.</p>`;
 }
 // Saves this DOS/HOI's own display name (school.dos[].name) — distinct from the school-wide
 // hoiName shown on report cards (School Details tab), which may belong to someone else
@@ -2381,17 +2438,17 @@ function changeDosPassword(){
 }
 function showLinkDos(){
   const url = location.origin + location.pathname + `?school=${session.schoolCode}&p=${TEACHER_ACCESS_KEY}`;
-  qs('#dosLinkArea').innerHTML = `<div class="linkbox">${url}</div><p class="small">Share this with your teachers along with the username/password you create for them below. It opens straight to the Teacher login form — no DOS/HOI or Admin/Owner option is shown on this link, so a teacher never learns any other login exists.</p>`;
+  qs('#dosLinkArea').innerHTML = `<div class="linkbox">${url}</div><p class="small">Share with your teachers along with their username/password below.</p>`;
 }
 function showLinkParent(){
   const url = location.origin + location.pathname + `?school=${session.schoolCode}&role=parent`;
-  qs('#dosLinkArea').innerHTML = `<div class="linkbox">${url}</div><p class="small">Share this with parents (notice board, grade WhatsApp group, SMS, etc.). It opens straight to a form where a parent types their own child's name and admission number — no DOS/HOI or Teacher option is shown on this link, so parents never see that those logins exist.</p>`;
+  qs('#dosLinkArea').innerHTML = `<div class="linkbox">${url}</div><p class="small">Share with parents — opens straight to the results lookup form.</p>`;
 }
 
 /* --- Classes --- */
 function tplClasses(school){
   return `<div class="card"><h2>🏷 Grades</h2>
-  <p class="small">Use <b>Promote</b> at year/term end to move every learner in a grade up to the next grade in one go — e.g. all of Grade 7 into Grade 8 — without re-typing the grade list. Past exams and reports stay exactly as they were, filed under the old grade.</p>
+  <p class="small">Use <b>Promote</b> at year/term end to move a whole grade up in one go. Past exams stay filed under the old grade.</p>
   <div class="row"><div><label>Grade Name</label><input id="clsName" placeholder="e.g. Grade 6 Blue"></div>
   <div style="align-self:flex-end"><button onclick="addClass()">Add Grade</button></div></div>
   <table style="margin-top:10px"><tr><th>Grade</th><th>Grade Teacher</th><th>Learners</th><th>Actions</th></tr>
@@ -2469,7 +2526,7 @@ function setClassTeacher(id,val){ const s=currentSchool(); if(!s.classTeachers) 
 /* --- Learning Areas --- */
 function tplAreas(school){
   return `<div class="card"><h2>📚 Learning Areas</h2>
-  <p class="small">Add a learning area, then tick which grade(s) take it. Only ticked grades will include it in their assessment sheets, reports and overall performance — leave a grade unticked and this area is left out for that grade entirely.</p>
+  <p class="small">Tick which grade(s) take each learning area — unticked grades leave it out entirely.</p>
   <div class="row"><div><label>New Learning Area</label><input id="areaName" placeholder="e.g. Home Science"></div>
   <div style="align-self:flex-end"><button onclick="addArea()">Add</button></div></div>
   <table style="margin-top:10px"><tr><th>Learning Area</th><th>Applies To</th><th></th></tr>
@@ -2555,7 +2612,7 @@ function tplGrading(school){
   const rows = editingCustom ? cls.gradingSystem : school.gradingSystem;
   const issues = gradingIssues(rows);
   return `<div class="card"><h2>🎯 Editable Grading / Performance Level System</h2>
-  <p class="small">Editing a grade's grading here only changes that grade — every other grade keeps using the school default (or their own custom grading) untouched.</p>
+  <p class="small">Editing here only affects this grade — others keep the school default.</p>
   ${issues.length ? `<div class="msg err"><b>⚠ ${issues.length} issue${issues.length>1?'s':''} with this grading table:</b>
     <ul style="margin:4px 0 0 18px;padding:0">${issues.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul>
     <p style="margin:6px 0 0">Fix these before relying on it — a score that falls outside every band is silently graded using whichever row happens to be last in the table below, which is rarely what you want.</p>
@@ -2657,12 +2714,12 @@ function tplStudents(school){
     <div><label>Grade</label><select id="stuClass">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
     <div style="align-self:flex-end"><button onclick="addStudent()">Add Learner</button></div>
   </div>
-  <p class="small">Bulk paste (Admission,Name per line — leave the admission number blank, e.g. ",Faith Wanjiru", or just paste the name alone with no comma, for a learner with no admission number yet):</p>
+  <p class="small">Bulk paste — one learner per line, "Admission,Name" (blank admission OK):</p>
   <textarea id="bulkStu" rows="3" placeholder="1001,John Mwangi
 ,Faith Wanjiru
 Amina Hassan"></textarea>
   <div class="flexbtns"><button class="ghost" onclick="bulkAddStudents()">Add Bulk to Selected Grade</button></div>
-  <p class="small" style="margin-top:12px">You can correct a learner's admission number, name or grade straight in the table below. Moving a learner to another grade keeps their past results filed under the grade they sat them in.</p>
+  <p class="small" style="margin-top:12px">Edit a learner directly in the table below. Moving grades keeps their past results filed under the old one.</p>
   <div class="row">
     <div><label>Filter by Grade</label><select id="stuFilter" onchange="stuFilterGrade=this.value;renderStudentRows()"><option value="">All grades</option>${school.classes.map(c=>`<option value="${c.id}" ${c.id===stuFilterGrade?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
     <div><label>Search name / admission no.</label><input id="stuSearch" value="${escapeHtml(stuSearch)}" oninput="stuSearch=this.value;renderStudentRows()" placeholder="Type to search…"></div>
@@ -2756,7 +2813,7 @@ function tplExams(school){
     <div><label>Year</label><input id="exYear" type="number" value="${new Date().getFullYear()}"></div>
     <div><label>Grade</label><select id="exClass" onchange="renderExamAreaInputs()">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
   </div>
-  <p class="small">Set Maximum Marks per Learning Area for this exam (shows all learning areas assigned to the selected grade):</p>
+  <p class="small">Maximum marks per learning area:</p>
   <div class="row" id="examAreaInputs">${renderExamAreaInputsHTML(school, firstClassId)}</div>
   <div class="flexbtns"><button onclick="addExam()">➕ Create Exam</button></div>
   </div>
@@ -2786,14 +2843,14 @@ function tplExamCard(school, e){
       </select></div>
       <div><label>Year</label><input type="number" value="${e.year}" onchange="renameExam('${e.id}','year',this.value)"></div>
     </div>
-    <p class="small">Fixes a typo without losing recorded marks — deleting and recreating the exam would lose them instead.</p>
+    <p class="small">Fixes a typo without losing recorded marks.</p>
   </details>
   <details style="margin:0 0 10px">
     <summary class="small" style="cursor:pointer">✏️ Edit Max Marks per Learning Area</summary>
     <div class="row" style="margin-top:6px">
       ${areasForClass(school,e.classId).map(a=>`<div><label>${escapeHtml(a.name)}</label><input type="number" min="1" value="${e.maxMarksByArea[a.id]??100}" onchange="updExamMaxMarks('${e.id}','${a.id}',this.value)"></div>`).join('') || '<p class="small">No learning areas assigned to this grade.</p>'}
     </div>
-    <p class="small">Already-recorded scores are not rescaled — only what they're graded against changes. Lowering a max below scores already entered will push those learners' % above 100 until you correct them too.</p>
+    <p class="small">Scores aren't rescaled — lowering the max below entered scores pushes their % above 100.</p>
   </details>
   <details style="margin:0 0 10px">
     <summary class="small" style="cursor:pointer">🗓 Report Card Dates &amp; Attendance</summary>
@@ -2802,7 +2859,7 @@ function tplExamCard(school, e){
       <div><label>Next Term Opens</label><input type="date" value="${escapeHtml(e.nextTermDate||'')}" onchange="setExamTermDate('${e.id}','nextTermDate',this.value)"></div>
       <div><label>Total School Days This Term</label><input type="number" min="0" value="${e.totalDays||''}" placeholder="e.g. 65" onchange="setExamTotalDays('${e.id}',this.value)"></div>
     </div>
-    <p class="small">Printed on each learner's report card when filled in. Leave any of these blank to leave it off the report.</p>
+    <p class="small">Printed on the report card when filled in; leave blank to omit.</p>
     ${e.totalDays ? `<table style="margin-top:6px"><tr><th>Adm No.</th><th>Name</th><th>Days Present (of ${e.totalDays})</th></tr>
     ${studentsForExam(school,e).map(s=>`<tr><td>${s.adm?escapeHtml(s.adm):'—'}</td><td>${escapeHtml(s.name)}</td>
       <td><input type="number" min="0" max="${e.totalDays}" value="${(school.attendance[e.id]||{})[s.id] ?? ''}" style="max-width:90px;margin:0 auto" onchange="setAttendance('${e.id}','${s.id}',this.value)"></td></tr>`).join('') || '<tr><td colspan="3" class="small">No learners in this grade.</td></tr>'}
@@ -2819,7 +2876,7 @@ function tplExamCard(school, e){
         ${e.closed ? `<button class="ghost" onclick="reopenExam('${e.id}')">🔓 Reopen Entry</button>`
                    : `<button class="ghost" onclick="closeExamNow('${e.id}')">🔒 Close Entry Now</button>`}
       </div>
-      <p class="small">While closed, teachers can no longer save marks directly for this exam — any change they attempt is queued below for your approval. You (DOS/HOI) can always enter/correct marks directly from the Enter/Edit Marks tab regardless of this setting.</p>
+      <p class="small">While closed, teacher changes are queued below for your approval. You can still edit marks directly anytime.</p>
     </div>
     <div>
       <p class="small" style="margin:0 0 4px"><b>Results Approval:</b> ${approvalBadge}</p>
@@ -2830,11 +2887,11 @@ function tplExamCard(school, e){
         <button onclick="approveExamResults('${e.id}')">✅ Approve Results</button>
         <button class="danger" onclick="disapproveExamResults('${e.id}')">❌ Disapprove</button>
       </div>
-      <p class="small">Approving signals the recorded marks are final and correct, and closes entry so they stay locked. Disapproving needs a reason (teachers see it), reopens entry and clears any waiting edit requests. Any later mark change — including an approved edit request — resets approval to Pending Review.</p>
+      <p class="small">Approving locks marks as final. Disapproving needs a reason and reopens entry. Any later mark change resets approval to Pending.</p>
     </div>
   </div>
   ${pending.length ? `<div style="margin-top:10px">
-    <p class="small" style="margin:0 0 4px"><b>⏳ Pending Edit Requests (${pending.length})</b> — from teachers, made while entry was closed:</p>
+    <p class="small" style="margin:0 0 4px"><b>⏳ Pending Edit Requests (${pending.length})</b></p>
     <table><tr><th>Teacher</th><th>Learner</th><th>Learning Area</th><th>Current</th><th>Requested</th><th>Actions</th></tr>
     ${pending.map(r=>{
       const stu = school.students.find(s=>s.id===r.sid);
@@ -3101,12 +3158,8 @@ function tplTeachers(school){
     <td><button class="ghost" onclick="resetTeacherPassword('${t.id}')">🔑 Reset Password</button> <button class="danger" onclick="delTeacher('${t.id}')">✕</button></td>
   </tr>`).join('') || '<tr><td colspan="10" class="small">No teachers yet.</td></tr>'}
   </table>
-  <p class="small" style="margin-top:8px"><b>Class Teacher For</b> marks which grade(s) a teacher is the class teacher of — independent of the learning-area assignment on the left, and independent of the plain-text "Class Teacher" name shown on report cards (set in the Classes tab). A teacher can hold this for more than one grade, and a grade can have more than one class teacher if your school shares the role.</p>
-  <p class="small">The next three permissions only take effect for grade(s) checked under <b>Class Teacher For</b> — checking them with no grade selected grants nothing. They let a class teacher handle their own grade's exam sign-off without waiting on you:</p>
-  <p class="small">• <b>Can Approve/Disapprove Results</b> — sign off (or send back) an exam's results, same as you do in the Exams tab. Approving is blocked while that exam has edit requests still awaiting a decision — pair this with "Can Decide Edit Requests" below, or that teacher will need to come back to you for those.</p>
-  <p class="small">• <b>Can Decide Edit Requests</b> — approve or reject other teachers' mark-change requests made while entry was closed, for that grade's exams.</p>
-  <p class="small">• <b>Can Open/Close Entry</b> — lock or reopen the marks-entry period for that grade's exams.</p>
-  <p class="small">You (DOS/HOI) can always act directly on any exam from the Exams tab regardless of what's granted here — these permissions only add a second, scoped path for the class teacher; they never remove your own access.</p>
+  <p class="small" style="margin-top:8px"><b>Class Teacher For</b> marks which grade(s) a teacher is class teacher of. A grade can have more than one.</p>
+  <p class="small">The next three permissions only apply to grade(s) checked under <b>Class Teacher For</b>, letting that teacher handle their own grade's exam sign-off without waiting on you: <b>Approve/Disapprove Results</b>, <b>Decide Edit Requests</b>, and <b>Open/Close Entry</b>. You can always act directly on any exam yourself regardless.</p>
   </div>`;
 }
 function toggleClassTeacherOf(tid,classId,checked){
@@ -3266,7 +3319,7 @@ function tplClassTeacherExams(school, t){
   const classNames = classes.map(cid=>escapeHtml(school.classes.find(c=>c.id===cid).name)).join(', ');
   const exams = school.exams.filter(e=>classes.includes(e.classId)).slice().reverse();
   return `<div class="card no-print"><h2>📋 Class Teacher Tools</h2>
-  <p class="small">You are the class teacher for: <b>${classNames}</b>. Use these to handle your grade's exam sign-off directly, without waiting on the DOS/HOI.</p>
+  <p class="small">Class teacher for: <b>${classNames}</b></p>
   ${exams.length ? exams.map(e=>tplClassTeacherExamCard(school,e,t)).join('') : '<p class="small">No exams recorded yet for your grade(s).</p>'}
   </div>`;
 }
@@ -3319,7 +3372,7 @@ function renderTeacher(){
   const welcome = `<div class="card no-print"><h2>👩‍🏫 Welcome, ${escapeHtml(t.name)}</h2>
   <p class="small">Your assigned Grade / Learning Area combinations:</p>
   ${chips || '<span class="small">No assignments yet — contact your DOS/HOI.</span>'}
-  <p class="small" style="margin-top:8px">Access granted: ✏️ Enter marks for your learning areas${t.canPrint?' · 📄 Learner reports':''}${t.canPrintAssess?' · 🖨 Assessment sheets &amp; previous exams':''}${classTeacherNames.length?` · 📋 Class Teacher for ${classTeacherNames.map(escapeHtml).join(', ')}`:''}. Everything you see is limited to your assigned learning areas${classTeacherNames.length?' (plus the Class Teacher Tools below for your own grade)':''}.</p>
+  <p class="small" style="margin-top:8px">Access: ✏️ Enter marks${t.canPrint?' · 📄 Reports':''}${t.canPrintAssess?' · 🖨 Assessment sheets':''}${classTeacherNames.length?` · 📋 Class Teacher — ${classTeacherNames.map(escapeHtml).join(', ')}`:''}</p>
   </div>`;
   const ctTools = tplClassTeacherExams(school, t);
   if(!myClasses.length){ app.innerHTML = welcome + ctTools; return; }
@@ -3335,7 +3388,7 @@ function renderTeacher(){
   <div id="marksGridArea"></div>
   </div>
   <div class="card no-print"><h2>⏳ Approval Status</h2>
-  <p class="small">Once the DOS/HOI closes the entry period for an exam, any change you make is sent to them for approval. Track those requests, and the exam's results approval, here.</p>
+  <p class="small">Changes made after entry closes need DOS/HOI approval — track them here.</p>
   <div id="teacherApprovals"></div></div>
   ${t.canPrint ? `<div class="card"><h2 class="no-print">📄 Print Learner Reports</h2>
   <p class="small no-print">Reports show only your assigned learning area(s) — mean, points and position are based on those.</p>
