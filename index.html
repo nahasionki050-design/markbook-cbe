@@ -3,19 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-<meta name="description" content="ASION ANALYTICS — a learner assessment and reporting platform for CBC schools: record marks, auto-grade against the CBC rubric, and generate printable learner progress reports and grade assessment sheets.">
+<meta name="description" content="EduTrack CBC — a learner assessment and reporting platform for CBC schools: record marks, auto-grade against the CBC rubric, and generate printable learner progress reports and grade assessment sheets.">
 <meta name="theme-color" content="#123a63">
 <meta name="robots" content="noindex, nofollow">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="ASION ANALYTICS">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23123a63'/%3E%3Cstop offset='1' stop-color='%230d2c4d'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='22' fill='url(%23g)'/%3E%3Cpath d='M22 66 L38 34 L50 56 L62 30 L78 66' stroke='%23d9a441' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23123a63'/%3E%3Cstop offset='1' stop-color='%230d2c4d'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='22' fill='url(%23g)'/%3E%3Cpath d='M22 66 L38 34 L50 56 L62 30 L78 66' stroke='%23d9a441' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<meta name="apple-mobile-web-app-title" content="EduTrack CBC">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23123a63'/%3E%3Cstop offset='1' stop-color='%230d2c4d'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='22' fill='url(%23g)'/%3E%3Cpath d='M14 78 L14 60 L32 60 L32 42 L50 42 L50 24 L64 24 L74 40 L90 10' stroke='%23d9a441' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23123a63'/%3E%3Cstop offset='1' stop-color='%230d2c4d'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='22' fill='url(%23g)'/%3E%3Cpath d='M14 78 L14 60 L32 60 L32 42 L50 42 L50 24 L64 24 L74 40 L90 10' stroke='%23d9a441' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<title>ASION ANALYTICS — Learner Assessment &amp; Reporting Platform</title>
+<title>EduTrack CBC — Learner Assessment &amp; Reporting Platform</title>
 <style>
 :root{
   --navy:#123a63; --navy2:#0d2c4d; --gold:#d9a441; --gold2:#c78f2e; --bg:#f2f5f8; --card:#fff;
@@ -90,12 +90,29 @@ tr:hover td{background:#eef4fb;}
 .small{font-size:12px;color:#5a6b7c;}
 .flexbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
 .linkbox{background:#eef4fb;border:1px dashed var(--navy);padding:8px;border-radius:7px;font-size:12px;word-break:break-all;}
-.login-wrap{max-width:420px;margin:48px auto;}
-.brand-hero{text-align:center;margin-bottom:18px;}
-.brand-hero .brand-icon{width:72px;height:72px;border-radius:20px;background:linear-gradient(135deg,var(--navy),var(--navy2));display:flex;align-items:center;justify-content:center;margin:0 auto 14px;box-shadow:0 8px 20px rgba(18,58,99,.3);}
-.brand-hero .brand-icon svg{width:38px;height:38px;display:block;}
-.brand-hero h1{margin:0;font-size:26px;color:var(--navy);font-weight:800;letter-spacing:.6px;font-family:var(--font-brand);text-transform:uppercase;background:linear-gradient(100deg,var(--navy) 30%,var(--gold2) 90%);-webkit-background-clip:text;background-clip:text;color:transparent;}
-.brand-hero p{margin:6px 0 0;font-size:13px;color:#5a6b7c;letter-spacing:.3px;}
+.login-page{max-width:460px;margin:0 auto;min-height:100vh;background:var(--bg);}
+.login-hero{position:relative;overflow:hidden;background:linear-gradient(135deg,var(--navy),var(--navy2) 75%);padding:46px 26px 80px;text-align:center;}
+.login-hero::before{content:'';position:absolute;width:220px;height:220px;border-radius:34px;transform:rotate(28deg);right:-70px;top:-60px;background:rgba(217,164,65,.16);}
+.login-hero::after{content:'';position:absolute;width:150px;height:150px;border-radius:26px;transform:rotate(20deg);right:20px;bottom:-80px;background:rgba(217,164,65,.10);}
+.login-hero-greet{position:relative;font-family:var(--font-brand);font-size:23px;font-weight:800;line-height:1.4;margin:0;color:#fff;}
+.login-hero-greet .accent{color:var(--gold);}
+.login-card{position:relative;background:#fff;border-radius:24px 24px 0 0;margin-top:-44px;padding:0 22px 30px;box-shadow:0 -10px 26px rgba(9,30,55,.12);min-height:260px;}
+.login-logo{width:60px;height:60px;border-radius:16px;margin:0 auto 10px;position:relative;top:-30px;background:linear-gradient(135deg,var(--gold),var(--gold2));display:flex;align-items:center;justify-content:center;box-shadow:0 8px 18px rgba(18,58,99,.3);border:4px solid #fff;}
+.login-logo svg{width:32px;height:32px;display:block;}
+.login-brand{text-align:center;margin:-22px 0 2px;font-family:var(--font-brand);font-weight:800;color:var(--navy);letter-spacing:.4px;text-transform:uppercase;font-size:15px;}
+.login-role{text-align:center;color:var(--navy);font-weight:700;font-size:14px;margin:0 0 4px;}
+.login-sub{text-align:center;color:#5a6b7c;font-size:13px;margin:0 0 18px;line-height:1.4;}
+.login-field{position:relative;margin-bottom:12px;}
+.login-field .ico{position:absolute;left:14px;top:50%;transform:translateY(-50%);opacity:.4;width:17px;height:17px;pointer-events:none;}
+.login-field input,.login-field select{width:100%;padding:13px 14px 13px 40px;border-radius:12px;border:1px solid var(--border);background:#f7f9fc;font-size:14.5px;font-family:var(--font);}
+.login-field.plain input,.login-field.plain select{padding-left:14px;}
+.login-field input:focus,.login-field select:focus{background:#fff;border-color:var(--navy);}
+.login-continue{width:100%;padding:14px;border:none;border-radius:12px;background:linear-gradient(100deg,var(--navy),var(--navy2));color:#fff;font-weight:700;font-size:15px;cursor:pointer;box-shadow:0 6px 16px rgba(18,58,99,.26);margin-top:4px;}
+.login-continue:active{transform:translateY(1px);}
+.login-step-label{text-align:center;color:var(--navy);font-weight:600;font-size:13px;margin:0 0 14px;}
+.login-step-label a{color:var(--gold2);font-weight:700;text-decoration:none;margin-left:4px;}
+.login-back{display:block;text-align:center;font-size:12.5px;margin-top:12px;color:#7186a0;}
+.login-footnote{text-align:center;font-size:11px;color:#8a97a8;margin:16px 0 0;padding:0 20px;}
 .app-footer{text-align:center;font-size:11px;color:#8a9bad;margin-top:22px;line-height:1.6;}
 .center{text-align:center;}
 .msg{padding:8px 10px;border-radius:7px;font-size:13px;margin:8px 0;}
@@ -188,7 +205,7 @@ canvas{max-width:100%;}
      A report with too much content still shrinks to fit via fitReportCardsToPage(); this
      flex layout only ever adds space, it never causes overflow. */
   .report-card{page-break-inside:avoid;break-inside:avoid;border-width:1px;transform-origin:top left;
-    height:281mm;display:flex;flex-direction:column;box-sizing:border-box;}
+    height:281mm;display:flex;flex-direction:column;box-sizing:border-box;margin:0;box-shadow:none;}
   .report-card .rc-body{flex:1;display:flex;flex-direction:column;box-sizing:border-box;}
   .rc-body{padding:11px 14px 10px;}
   .report-card table{font-size:11px;}
@@ -224,13 +241,20 @@ canvas{max-width:100%;}
 .ra-best td{background:#fdf6e5 !important;font-weight:700;}
 .ra-table td.ra-top{background:#e3f4e9 !important;font-weight:700;}
 @media print{.ra-table{font-size:10.5px;}.ra-sec{break-inside:avoid;page-break-inside:avoid;}}
+.dash-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:6px;}
+.dash-card{background:linear-gradient(160deg,#fff,#f7f9fc);border:1px solid var(--border);border-radius:10px;padding:12px 14px;text-align:center;box-shadow:0 1px 6px rgba(18,58,99,.05);}
+.dash-num{font-family:var(--font-brand);font-size:20px;font-weight:800;color:var(--navy);line-height:1.2;overflow-wrap:anywhere;}
+.dash-lbl{font-size:11.5px;color:#5a6b7d;margin-top:2px;font-weight:600;}
 .hidden{display:none !important;}
+.tbl{width:100%;border-collapse:collapse;margin:6px 0;font-size:13px;}
+.tbl th,.tbl td{border:1px solid var(--border);padding:6px 8px;text-align:left;vertical-align:top;}
+.tbl th{background:#f2f5f9;font-weight:700;}
 </style>
 </head>
 <body>
 <div id="storageWarning" class="no-print"></div>
 <header class="topbar">
-  <h1><span class="brand-mark"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M22 66 L38 34 L50 56 L62 30 L78 66" stroke="#123a63" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="brand-wordmark">Asion Analytics</span></h1>
+  <h1><span class="brand-mark"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M14 78 L14 60 L32 60 L32 42 L50 42 L50 24 L64 24 L74 40 L90 10" stroke="#123a63" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="brand-wordmark">EduTrack CBC</span></h1>
   <div class="who no-print" id="whoBar"></div>
 </header>
 <div class="container" id="app"></div>
@@ -241,8 +265,17 @@ canvas{max-width:100%;}
      instead of "School code not found" until that specific browser has seen it before.
      See firebase-config.js and README.md for one-time setup (~5 minutes, free). -->
 <script src="firebase-config.js"></script>
+<!-- SMS-to-parents (results & announcements). Sets window.PLATFORM_SMS_ENDPOINT, the URL
+     of a small Cloud Function that holds the real Africa's Talking API key server-side
+     and does the actual sending — never put that key in this file. See SMS_SETUP.md. -->
+<script src="sms-config.js"></script>
+<!-- Email delivery for staff "Forgot password?" codes, via EmailJS — no server or Cloud
+     Function needed. Sets window.PLATFORM_EMAILJS_* from email-config.js. See EMAIL_SETUP.md.
+     Until this is configured, "Forgot password?" only offers SMS. -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="email-config.js"></script>
 <script>
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 // The Admin/Owner tab is completely hidden from the login screen and unreachable
 // (even by URL) unless the page is opened with ?key=<this value> in the address bar.
 // This is what stops a random visitor from ever seeing "Admin/Owner" or being able to
@@ -393,6 +426,8 @@ function ensureSchoolShape(s){
 function migrateDB(db){
   if(!db.settings) db.settings = {trialDays:14};
   if(!db.settings.trialDays) db.settings.trialDays = 14;
+  if(db.settings.smsPaymentInstructions==null) db.settings.smsPaymentInstructions = '';
+  if(db.settings.smsPricePerCredit==null) db.settings.smsPricePerCredit = 2; // KES per credit — admin-editable, see Admin → 💬 SMS Credits
   if(db.adminSync===undefined) db.adminSync = null; // older backups/devices never had cloud admin sync
   // migrate older schools that don't yet have status/trial fields
   Object.values(db.schools||{}).forEach(s=>{
@@ -407,6 +442,26 @@ function migrateDB(db){
     if(s.address==null) s.address = '';
     if(s.email==null) s.email = '';
     if(s.phone==null) s.phone = '';
+    // SMS-to-parents: each school has its own prepaid credit wallet (1 credit ≈ 1 SMS
+    // segment) and a running log of what's been sent. Credits are topped up by the
+    // platform admin after the school pays (see Admin → 💬 SMS Credits) — there is no
+    // in-app card payment flow, which keeps this deployment free of payment-processor
+    // integration and PCI concerns.
+    if(s.smsCredits==null) s.smsCredits = 0;
+    if(!Array.isArray(s.smsLog)) s.smsLog = [];
+    // Manual "pay then get topped up" flow: a school pays the platform directly (M-Pesa
+    // Paybill/Till — see Admin → 💬 SMS Credits for the instructions text/price shown to
+    // them) then logs what they paid here; the admin approves it with one click, which
+    // both credits the wallet and records it in smsTopups. No payment gateway needed.
+    if(!Array.isArray(s.smsTopups)) s.smsTopups = [];
+    if(!Array.isArray(s.smsTopupRequests)) s.smsTopupRequests = [];
+    s.students.forEach(st=>{ if(st.parentPhone==null) st.parentPhone = ''; });
+    // Registered contact details for staff (DOS/HOI + teachers) — used only for the
+    // "Forgot password?" OTP flow on the login screen (see sendStaffOtp/verifyStaffOtp).
+    // Older accounts created before this feature simply have no contact on file yet, so
+    // they fall back to asking their DOS/HOI or the platform admin to reset their password.
+    (s.dos||[]).forEach(d=>{ if(d.email==null) d.email=''; if(d.phone==null) d.phone=''; });
+    s.teachers.forEach(t=>{ if(t.email==null) t.email=''; if(t.phone==null) t.phone=''; });
     // A school that has never touched Multi-Device Sync at all (not even to turn it off)
     // gets defaulted onto the deployment's shared project, if one is configured, so it
     // becomes reachable from other devices automatically. A school that explicitly turned
@@ -577,6 +632,85 @@ function schoolDataRef(code){ return fbDb.ref('schools/'+code+'/data'); }
 function schoolMarksRef(code){ return fbDb.ref('schools/'+code+'/marks'); }
 function markLeafRef(code, examId, sid, areaId){ return fbDb.ref('schools/'+code+'/marks/'+examId+'/'+sid+'/'+areaId); }
 
+/* ============================= PARENT PORTAL: LOGIN LOCKOUT =============================
+   Defends against someone who has (or is guessing) a school code + learner name + admission
+   number by throttling repeated failed match attempts, per school code, so brute-forcing
+   admission numbers stops being cheap. Deliberately stored in Firebase (schools/{code}/
+   parentLoginAttempts) rather than only in the browser's localStorage: a per-browser-only
+   lockout is trivially defeated by clearing site data or switching browsers, whereas this is
+   shared across whoever is attempting that school code.
+   Honest limits: the Firebase rules recommended elsewhere in this file (auth != null) allow
+   any anonymously-signed-in client — which is what every Parent Portal visitor is — to read
+   AND write this node, same as the rest of schools/{code}. A determined attacker who inspects
+   the app could reset their own counter with a direct database write. This raises the bar for
+   casual/scripted guessing through the app's own UI; it is not a substitute for a real
+   server-side check (a Cloud Function), which this static, backend-less app doesn't have.
+   For a school with no sync configured at all (fully offline / local-only), there is no shared
+   place to store this, so a per-browser localStorage fallback is used instead — weaker, but
+   better than no throttling. */
+const PARENT_MAX_ATTEMPTS = 5;          // failed lookups allowed within the window below
+const PARENT_ATTEMPT_WINDOW_MS = 10*60*1000;  // 10 minutes
+const PARENT_LOCKOUT_MS = 15*60*1000;         // lockout length once the limit is hit
+function parentAttemptsRef(code){ return fbDb.ref('schools/'+code+'/parentLoginAttempts'); }
+function formatLockoutRemaining(ms){
+  const mins = Math.max(1, Math.ceil(ms/60000));
+  return mins===1 ? '1 minute' : `${mins} minutes`;
+}
+// Returns {locked, remainingMs}. Fails OPEN (locked:false) on any error reaching the
+// database — a network hiccup while checking a lockout must never itself block a genuine
+// parent, mirroring how the rest of the parent login flow already degrades gracefully.
+async function checkParentLockout(code, config){
+  if(!config) return checkLocalParentLockout(code);
+  try{
+    await initSync(config);
+    const snap = await withTimeout(parentAttemptsRef(code).once('value'), 5000, 'Sync');
+    const rec = snap.val();
+    const now = Date.now();
+    if(rec && rec.lockedUntil && rec.lockedUntil > now) return {locked:true, remainingMs: rec.lockedUntil-now};
+    return {locked:false};
+  }catch(e){ return {locked:false}; }
+}
+async function recordParentFailure(code, config){
+  if(!config){ recordLocalParentFailure(code); return; }
+  try{
+    await initSync(config);
+    await parentAttemptsRef(code).transaction(rec=>{
+      const now = Date.now();
+      if(!rec || (now - (rec.windowStart||0)) > PARENT_ATTEMPT_WINDOW_MS) rec = {count:0, windowStart:now};
+      rec.count = (rec.count||0) + 1;
+      if(rec.count >= PARENT_MAX_ATTEMPTS){ rec.lockedUntil = now + PARENT_LOCKOUT_MS; rec.count = 0; rec.windowStart = now; }
+      return rec;
+    });
+  }catch(e){ /* best-effort only — never block the login flow on a logging failure */ }
+}
+async function clearParentAttempts(code, config){
+  if(!config){ clearLocalParentAttempts(code); return; }
+  try{ await initSync(config); await parentAttemptsRef(code).remove(); }catch(e){}
+}
+// localStorage fallback for schools with no sync configured (no shared backend to throttle
+// against). Weaker — cleared by clearing site data — but still stops the default flow.
+function localParentAttemptsKey(code){ return 'parentAttempts_'+code; }
+function checkLocalParentLockout(code){
+  try{
+    const rec = JSON.parse(localStorage.getItem(localParentAttemptsKey(code))||'null');
+    const now = Date.now();
+    if(rec && rec.lockedUntil && rec.lockedUntil > now) return {locked:true, remainingMs: rec.lockedUntil-now};
+    return {locked:false};
+  }catch(e){ return {locked:false}; }
+}
+function recordLocalParentFailure(code){
+  try{
+    const key = localParentAttemptsKey(code);
+    const now = Date.now();
+    let rec = JSON.parse(localStorage.getItem(key)||'null');
+    if(!rec || (now - (rec.windowStart||0)) > PARENT_ATTEMPT_WINDOW_MS) rec = {count:0, windowStart:now};
+    rec.count = (rec.count||0) + 1;
+    if(rec.count >= PARENT_MAX_ATTEMPTS){ rec.lockedUntil = now + PARENT_LOCKOUT_MS; rec.count = 0; rec.windowStart = now; }
+    localStorage.setItem(key, JSON.stringify(rec));
+  }catch(e){}
+}
+function clearLocalParentAttempts(code){ try{ localStorage.removeItem(localParentAttemptsKey(code)); }catch(e){} }
+
 /* ============================= PARENT PORTAL: MINIMAL-DATA LOOKUP =============================
    bootstrapFromCloudIfNeeded() (used by DOS/HOI and Teacher logins) intentionally pulls the
    WHOLE school node — every learner, every teacher's and DOS/HOI's login, every class — down
@@ -697,6 +831,16 @@ function pushMarkToCloud(code, examId, sid, areaId, val){
    If the deployment never configures a shared project, everything still works exactly
    as before — single-device only, unless a school sets up its own Multi-Device Sync. */
 function hasPlatformConfig(){ return !!(window.PLATFORM_FIREBASE_CONFIG && window.PLATFORM_FIREBASE_CONFIG.apiKey && window.PLATFORM_FIREBASE_CONFIG.databaseURL); }
+// Whether SMS-sending is wired up for this deployment. Actually sending an SMS needs a
+// secret Africa's Talking API key, which must never sit in this client-side file — so
+// sending goes through a small Cloud Function instead (see sms-config.js / SMS_SETUP.md).
+// This just checks whether that function's URL has been configured yet.
+function hasSmsConfig(){ return !!(window.PLATFORM_SMS_ENDPOINT && window.PLATFORM_SMS_ENDPOINT.trim()); }
+function hasEmailConfig(){ return !!(window.PLATFORM_EMAILJS_PUBLIC_KEY && window.PLATFORM_EMAILJS_SERVICE_ID && window.PLATFORM_EMAILJS_TEMPLATE_ID); }
+// 1 credit = 1 SMS segment (≤153 GSM characters). Longer messages consume more credits
+// per recipient, same as real carrier billing, so the cost shown before sending is accurate.
+function smsSegments(text){ const len=(text||'').length; return Math.max(1, Math.ceil(len/153)); }
+function smsCreditsNeeded(recipientCount, text){ return recipientCount * smsSegments(text); }
 // Fire-and-forget: pushes one school's current (non-marks) data to the shared project.
 // Used by admin actions (create/suspend/activate/delete/reset password/etc.) which don't
 // go through the DOS/teacher session's own scheduleCloudPush().
@@ -1205,6 +1349,12 @@ async function changeAdminCloudPassword(curPw, newPw){
 }
 
 function uid(prefix){ return prefix + Math.random().toString(36).slice(2,9); }
+// A learner's Parent Portal PIN: the fourth login factor, known only to the school and
+// whoever the school hands it to. Deliberately independent of admission number/name (never
+// derived from them) so it can't be computed by anyone who only has those two — see
+// parentCandidateMatches. 5 digits (10000–99999): easy enough to write on a slip of paper
+// or read out, and combined with the login lockout, not practical to brute-force blind.
+function genParentPin(){ return String(Math.floor(10000 + Math.random()*90000)); }
 function gen8DigitCode(){
   let code;
   do{ code = String(Math.floor(10000000 + Math.random()*90000000)); }
@@ -1244,7 +1394,7 @@ function newSchool(name, dosUsername, dosPassword, hoiName, address, email, phon
     classes: [],
     students: [],
     teachers: [],
-    dos: [{id:uid('dos_'), name:'DOS/HOI', username: dosUsername, password: dosPassword || 'hoi123'}],
+    dos: [{id:uid('dos_'), name:'DOS/HOI', username: dosUsername, password: dosPassword || 'hoi123', email:'', phone:''}],
     exams: [],
     marks: {}, // examId -> { adm -> {areaId: score} }
     classTeachers: {}, // classId -> teacher name
@@ -1436,6 +1586,45 @@ function resolveLoginSyncConfig(code){
   if(!DB.schools[code] && hasPlatformConfig()) return window.PLATFORM_FIREBASE_CONFIG;
   return null;
 }
+/* ============================= ADMIN: RETRIEVE A MISSING SCHOOL =============================
+   A school's data lives wherever it's synced (this deployment's shared database, or that
+   school's own per-school Sync Code) — NOT tied to any one admin device's local list. If an
+   admin's "All Schools" list is missing an entry (e.g. it was created on a different browser/
+   device than the one they're viewing now), this reuses the exact same cloud pull that a DOS/
+   HOI or Teacher's first login already does (bootstrapFromCloudIfNeeded), just triggered from
+   the Admin panel by code instead of by logging in as that school. */
+function parseSchoolCodeInput(raw){
+  raw = String(raw||'').trim();
+  const m = raw.match(/[?&]school=([0-9A-Za-z_-]+)/);
+  return m ? decodeURIComponent(m[1]) : raw;
+}
+function parseSyncCodeInput(raw){
+  raw = String(raw||'').trim();
+  if(!raw) return '';
+  const m = raw.match(/[?&]sync=([^&\s]+)/);
+  return m ? decodeURIComponent(m[1]) : raw;
+}
+async function adminRetrieveSchoolByCode(){
+  const msgEl = qs('#adminLookupMsg');
+  const code = parseSchoolCodeInput(qs('#adminLookupCode').value);
+  if(!code){ msgEl.innerHTML = '<div class="msg err">Enter the school code (or paste a DOS/Teacher login link).</div>'; return; }
+  if(DB.schools[code]){ msgEl.innerHTML = '<div class="msg ok">That school is already in your list below.</div>'; return; }
+  const syncRaw = parseSyncCodeInput(qs('#adminLookupSync').value);
+  let config = null;
+  if(syncRaw){
+    config = decodeSyncCode(syncRaw);
+    if(!config){ msgEl.innerHTML = '<div class="msg err">That Sync Code (or link) could not be read — check it was pasted in full.</div>'; return; }
+  } else if(hasPlatformConfig()){
+    config = window.PLATFORM_FIREBASE_CONFIG;
+  }
+  if(!config){ msgEl.innerHTML = '<div class="msg err">This deployment has no shared database configured, and no Sync Code was given — ask that school\'s DOS/HOI for their Sync Code (My Account → Multi-Device Sync → "Get Teacher Sync Link / Code") and paste it above.</div>'; return; }
+  msgEl.innerHTML = '<div class="msg ok">Looking up…</div>';
+  try{ await withTimeout(bootstrapFromCloudIfNeeded(code, config), 8000, 'Lookup'); }
+  catch(e){ msgEl.innerHTML = '<div class="msg err">Lookup timed out — check your connection and try again.</div>'; return; }
+  if(!DB.schools[code]){ msgEl.innerHTML = '<div class="msg err">No school found for that code with that database. Double-check the code, or that the Sync Code is the right one for this specific school.</div>'; return; }
+  msgEl.innerHTML = `<div class="msg ok">✅ Found "${escapeHtml(DB.schools[code].name)}" — added to your list below.</div>`;
+  renderAdmin();
+}
 
 /* ============================= ROUTER / RENDER ============================= */
 const app = document.getElementById('app');
@@ -1467,7 +1656,7 @@ function route(){
   }
   whoBar.innerHTML = `${escapeHtml(session.label)}<span id="syncBadge"></span> &nbsp;|&nbsp; <button class="ghost" onclick="logout()">Logout</button>`;
   if(session.role==='admin') renderAdmin();
-  else if(session.role==='dos') renderDOS();
+  else if(session.role==='dos'){ renderDOS(); maybeShowWaGroupPrompt(); }
   else if(session.role==='teacher') renderTeacher();
   else if(session.role==='parent') renderParent();
   // Parent sessions deliberately never call ensureSyncConnected: they get one snapshot
@@ -1478,6 +1667,32 @@ function route(){
 }
 
 /* ============================= LOGIN ============================= */
+function greetingText(){
+  const h = new Date().getHours();
+  return h<12 ? 'Good Morning' : h<17 ? 'Good Afternoon' : 'Good Evening';
+}
+const PERSON_ICO = `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>`;
+const LOCK_ICO = `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
+const HASH_ICO = `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3L7 21M17 3l-3 18"/></svg>`;
+// Reveal the credentials step once the person has typed their identifier (username, or
+// admission number for Parent) and tapped Continue. `.login-id-field` is a class (not an
+// id) because each role's identifier input keeps its own real id — #duser, #tuser, #padm —
+// since doDosLogin/doTeacherLogin/doParentLogin already read those exact ids.
+function loginStep2(){
+  const idField = document.querySelector('.login-id-field');
+  if(idField && !idField.value.trim()){ idField.focus(); return; }
+  const s1 = qs('#loginStep1'), s2 = qs('#loginStep2');
+  if(!s1 || !s2) return;
+  s1.style.display = 'none'; s2.style.display = 'block';
+  const who = qs('#loginWho'); if(who) who.textContent = idField ? idField.value.trim() : '';
+  const first = s2.querySelector('input'); if(first) first.focus();
+}
+function loginStepBack(){
+  const s1 = qs('#loginStep1'), s2 = qs('#loginStep2');
+  if(!s1 || !s2) return;
+  s2.style.display = 'none'; s1.style.display = 'block';
+  const msg = qs('#loginMsg'); if(msg) msg.innerHTML = '';
+}
 function renderLogin(){
   const qp = getQueryParams();
   const prefillCode = qp.school || '';
@@ -1505,21 +1720,22 @@ function renderLogin(){
   } else {
     activeRole = 'parent'; // bare URL default
   }
-  const heroText = activeRole==='parent' ? 'Parent Portal — View your child\'s results'
-    : activeRole==='teacher' ? 'Teacher Portal — Enter learner marks'
+  const heroText = activeRole==='parent' ? 'Parent Portal'
+    : activeRole==='teacher' ? 'Teacher Portal'
     : activeRole==='dos' ? 'DOS / HOI Portal'
     : 'Admin / Owner Portal';
   app.innerHTML = `
-  <div class="login-wrap">
-    <div class="brand-hero">
-      <div class="brand-icon"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M22 66 L38 34 L50 56 L62 30 L78 66" stroke="#d9a441" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-      <h1>Asion Analytics</h1>
-      <p>${heroText}</p>
+  <div class="login-page">
+    <div class="login-hero">
+      <p class="login-hero-greet">${greetingText()},<br><span class="accent">Welcome Back!</span></p>
     </div>
-    <div class="card">
+    <div class="login-card">
+      <div class="login-logo"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M14 78 L14 60 L32 60 L32 42 L50 42 L50 24 L64 24 L74 40 L90 10" stroke="#123a63" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <p class="login-brand">EduTrack CBC</p>
+      <p class="login-role">${heroText}</p>
       <div id="loginForm"></div>
     </div>
-    <div class="app-footer">ASION ANALYTICS v${APP_VERSION} &nbsp;·&nbsp; Your data stays on this device unless your school turns on Multi-Device Sync</div>
+    <p class="login-footnote">EduTrack CBC v${APP_VERSION} · Your data stays on this device unless your school turns on Multi-Device Sync</p>
   </div>`;
   function renderForm(){
     const f = qs('#loginForm');
@@ -1527,41 +1743,68 @@ function renderLogin(){
       const hasPw = !!DB.adminPassword;
       const linked = DB.adminSync && DB.adminSync.enabled;
       f.innerHTML = `
-        <p class="small">${hasPw? 'Enter the admin password.' : 'First time setup: create your admin password.'}</p>
-        <label>Password</label><input type="password" id="pw">
-        <div class="flexbtns"><button onclick="doAdminLogin()">${hasPw?'Login':'Create & Login'}</button></div>
-        ${hasPw? '<p class="small"><a href="#" onclick="toggleAdminRecovery(event)">Forgot your password?</a></p><div id="adminRecoveryArea" class="hidden"></div>' : ''}
-        <p class="small" style="margin-top:10px">${linked? `🟢 Cloud account linked (${escapeHtml(DB.adminSync.email)}) — <a href="#" onclick="toggleAdminCloudLogin(event)">sign in with it instead</a>` : '<a href="#" onclick="toggleAdminCloudLogin(event)">Sign in with a synced admin account instead</a>'}</p>
+        <p class="login-sub">${hasPw? 'Enter your admin password.' : 'First time setup: create your admin password.'}</p>
+        <div class="login-field">${LOCK_ICO}<input type="password" id="pw" placeholder="Password" onkeydown="if(event.key==='Enter')doAdminLogin()"></div>
+        <button class="login-continue" id="loginBtn" onclick="doAdminLogin()">${hasPw?'Sign In':'Create & Login'}</button>
+        ${hasPw? '<p class="login-back"><a href="#" onclick="toggleAdminRecovery(event)">Forgot your password?</a></p><div id="adminRecoveryArea" class="hidden"></div>' : ''}
+        <p class="login-back">${linked? `🟢 Cloud account linked (${escapeHtml(DB.adminSync.email)}) — <a href="#" onclick="toggleAdminCloudLogin(event)">sign in with it instead</a>` : '<a href="#" onclick="toggleAdminCloudLogin(event)">Sign in with a synced admin account instead</a>'}</p>
         <div id="adminCloudLoginArea" class="hidden"></div>
         <div id="loginMsg"></div>`;
     } else if(activeRole==='dos'){
       f.innerHTML = `
-        <label>School Code (8-digit)</label><input id="scode" value="${escapeHtml(prefillCode)}" maxlength="8">
-        <label>Username</label><input id="duser">
-        <label>Password</label><input type="password" id="dpass">
-        ${syncFieldHtml(qp, true)}
-        <div class="flexbtns"><button id="loginBtn" onclick="doDosLogin()">Login</button></div>
+        <p class="login-sub">Please enter your username to access your account.</p>
+        <div id="loginStep1">
+          ${prefillCode ? `<input type="hidden" id="scode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="scode" placeholder="School Code (8-digit)" maxlength="8"></div>`}
+          <div class="login-field">${PERSON_ICO}<input class="login-id-field" id="duser" placeholder="Username" onkeydown="if(event.key==='Enter')loginStep2()"></div>
+          <button class="login-continue" onclick="loginStep2()">Continue</button>
+        </div>
+        <div id="loginStep2" style="display:none">
+          <p class="login-step-label">Signing in as <b id="loginWho"></b><a href="#" onclick="loginStepBack();return false;">Change</a></p>
+          <div class="login-field">${LOCK_ICO}<input type="password" id="dpass" placeholder="Password" onkeydown="if(event.key==='Enter')doDosLogin()"></div>
+          ${syncFieldHtml(qp, true)}
+          <button class="login-continue" id="loginBtn" onclick="doDosLogin()">Sign In</button>
+          <p class="login-back"><a href="#" onclick="toggleStaffRecovery(event,'dos')">Forgot your password?</a></p>
+          <div id="staffRecoveryArea" class="hidden"></div>
+        </div>
         <div id="loginMsg"></div>`;
     } else if(activeRole==='teacher'){
       f.innerHTML = `
-        <label>School Code (8-digit)</label><input id="scode" value="${escapeHtml(prefillCode)}" maxlength="8">
-        <label>Username</label><input id="tuser">
-        <label>Password</label><input type="password" id="tpass">
-        ${syncFieldHtml(qp, false)}
-        <div class="flexbtns"><button id="loginBtn" onclick="doTeacherLogin()">Login</button></div>
+        <p class="login-sub">Please enter your username to access your account.</p>
+        <div id="loginStep1">
+          ${prefillCode ? `<input type="hidden" id="scode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="scode" placeholder="School Code (8-digit)" maxlength="8"></div>`}
+          <div class="login-field">${PERSON_ICO}<input class="login-id-field" id="tuser" placeholder="Username" onkeydown="if(event.key==='Enter')loginStep2()"></div>
+          <button class="login-continue" onclick="loginStep2()">Continue</button>
+        </div>
+        <div id="loginStep2" style="display:none">
+          <p class="login-step-label">Signing in as <b id="loginWho"></b><a href="#" onclick="loginStepBack();return false;">Change</a></p>
+          <div class="login-field">${LOCK_ICO}<input type="password" id="tpass" placeholder="Password" onkeydown="if(event.key==='Enter')doTeacherLogin()"></div>
+          ${syncFieldHtml(qp, false)}
+          <button class="login-continue" id="loginBtn" onclick="doTeacherLogin()">Sign In</button>
+          <p class="login-back"><a href="#" onclick="toggleStaffRecovery(event,'teacher')">Forgot your password?</a></p>
+          <div id="staffRecoveryArea" class="hidden"></div>
+        </div>
         <div id="loginMsg"></div>`;
     } else {
       // Parent Portal: no username/password — a parent identifies their child with the
-      // school code plus the learner's own name + admission number. Kept as its own
-      // branch (not folded into the DOS/Teacher forms) so a parent never sees, and can
-      // never reach, any staff-only field or button.
+      // school code plus the learner's own name + admission number + a Parent PIN the
+      // school has given only to them. Kept as its own branch (not folded into the
+      // DOS/Teacher forms) so a parent never sees, and can never reach, any staff-only
+      // field or button. Restyled to the same identifier-first, then-reveal flow: the
+      // admission number stands in for "username" as the first thing they type.
       f.innerHTML = `
-        <p class="small">Enter your child's details as registered at school.</p>
-        <label>School Code (8-digit)</label><input id="pcode" value="${escapeHtml(prefillCode)}" maxlength="8">
-        <label>Learner's Full Name</label><input id="pname" placeholder="As registered at school">
-        <label>Admission Number</label><input id="padm">
-        ${syncFieldHtml(qp, false)}
-        <div class="flexbtns"><button id="loginBtn" onclick="doParentLogin()">View Report</button></div>
+        <p class="login-sub">Please enter your child's admission number to access their results.</p>
+        <div id="loginStep1">
+          ${prefillCode ? `<input type="hidden" id="pcode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="pcode" placeholder="School Code (8-digit)" maxlength="8"></div>`}
+          <div class="login-field">${HASH_ICO}<input class="login-id-field" id="padm" placeholder="Admission Number" onkeydown="if(event.key==='Enter')loginStep2()"></div>
+          <button class="login-continue" onclick="loginStep2()">Continue</button>
+        </div>
+        <div id="loginStep2" style="display:none">
+          <p class="login-step-label">Admission No. <b id="loginWho"></b><a href="#" onclick="loginStepBack();return false;">Change</a></p>
+          <div class="login-field plain"><input id="pname" placeholder="Learner's Full Name (as registered at school)"></div>
+          <div class="login-field">${LOCK_ICO}<input id="ppin" placeholder="Parent PIN" inputmode="numeric" maxlength="8" onkeydown="if(event.key==='Enter')doParentLogin()"></div>
+          ${syncFieldHtml(qp, false)}
+          <button class="login-continue" id="loginBtn" onclick="doParentLogin()">View Report</button>
+        </div>
         <div id="loginMsg"></div>`;
     }
   }
@@ -1666,6 +1909,132 @@ function resetAdminPasswordDirect(){
   renderLogin(); // already lands back on the Admin form directly, since the page was reached via the admin ?key= link
   toast('Admin password cleared — set a new one below');
 }
+// DOS/HOI + Teacher "Forgot password?" — an email-or-phone OTP flow, independent of the
+// Admin recovery above. A DOS/HOI or teacher can only ever reset their OWN password this
+// way, and only by proving they hold the contact already on file for their account (set
+// in My Account, or by their DOS/HOI in the Teachers table) — typing just a username is
+// never enough. Kept deliberately vague on failure ("if those details match…") so this
+// can't be used to probe which usernames or contacts exist.
+let staffOtpState = null; // {role, schoolCode, userId, otp, expiresAt, channel, dest}
+function toggleStaffRecovery(e, role){
+  e.preventDefault();
+  const el = qs('#staffRecoveryArea'); if(!el) return;
+  el.classList.toggle('hidden');
+  staffOtpState = null;
+  if(!el.classList.contains('hidden')){
+    el.innerHTML = `<div class="card" style="background:#f7f9fc">
+      <p class="small">Enter the email or phone number registered on your account (set it up in My Account first if you haven't yet) — we'll send a 6-digit code to it.</p>
+      <input id="otpContact" placeholder="Registered email or phone number">
+      <div class="flexbtns"><button class="ghost" onclick="sendStaffOtp('${role}')">Send Code</button></div>
+      <div id="staffOtpMsg"></div>
+    </div>`;
+  }
+}
+function maskContact(dest){
+  if(!dest) return '';
+  if(dest.includes('@')){
+    const [name, domain] = dest.split('@');
+    return `${name.slice(0,1)}${'*'.repeat(Math.max(name.length-1,1))}@${domain}`;
+  }
+  return dest.length>4 ? `${'*'.repeat(dest.length-4)}${dest.slice(-4)}` : dest;
+}
+function findStaffRecord(role, code, username){
+  const school = DB.schools[code];
+  if(!school || !username) return null;
+  const list = role==='dos' ? school.dos : school.teachers;
+  const rec = (list||[]).find(x=>x.username===username);
+  return rec ? {school, rec} : null;
+}
+async function sendStaffOtp(role){
+  const scodeEl = qs('#scode');
+  const code = scodeEl ? scodeEl.value.trim() : '';
+  const username = (role==='dos' ? qs('#duser') : qs('#tuser')).value.trim();
+  const contactEl = qs('#otpContact');
+  const contact = contactEl ? contactEl.value.trim() : '';
+  const msgEl = qs('#staffOtpMsg');
+  const otherRole = role==='dos' ? 'platform administrator' : 'DOS/HOI';
+  if(!code || !username){ msgEl.innerHTML = '<div class="msg err">Enter the school code and your username above first, then try again.</div>'; return; }
+  if(!contact){ msgEl.innerHTML = '<div class="msg err">Enter your registered email or phone number.</div>'; return; }
+  const generic = `<div class="msg err">If those details match an account, a code has been sent. If not, ask your ${otherRole} to check the contact details on file for your account.</div>`;
+  const found = findStaffRecord(role, code, username);
+  if(!found){ msgEl.innerHTML = generic; return; }
+  const rec = found.rec;
+  const normPhone = normalizePhone(contact);
+  const emailMatches = !!(rec.email && rec.email.trim().toLowerCase()===contact.toLowerCase());
+  const phoneMatches = !!(normPhone && rec.phone && normalizePhone(rec.phone)===normPhone);
+  if(!emailMatches && !phoneMatches){ msgEl.innerHTML = generic; return; }
+  const channel = emailMatches ? 'email' : 'phone';
+  if(channel==='email' && !hasEmailConfig()){
+    msgEl.innerHTML = `<div class="msg err">⚠ Email codes aren't set up for this deployment yet (see EMAIL_SETUP.md).${rec.phone?' Try your registered phone number instead.':''}</div>`;
+    return;
+  }
+  if(channel==='phone' && !hasSmsConfig()){
+    msgEl.innerHTML = `<div class="msg err">⚠ SMS codes aren't set up for this deployment yet (see SMS_SETUP.md).${rec.email?' Try your registered email instead.':''}</div>`;
+    return;
+  }
+  const otp = String(Math.floor(100000 + Math.random()*900000));
+  const dest = channel==='email' ? rec.email : rec.phone;
+  msgEl.innerHTML = '<p class="small">Sending code…</p>';
+  try{
+    if(channel==='phone'){
+      // Flagged test:true, same as the admin's "Send Test SMS" — an account-recovery code
+      // is a platform cost, not something that should eat into a school's parent-SMS credit.
+      const res = await fetch(window.PLATFORM_SMS_ENDPOINT, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({test:true, recipients:[{phone: normalizePhone(rec.phone), message: `Your EduTrack CBC verification code is ${otp}. It expires in 10 minutes. Didn't request this? Ignore this message.`}]})
+      });
+      const data = await res.json();
+      if(!res.ok || !data.ok) throw new Error(data.error || ('HTTP '+res.status));
+    } else {
+      // Sent straight from the browser via EmailJS — no backend involved. The "public key"
+      // is meant to be visible in client code like this; EmailJS's own dashboard is what
+      // controls which templates/services it's allowed to trigger.
+      await emailjs.send(
+        window.PLATFORM_EMAILJS_SERVICE_ID,
+        window.PLATFORM_EMAILJS_TEMPLATE_ID,
+        { to_email: rec.email, subject: 'Your EduTrack CBC verification code',
+          message: `Your verification code is ${otp}. It expires in 10 minutes. Didn't request this? Ignore this email.` },
+        { publicKey: window.PLATFORM_EMAILJS_PUBLIC_KEY }
+      );
+    }
+  }catch(err){
+    msgEl.innerHTML = `<div class="msg err">Could not send the code: ${escapeHtml(String(err.message||err))}</div>`;
+    return;
+  }
+  staffOtpState = {role, schoolCode: code, userId: rec.id, otp, expiresAt: Date.now()+10*60*1000, channel, dest};
+  msgEl.innerHTML = `<div class="msg ok">Code sent to ${escapeHtml(maskContact(dest))}. It expires in 10 minutes.</div>
+    <div class="row" style="margin-top:8px"><div><label>6-digit Code</label><input id="otpCode" maxlength="6" inputmode="numeric"></div></div>
+    <div class="row">
+      <div><label>New Password</label><input type="password" id="otpNewPw"></div>
+      <div><label>Confirm New Password</label><input type="password" id="otpConfPw"></div>
+    </div>
+    <div class="flexbtns">
+      <button onclick="verifyStaffOtp()">Verify &amp; Reset Password</button>
+      <button class="ghost" onclick="sendStaffOtp('${role}')">Resend Code</button>
+    </div>
+    <div id="staffOtpMsg2"></div>`;
+}
+function verifyStaffOtp(){
+  const msgEl = qs('#staffOtpMsg2') || qs('#staffOtpMsg');
+  if(!staffOtpState){ if(msgEl) msgEl.innerHTML = '<div class="msg err">Request a new code first.</div>'; return; }
+  if(Date.now() > staffOtpState.expiresAt){ msgEl.innerHTML = '<div class="msg err">That code has expired — send a new one.</div>'; staffOtpState = null; return; }
+  const entered = (qs('#otpCode').value||'').trim();
+  if(entered !== staffOtpState.otp){ msgEl.innerHTML = '<div class="msg err">Incorrect code.</div>'; return; }
+  const nw = qs('#otpNewPw').value, conf = qs('#otpConfPw').value;
+  if(!nw || nw.length<4){ msgEl.innerHTML = '<div class="msg err">New password must be at least 4 characters.</div>'; return; }
+  if(nw !== conf){ msgEl.innerHTML = '<div class="msg err">New password and confirmation do not match.</div>'; return; }
+  const school = DB.schools[staffOtpState.schoolCode];
+  const list = staffOtpState.role==='dos' ? (school&&school.dos) : (school&&school.teachers);
+  const rec = list && list.find(x=>x.id===staffOtpState.userId);
+  if(!rec){ msgEl.innerHTML = '<div class="msg err">That account no longer exists.</div>'; staffOtpState = null; return; }
+  rec.password = nw;
+  saveDB(DB);
+  staffOtpState = null;
+  const area = qs('#staffRecoveryArea'); if(area){ area.classList.add('hidden'); area.innerHTML = ''; }
+  if(qs('#dpass')) qs('#dpass').value = '';
+  if(qs('#tpass')) qs('#tpass').value = '';
+  toast('Password reset — sign in with your new password');
+}
 async function doDosLogin(){
   const code = qs('#scode').value.trim();
   const u = qs('#duser').value.trim();
@@ -1733,29 +2102,53 @@ async function doTeacherLogin(){
   route();
 }
 // Parent Portal login: instead of a username/password, a parent proves they're looking
-// up their own child by supplying BOTH the learner's full name AND admission number —
-// either one alone is too easy to guess. Both must match the same learner record.
+// up their own child by supplying the learner's full name, admission number, AND a
+// Parent PIN the school gave only to them (see genParentPin / the Learners admin table).
+// Three independent factors: name and admission number are things a classmate, a sibling,
+// or a school notice could plausibly leak, but the PIN is never printed anywhere public and
+// is only ever handed to the parent directly — so guessing all three together is far harder
+// than guessing any one or two. All must match the same learner record.
+function parentCandidateMatches(s, norm, nameInput, admInput, pinInput){
+  if(!s.adm || !s.parentPin) return false; // PIN not yet set up for this learner — never a valid match
+  return norm(s.adm)===norm(admInput) && norm(s.name)===norm(nameInput) && norm(s.parentPin)===norm(pinInput);
+}
 async function doParentLogin(){
   const code = qs('#pcode').value.trim();
   const nameInput = qs('#pname').value.trim();
   const admInput = qs('#padm').value.trim();
-  if(!code || !nameInput || !admInput){ qs('#loginMsg').innerHTML='<div class="msg err">Enter the school code, learner\'s full name, and admission number.</div>'; return; }
+  const pinInput = qs('#ppin').value.trim();
+  if(!code || !nameInput || !admInput || !pinInput){ qs('#loginMsg').innerHTML='<div class="msg err">Enter the school code, learner\'s full name, admission number, and your Parent PIN.</div>'; return; }
   setLoginBusy(true, 'Looking up…');
   const norm = s => String(s||'').trim().toLowerCase();
+  const config = resolveLoginSyncConfig(code);
+  // Lockout check first, before doing any lookup at all: someone brute-forcing name/admission/
+  // PIN combinations for this school code gets stopped here regardless of which path below would
+  // otherwise have handled their guess (see PARENT PORTAL: LOGIN LOCKOUT above).
+  const lockout = await checkParentLockout(code, config);
+  if(lockout.locked){
+    setLoginBusy(false);
+    qs('#loginMsg').innerHTML = `<div class="msg err">Too many failed attempts for this school. Please try again in ${formatLockoutRemaining(lockout.remainingMs)}, or contact the school directly.</div>`;
+    return;
+  }
+  // Generic, identical failure message everywhere below — deliberately doesn't distinguish
+  // "no such learner", "name/admission right but PIN wrong", or "PIN never set up" from one
+  // another. Giving a different message for any of those would let a guesser use the
+  // response itself to confirm a name+admission pair is real even without the PIN.
+  const failMsg = 'No learner found matching those details. Please check with the school and try again.';
   // Fast path: a device that already holds this school locally (e.g. shared with staff,
   // or looked up before) can resolve the learner without a network round trip.
   const cachedFull = DB.schools[code];
-  const cachedMatch = cachedFull && cachedFull.students.find(s => s.adm && norm(s.adm)===norm(admInput) && norm(s.name)===norm(nameInput));
+  const cachedMatch = cachedFull && cachedFull.students.find(s => parentCandidateMatches(s, norm, nameInput, admInput, pinInput));
   if(cachedMatch){
     const access = schoolAccessStatus(cachedFull);
     if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
     if(cachedFull.parentPortalEnabled===false){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">The Parent Portal has been closed by the school. Please contact the school directly for results.</div>'; return; }
     parentSchoolData = buildParentSafeSchool(cachedFull, cachedMatch);
     setSession({role:'parent', schoolCode:code, studentId:cachedMatch.id, label:`${cachedMatch.name} (Parent) · ${cachedFull.name}`});
+    clearParentAttempts(code, config);
     route();
     return;
   }
-  const config = resolveLoginSyncConfig(code);
   // Deliberately NOT bootstrapFromCloudIfNeeded (that pulls the whole school into the
   // shared DB/localStorage, which is right for staff but not for a public parent login —
   // see the note above parentCloudLookup/buildParentSafeSchool). `fullSchool` here is a
@@ -1777,12 +2170,19 @@ async function doParentLogin(){
   const access = schoolAccessStatus(fullSchool);
   if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
   if(fullSchool.parentPortalEnabled===false){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">The Parent Portal has been closed by the school. Please contact the school directly for results.</div>'; return; }
-  const student = fullSchool.students.find(s => s.adm && norm(s.adm)===norm(admInput) && norm(s.name)===norm(nameInput));
-  if(!student){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">No learner found matching that name and admission number. Please check the details with the school and try again.</div>'; return; }
+  const student = fullSchool.students.find(s => parentCandidateMatches(s, norm, nameInput, admInput, pinInput));
+  if(!student){
+    recordParentFailure(code, config);
+    setLoginBusy(false);
+    qs('#loginMsg').innerHTML=`<div class="msg err">${failMsg}</div>`;
+    return;
+  }
   parentSchoolData = buildParentSafeSchool(fullSchool, student);
   setSession({role:'parent', schoolCode:code, studentId:student.id, label:`${student.name} (Parent) · ${fullSchool.name}`});
+  clearParentAttempts(code, config);
   route();
 }
+
 
 /* ============================= ADMIN VIEW ============================= */
 function renderAdmin(){
@@ -1815,6 +2215,7 @@ function renderAdmin(){
     <div id="changeAdminMsg"></div>
   </div>
   <div class="card" id="adminCloudCard">${tplAdminCloud()}</div>
+  <div class="card" id="adminSmsCard">${tplSmsAdmin()}</div>
   <div class="card">
     <h2>🏫 Register a New School</h2>
     <div class="row">
@@ -1833,6 +2234,17 @@ function renderAdmin(){
     </div>
     <div class="flexbtns"><button onclick="createSchoolNow()">➕ Create School</button></div>
     <div id="adminMsg"></div>
+  </div>
+  <div class="card">
+    <h2>🔎 Retrieve a Missing School</h2>
+    <p class="small">Already created somewhere else but not showing in "All Schools" below (e.g. created on a different device/browser)? Look it up by its code and add it back to this list — its data isn't lost, it's just not on this device yet.</p>
+    <div class="row">
+      <div><label>School Code</label><input id="adminLookupCode" placeholder="e.g. 88382912 — or paste a DOS/Teacher login link"></div>
+      <div><label>Sync Code (only if needed — see below)</label><input id="adminLookupSync" placeholder="Paste the school's Sync Code if this deployment has no shared database"></div>
+    </div>
+    <p class="small">Works automatically if this deployment has a shared database (see the banner at the top of this page). Otherwise, ask that school's DOS/HOI for their Sync Code — <b>My Account → Multi-Device Sync → "Get Teacher Sync Link / Code"</b> — and paste it (or the whole link) into either box above.</p>
+    <div class="flexbtns"><button onclick="adminRetrieveSchoolByCode()">🔍 Retrieve School</button></div>
+    <div id="adminLookupMsg"></div>
   </div>
   <div class="card">
     <h2>📋 All Schools (${schools.length}) ${schools.some(s=>s.syncConfig&&s.syncConfig.enabled)?`<button class="ghost" style="font-size:11px;padding:3px 8px;font-weight:600" onclick="refreshAllSchoolsFromCloud(false)">🔄 Refresh from cloud</button>`:''}</h2>
@@ -1995,7 +2407,7 @@ function exportBackup(){
   const blob = new Blob([JSON.stringify(DB,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'asion-analytics-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  a.href = url; a.download = 'edutrack-cbc-backup-'+new Date().toISOString().slice(0,10)+'.json';
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
   toast('Backup file downloaded');
@@ -2156,17 +2568,49 @@ function showLink(code, role){
 }
 
 /* ============================= DOS VIEW ============================= */
-let dosTab = 'classes';
+let dosTab = 'dashboard';
 let gradingClassId = ''; // '' = editing the school-wide default grading; else a grade id being customized
+/* ============================= DOS/HOI: WHATSAPP GROUP PROMPT ============================= */
+// A one-time-per-login popup inviting a DOS/HOI to join the school-admin WhatsApp group.
+// Shown at most once per page load (waGroupPromptShownThisLoad) and never again on this
+// device once dismissed (storageGet/storageSet — persists across sessions, same wrapper the
+// rest of the app uses so it degrades gracefully if storage is blocked). Deliberately never
+// shown to teacher/parent/admin sessions — this is a DOS/HOI-facing invite only.
+const WA_GROUP_URL = 'https://chat.whatsapp.com/IXbofllS4JK2PI1lX2vNTa';
+let waGroupPromptShownThisLoad = false;
+function maybeShowWaGroupPrompt(){
+  if(!session || session.role!=='dos') return;
+  if(waGroupPromptShownThisLoad) return;
+  if(storageGet('cbc_wa_group_dismissed')==='1') return;
+  waGroupPromptShownThisLoad = true;
+  const overlay = document.createElement('div');
+  overlay.id = 'waGroupOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(9,30,55,.55);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;';
+  overlay.innerHTML = `<div class="card" style="max-width:380px;text-align:center">
+    <h2 style="margin-top:0">💬 Join the DOS/HOI WhatsApp Group</h2>
+    <p class="small">Connect with other Directors of Studies and Heads of Institution using this app — ask questions, share tips, and hear about new features first.</p>
+    <div class="flexbtns" style="justify-content:center;margin-top:14px">
+      <a href="${WA_GROUP_URL}" target="_blank" rel="noopener"><button onclick="dismissWaGroupPrompt()">Join the Group</button></a>
+      <button class="ghost" onclick="dismissWaGroupPrompt()">Maybe later</button>
+    </div>
+    <p class="small" style="margin-top:10px"><label><input type="checkbox" id="waGroupDontAsk"> Don't show this again</label></p>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+function dismissWaGroupPrompt(){
+  if(qs('#waGroupDontAsk') && qs('#waGroupDontAsk').checked) storageSet('cbc_wa_group_dismissed','1');
+  const el = qs('#waGroupOverlay'); if(el) el.remove();
+}
 function renderDOS(){
   const school = currentSchool();
   app.innerHTML = `
   <div class="tabs no-print">
-    ${[['classes','🏷 Grades'],['areas','📚 Learning Areas'],['grading','🎯 Grading System'],
+    ${[['dashboard','🏠 Dashboard'],['classes','🏷 Grades'],['areas','📚 Learning Areas'],['grading','🎯 Grading System'],
        ['students','🧑‍🎓 Learners'],['exams','📝 Exams'],['teachers','👩‍🏫 Teachers & Permissions'],
        ['marks','✏️ Enter/Edit Marks'],
        ['assess','🖨 Assessment Sheets'],['analysis','📈 Results Analysis'],['reports','📄 Reports'],['history','🗂 Exam History'],
-       ['profile','🏫 School Details'],['account','🔑 My Account']]
+       ['sms','💬 SMS to Parents'],
+       ['profile','🏫 School Details'],['account','🔑 My Account'],['help','❓ Help / Manual']]
       .map(([k,l])=>`<button class="${dosTab===k?'active':''}" onclick="dosTab='${k}';renderDOS()">${l}</button>`).join('')}
   </div>
   <div class="card small no-print">School: <b>${escapeHtml(school.name)}</b> &nbsp; Code: <b class="school-code">${school.code}</b>
@@ -2174,6 +2618,7 @@ function renderDOS(){
   <div id="dosLinkArea"></div></div>
   <div id="dosContent"></div>`;
   const c = qs('#dosContent');
+  if(dosTab==='dashboard'){ c.innerHTML = tplDashboard(school); if(school.classes.length) runDashboard(); }
   if(dosTab==='classes') c.innerHTML = tplClasses(school);
   if(dosTab==='areas') c.innerHTML = tplAreas(school);
   if(dosTab==='grading') c.innerHTML = tplGrading(school);
@@ -2185,8 +2630,125 @@ function renderDOS(){
   if(dosTab==='analysis'){ c.innerHTML = tplResultsAnalysis(school); raFillExams(); }
   if(dosTab==='reports'){ c.innerHTML = tplReportsPicker(school); if(school.classes.length){ fillRepExams(); fillRepLearners(); } }
   if(dosTab==='history') c.innerHTML = tplHistory(school);
+  if(dosTab==='sms'){ c.innerHTML = tplSms(school); smsFillExamOptions(); }
   if(dosTab==='profile'){ c.innerHTML = tplSchoolProfile(school); initHoiSigPad(); }
   if(dosTab==='account') c.innerHTML = tplAccount(school);
+  if(dosTab==='help') c.innerHTML = tplHelp(school);
+}
+/* --- Help / User Manual (DOS/HOI portal) ---
+   EDIT THIS WHENEVER THE APP CHANGES: everything the DOS/HOI sees under Help lives in
+   the single HELP_SECTIONS array below. Each entry is {title, body} where body is a
+   plain HTML string (no need to touch tplHelp() itself for ordinary content changes —
+   just add/edit/remove entries here, or change wording, tab names, switches, etc. to
+   match whatever the app now actually does). Keep body content free of backticks, or
+   escape any backtick you do need with \\`. */
+const HELP_SECTIONS = [
+  { title: '📖 What is this app?', body: `
+    <p>This app is a learner assessment &amp; reporting platform for CBC (Competency-Based Curriculum) schools.
+    It records marks, automatically grades them against the official CBC rubric, and generates printable learner
+    progress reports and assessment sheets — no separate software or server needed. Everything runs from one link,
+    and works from a phone, tablet or computer browser.</p>
+    <p>Three kinds of people use it: the <b>DOS/HOI</b> (you) — sets up the school, adds teachers and learners,
+    controls exams, and has access to every feature; <b>Teachers</b> — enter marks for the grade(s)/learning area(s)
+    they're assigned to, and (if you allow it) print reports and assessment sheets; <b>Parents</b> — look up their
+    own child's results through a public link you share, with no login of their own.</p>` },
+
+  { title: '🧭 Menu overview', body: `
+    <table class="tbl"><tbody>
+      <tr><td><b>Dashboard</b></td><td>Snapshot of the latest results: school mean, best-performing grade, strongest/weakest learning areas, top learner per grade.</td></tr>
+      <tr><td><b>Grades</b></td><td>Create and manage the school's grades/classes.</td></tr>
+      <tr><td><b>Learning Areas</b></td><td>Create and manage the subjects/learning areas taught.</td></tr>
+      <tr><td><b>Grading System</b></td><td>View the CBC rubric the app grades against (see below).</td></tr>
+      <tr><td><b>Learners</b></td><td>Add, edit, move learners between grades; set each learner's Parent Portal PIN.</td></tr>
+      <tr><td><b>Exams</b></td><td>Create an exam for a grade/term; open or close it for mark entry; approve/disapprove its results.</td></tr>
+      <tr><td><b>Teachers &amp; Permissions</b></td><td>Add teacher accounts, assign grade/learning-area combinations, set their permissions.</td></tr>
+      <tr><td><b>Enter/Edit Marks</b></td><td>Enter or correct marks directly, for any grade or learning area.</td></tr>
+      <tr><td><b>Assessment Sheets</b></td><td>Generate/print a class assessment sheet for an exam, or a cumulative end-of-term sheet.</td></tr>
+      <tr><td><b>Results Analysis</b></td><td>Deeper analysis than the dashboard: rank grades, compare learning areas, drill into an exam.</td></tr>
+      <tr><td><b>Reports</b></td><td>Generate and print individual learner progress reports.</td></tr>
+      <tr><td><b>Exam History</b></td><td>Look back at past exams and their results.</td></tr>
+      <tr><td><b>SMS to Parents</b></td><td>Send results/announcements by SMS (requires SMS to be configured).</td></tr>
+      <tr><td><b>School Details</b></td><td>Edit school name, address, contact details, motto, badge/crest — used on every printed report.</td></tr>
+      <tr><td><b>My Account</b></td><td>Set your own email/phone for password-reset codes; manage cloud sync; download a backup.</td></tr>
+    </tbody></table>` },
+
+  { title: '👩‍🏫 Teacher permissions (5 switches)', body: `
+    <p>When adding or editing a teacher under <b>Teachers &amp; Permissions</b>, five switches control what that teacher can do:</p>
+    <ul>
+      <li><b>Can Print Reports?</b> — lets the teacher generate and print learner progress reports.</li>
+      <li><b>Can Print Assessment Sheets?</b> — lets the teacher generate and print class assessment sheets.</li>
+      <li><b>Can Approve/Disapprove Results?</b>, <b>Can Decide Edit Requests?</b>, <b>Can Open/Close Entry?</b> — these
+      three only take effect for grades where the teacher is set as <b>Class Teacher</b>. They let a class teacher
+      manage their own grade's exam sign-off without needing you every time.</li>
+    </ul>
+    <p class="small">You (the DOS/HOI) can always act directly on any exam regardless of these switches.</p>` },
+
+  { title: '🔓 Opening/closing entry, approvals &amp; edit requests', body: `
+    <p>Each exam has a mark-entry period that you (or an authorised class teacher) open and close. Once an exam is
+    closed for entry, a teacher can no longer save mark changes directly — instead, any further change is submitted
+    as an <b>Edit Request</b>, which appears under that exam for you (or the class teacher, if permitted) to approve
+    or reject. This keeps a clear record of who changed what after results have been signed off.</p>
+    <p>Results themselves move through a simple approval flow — <i>pending</i>, then <i>approved</i> or
+    <i>disapproved</i> — before a report or assessment sheet is treated as final.</p>` },
+
+  { title: '👪 Parent Portal switch', body: `
+    <p>Under <b>School Details</b>, you can turn the whole Parent Portal on or off for the school. Turning it off
+    means no parent can log in at all, regardless of any per-exam setting. To hide just <i>one</i> exam from parents
+    while keeping the portal open for everything else, use the <b>Parent Access</b> toggle on that exam instead
+    (under Exams).</p>
+    <p class="small">A parent never gets a username/password — they open a link you share and enter the School Code,
+    the learner's Admission Number, and a PIN if you've set one.</p>` },
+
+  { title: '☁️ Multi-device sync &amp; backups', body: `
+    <p>By default, all data stays on the device it was entered on. Turn on <b>Multi-Device Sync</b> (My Account) so
+    the school's data automatically appears on any device a DOS/HOI or teacher signs in on. You can also link your
+    login to a cloud account under My Account, so you never have to re-type the admin password on a new device.</p>
+    <p class="small">Regardless of sync settings, it's good practice to occasionally download a backup copy of the
+    school's data (under My Account) and keep it somewhere safe — a shared drive, an email to yourself, or a USB drive.</p>` },
+
+  { title: '🔑 Forgot password? (email/SMS reset codes)', body: `
+    <p>On the login screen, a DOS/HOI or Teacher who has forgotten their password can tap "Forgot password?" and
+    enter the email or phone registered on their account. A 6-digit code is sent to it, valid for 10 minutes, which
+    can then be used to set a new password.</p>
+    <ul>
+      <li>This only works for an email/phone set up in advance — under My Account for you, or in a teacher's own
+      account card, or added for them by you in the Teachers table.</li>
+      <li>If neither has been set up yet, the message "codes aren't set up for this deployment yet" shows instead.</li>
+      <li>A learner's Parent Portal PIN is unrelated — it's reset by you directly under Learners, not through
+      "Forgot password?".</li>
+    </ul>` },
+
+  { title: '🎯 The CBC grading scale', body: `
+    <table class="tbl"><thead><tr><th>Level</th><th>Meaning</th><th>Mark range</th><th>Typical remark</th></tr></thead>
+    <tbody>
+      <tr><td>EE</td><td>Exceeding Expectation</td><td>80–100%</td><td>Excellent work, keep soaring high!</td></tr>
+      <tr><td>ME</td><td>Meeting Expectation</td><td>60–79%</td><td>Good performance, aim higher next term.</td></tr>
+      <tr><td>AE</td><td>Approaching Expectation</td><td>40–59%</td><td>Fair effort, more practice needed.</td></tr>
+      <tr><td>BE</td><td>Below Expectation</td><td>0–39%</td><td>Needs serious improvement and support.</td></tr>
+    </tbody></table>
+    <p class="small">Every mark entered is graded against this rubric automatically — there is no manual grading step.</p>` },
+
+  { title: '🛠 Troubleshooting &amp; FAQ', body: `
+    <p><b>"School code not found."</b> — Double-check the 8-digit School Code. If the school was only just created
+    on another device and Multi-Device Sync isn't on yet, it may take a moment to appear on this one.</p>
+    <p><b>"Email codes aren't set up for this deployment yet."</b> — The person has an email on file, but this
+    deployment hasn't had email delivery configured; use a registered phone number instead if SMS is configured.</p>
+    <p><b>"The Parent Portal has been closed by the school."</b> — You've switched the Parent Portal off entirely
+    under School Details.</p>
+    <p><b>A teacher can't see a grade/learning area they expect to teach.</b> — Check their assignment under
+    Teachers &amp; Permissions; a teacher only sees the combinations they've been explicitly assigned to.</p>
+    <p><b>Marks won't save.</b> — The exam may have been closed for entry; any further change must go in as an Edit
+    Request for you (or an authorised class teacher) to approve.</p>` },
+];
+function tplHelp(school){
+  return `<div class="card"><h2>❓ Help / User Manual</h2>
+  <p class="small">A quick reference for running the school on this app. Ask whoever manages this deployment if
+  something here doesn't match what you're seeing.</p>
+  ${HELP_SECTIONS.map((s,i)=>`<details ${i===0?'open':''} style="margin-top:10px;border:1px solid var(--border);border-radius:8px;padding:8px 12px">
+    <summary style="cursor:pointer;font-weight:600">${s.title}</summary>
+    <div style="margin-top:8px">${s.body}</div>
+  </details>`).join('')}
+  </div>`;
 }
 /* --- School Details (self-service: name, HOI, address, email, phone) --- */
 // These show up automatically on every printed report card, assessment sheet and
@@ -2340,7 +2902,7 @@ function tplAccount(school){
   const me = school.dos.find(d=>d.id===session.userId);
   const sc = school.syncConfig;
   return `<div class="card"><h2>🔑 My Account</h2>
-  <p class="small">Username: <b>${escapeHtml(me?me.username:'-')}</b>. Forgot your password? Ask your platform administrator to reset it.</p>
+  <p class="small">Username: <b>${escapeHtml(me?me.username:'-')}</b>.</p>
   <div class="row">
     <div><label>Your Display Name</label><input id="myName" value="${escapeHtml(me?me.name:'')}" placeholder="e.g. Mrs. Jane Doe"></div>
     <div style="align-self:flex-end"><button class="ghost" onclick="saveMyName()">Save Name</button></div>
@@ -2350,6 +2912,12 @@ function tplAccount(school){
     <div><label>School Code</label><input value="${escapeHtml(school.code)}" readonly style="font-weight:700;letter-spacing:2px"></div>
     <div><label>Subscription Status</label><div style="padding:9px 0">${schoolStatusLabel(school)}</div></div>
   </div>
+  <div class="row">
+    <div><label>Your Email</label><input id="myEmail" type="email" value="${escapeHtml(me?(me.email||''):'')}" placeholder="for password-reset codes"></div>
+    <div><label>Your Phone</label><input id="myPhone" value="${escapeHtml(me?(me.phone||''):'')}" placeholder="for password-reset codes"></div>
+    <div style="align-self:flex-end"><button class="ghost" onclick="saveMyContact()">Save Contact</button></div>
+  </div>
+  <p class="small">Forgot your password on the login screen? Set an email or phone here first (while you're still signed in) — "Forgot password?" sends a code to whichever is on file.</p>
   <div class="row">
     <div><label>Current Password</label><input type="password" id="curPw"></div>
     <div><label>New Password</label><input type="password" id="newPw"></div>
@@ -2446,6 +3014,15 @@ function saveMyName(){
   me.name = name;
   saveDB(DB);
   qs('#acctMsg').innerHTML = '<div class="msg ok">Name saved.</div>';
+}
+function saveMyContact(){
+  const school = currentSchool();
+  const me = school.dos.find(d=>d.id===session.userId);
+  if(!me) return;
+  me.email = qs('#myEmail').value.trim();
+  me.phone = qs('#myPhone').value.trim();
+  saveDB(DB);
+  qs('#acctMsg').innerHTML = '<div class="msg ok">Contact details saved.</div>';
 }
 function changeDosPassword(){
   const school = currentSchool();
@@ -2724,8 +3301,10 @@ function studentRowsHTML(school){
     return `<tr><td><input value="${escapeHtml(s.adm||'')}" placeholder="— none —" style="min-width:90px" onchange="updStudentAdm('${s.id}', this.value, this)"></td>
     <td><input value="${escapeHtml(s.name)}" style="min-width:170px" onchange="updStudentName('${s.id}', this.value, this)"></td>
     <td><select onchange="updStudentClass('${s.id}', this.value, this)">${cls?'':'<option value="" selected>— Unassigned —</option>'}${school.classes.map(c=>`<option value="${c.id}" ${c.id===s.classId?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></td>
+    <td><input value="${escapeHtml(s.parentPin||'')}" placeholder="— not set —" style="min-width:90px" inputmode="numeric" onchange="updStudentPin('${s.id}', this.value, this)"> <button class="ghost" title="Generate a new PIN" onclick="regenStudentPin('${s.id}')">🔁</button></td>
+    <td><input value="${escapeHtml(s.parentPhone||'')}" placeholder="e.g. 0712345678" style="min-width:120px" inputmode="tel" onchange="updStudentPhone('${s.id}', this.value, this)"></td>
     <td><button class="danger" onclick="delStudent('${s.id}')">✕</button></td></tr>`;
-  }).join('') || `<tr><td colspan="4" class="small">${school.students.length?'No learners match your filter.':'No learners yet.'}</td></tr>`;
+  }).join('') || `<tr><td colspan="6" class="small">${school.students.length?'No learners match your filter.':'No learners yet.'}</td></tr>`;
 }
 function stuCountText(school){ return `Showing ${filteredStudents(school).length} of ${school.students.length} learner(s)`; }
 function renderStudentRows(){
@@ -2739,20 +3318,30 @@ function tplStudents(school){
     <div><label>Admission No. <span class="small">(optional)</span></label><input id="stuAdm" placeholder="Leave blank if not assigned yet"></div>
     <div><label>Learner Name</label><input id="stuName"></div>
     <div><label>Grade</label><select id="stuClass">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
+    <div><label>Parent Phone <span class="small">(optional, for SMS)</span></label><input id="stuPhone" placeholder="e.g. 0712345678"></div>
     <div style="align-self:flex-end"><button onclick="addStudent()">Add Learner</button></div>
   </div>
-  <p class="small">Bulk paste — one learner per line, "Admission,Name" (blank admission OK):</p>
-  <textarea id="bulkStu" rows="3" placeholder="1001,John Mwangi
-,Faith Wanjiru
+  <p class="small">Bulk paste — one learner per line, "Admission,Name,ParentPhone" (blank admission or phone OK):</p>
+  <textarea id="bulkStu" rows="3" placeholder="1001,John Mwangi,0712345678
+,Faith Wanjiru,
 Amina Hassan"></textarea>
   <div class="flexbtns"><button class="ghost" onclick="bulkAddStudents()">Add Bulk to Selected Grade</button></div>
-  <p class="small" style="margin-top:12px">Edit a learner directly in the table below. Moving grades keeps their past results filed under the old one.</p>
+  <p class="small" style="margin-top:12px">Edit a learner directly in the table below, including their <b>Parent PIN</b> — the fourth Parent Portal login factor. Hand each learner's PIN to that learner's parent directly (not on a public notice); it's never shown anywhere else in the app. Moving grades keeps their past results filed under the old one.</p>
+  <div class="flexbtns"><button class="ghost" onclick="fillMissingParentPins()">🔑 Generate PINs for learners without one</button></div>
   <div class="row">
     <div><label>Filter by Grade</label><select id="stuFilter" onchange="stuFilterGrade=this.value;renderStudentRows()"><option value="">All grades</option>${school.classes.map(c=>`<option value="${c.id}" ${c.id===stuFilterGrade?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
     <div><label>Search name / admission no.</label><input id="stuSearch" value="${escapeHtml(stuSearch)}" oninput="stuSearch=this.value;renderStudentRows()" placeholder="Type to search…"></div>
   </div>
   <p class="small" id="stuCount">${stuCountText(school)}</p>
-  <table style="margin-top:6px"><tr><th>Adm No.</th><th>Name</th><th>Grade</th><th>Actions</th></tr><tbody id="stuRows">${studentRowsHTML(school)}</tbody></table></div>`;
+  <table style="margin-top:6px"><tr><th>Adm No.</th><th>Name</th><th>Grade</th><th>Parent PIN</th><th>Parent Phone</th><th>Actions</th></tr><tbody id="stuRows">${studentRowsHTML(school)}</tbody></table></div>`;
+}
+// Saves the phone number results/announcements SMS are sent to for this learner's parent.
+// Accepts any format the school types (spaces, +254, leading 0, etc.) — normalized to
+// international format only at send time (see normalizePhone) so the field stays easy to edit.
+function updStudentPhone(id, val, inputEl){
+  const school = currentSchool(); const s = school.students.find(x=>x.id===id); if(!s) return;
+  s.parentPhone = val.trim(); if(inputEl) inputEl.value = s.parentPhone;
+  saveDB(DB); toast(s.parentPhone ? 'Parent phone number updated' : 'Parent phone number cleared');
 }
 // Correct a learner's name in place. Marks are keyed on the learner's internal id, so
 // nothing already recorded is affected — reports and sheets simply show the new spelling.
@@ -2780,12 +3369,13 @@ function updStudentClass(id, newClassId, selectEl){
 }
 function addStudent(){
   const adm = qs('#stuAdm').value.trim(), name = qs('#stuName').value.trim(), classId = qs('#stuClass').value;
+  const parentPhone = qs('#stuPhone') ? qs('#stuPhone').value.trim() : '';
   if(!name||!classId){ toast('Enter at least the learner name and grade','err'); return; }
   const school = currentSchool();
   // Uniqueness only matters when an admission number was actually given — multiple
   // learners are allowed to have no admission number at the same time.
   if(adm && school.students.some(s=>s.adm===adm)){ toast('Admission number already exists','err'); return; }
-  school.students.push({id:uid('stu_'), adm, name: name.replace(/\s+/g,' '), classId}); saveDB(DB); renderDOS();
+  school.students.push({id:uid('stu_'), adm, name: name.replace(/\s+/g,' '), classId, parentPhone, parentPin: genParentPin()}); saveDB(DB); renderDOS();
 }
 // Lets HOI/DOS correct a learner's admission number directly from the Learners table
 // (e.g. it was mistyped or a number gets assigned later) without removing and re-adding
@@ -2803,21 +3393,61 @@ function updStudentAdm(id, val, inputEl){
   }
   s.adm = adm; saveDB(DB); toast('Admission number updated');
 }
+// Lets HOI/DOS set a specific Parent PIN by hand (e.g. the school wants something the
+// parent will find memorable) instead of the random one generated at creation.
+function updStudentPin(id, val, inputEl){
+  const pin = val.trim();
+  const school = currentSchool();
+  const s = school.students.find(x=>x.id===id);
+  if(!s) return;
+  s.parentPin = pin; if(inputEl) inputEl.value = pin;
+  saveDB(DB); toast(pin ? 'Parent PIN updated' : 'Parent PIN cleared — this learner cannot use the Parent Portal until a new PIN is set');
+}
+// Replaces a learner's PIN with a fresh random one — e.g. if it's been shared too widely,
+// or the parent forgot it and the school wants to reissue rather than look up the old one.
+// The old PIN stops working the moment this saves, so this should only be done right before
+// handing the new one to the parent.
+function regenStudentPin(id){
+  const school = currentSchool();
+  const s = school.students.find(x=>x.id===id);
+  if(!s) return;
+  if(!confirm(`Generate a new Parent PIN for ${s.name}? Their current PIN will stop working immediately.`)) return;
+  s.parentPin = genParentPin();
+  saveDB(DB); renderStudentRows();
+  toast(`New Parent PIN for ${s.name}: ${s.parentPin}`);
+}
+// One-time cleanup for schools that had learners before the Parent PIN feature existed:
+// fills in a random PIN for every learner who doesn't have one yet, without touching
+// anyone who already has a PIN issued (so nothing already handed to a parent changes).
+function fillMissingParentPins(){
+  const school = currentSchool();
+  const missing = school.students.filter(s=>!s.parentPin);
+  if(!missing.length){ toast('Every learner already has a Parent PIN'); return; }
+  if(!confirm(`Generate a Parent PIN for the ${missing.length} learner(s) who don't have one yet? You'll need to hand each one to that learner's parent.`)) return;
+  missing.forEach(s=>{ s.parentPin = genParentPin(); });
+  saveDB(DB); renderStudentRows();
+  toast(`Generated ${missing.length} new Parent PIN(s)`);
+}
 function bulkAddStudents(){
   const classId = qs('#stuClass').value; const school = currentSchool();
   const lines = qs('#bulkStu').value.split('\n').map(l=>l.trim()).filter(Boolean);
   let added=0;
   lines.forEach(l=>{
-    let adm='', name='';
+    let adm='', name='', parentPhone='';
     if(l.includes(',')){
-      const [a,...rest] = l.split(',');
-      adm = a.trim(); name = rest.join(',').trim();
+      const parts = l.split(',');
+      adm = parts[0].trim();
+      // Name is everything between the admission no. and a trailing phone column (if any),
+      // rejoined with commas so a name that itself contains a comma still survives intact.
+      const nameParts = parts.length>2 ? parts.slice(1,-1) : parts.slice(1);
+      name = nameParts.join(',').trim();
+      parentPhone = parts.length>2 ? parts[parts.length-1].trim() : '';
     } else {
       name = l; // no comma at all → treat the whole line as a name with no admission number
     }
     if(!name) return;
     if(adm && school.students.some(s=>s.adm===adm)) return; // skip duplicate admission numbers
-    school.students.push({id:uid('stu_'), adm, name, classId}); added++;
+    school.students.push({id:uid('stu_'), adm, name, classId, parentPhone, parentPin: genParentPin()}); added++;
   });
   saveDB(DB); toast(added+' learners added'); renderDOS();
 }
@@ -3174,11 +3804,16 @@ function tplTeachers(school){
     <div><label>Teacher Name</label><input id="teName"></div>
     <div><label>Username</label><input id="teUser"></div>
     <div><label>Password</label><input id="tePass" placeholder="leave blank to default to tea123"></div>
+    <div><label>Email <span class="small">(optional)</span></label><input id="teEmail" type="email" placeholder="for password-reset codes"></div>
+    <div><label>Phone <span class="small">(optional)</span></label><input id="tePhone" placeholder="for password-reset codes"></div>
   </div>
   <div class="flexbtns"><button onclick="addTeacher()">➕ Add Teacher</button></div>
-  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Assigned Grade / Learning Area</th><th>Class Teacher For</th><th>Can Print Reports?</th><th>Can Print Assessment Sheets?</th><th>Can Approve/<br>Disapprove Results?</th><th>Can Decide Edit Requests?</th><th>Can Open/Close Entry?</th><th>Actions</th></tr>
+  <p class="small">Email/phone are only used so a teacher can reset a forgotten password themselves via a code sent to them — leave blank and they'll need to ask you instead. You (or the teacher, once logged in) can add or edit these later in the table below.</p>
+  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Assigned Grade / Learning Area</th><th>Class Teacher For</th><th>Can Print Reports?</th><th>Can Print Assessment Sheets?</th><th>Can Approve/<br>Disapprove Results?</th><th>Can Decide Edit Requests?</th><th>Can Open/Close Entry?</th><th>Actions</th></tr>
   ${school.teachers.map(t=>`<tr>
     <td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.username)}</td>
+    <td><input value="${escapeHtml(t.email||'')}" placeholder="email" onchange="setTeacherContact('${t.id}','email',this.value)"></td>
+    <td><input value="${escapeHtml(t.phone||'')}" placeholder="phone" onchange="setTeacherContact('${t.id}','phone',this.value)"></td>
     <td>
       <select onchange="assignTeacher('${t.id}',this.value)">
         <option value="">-- assign --</option>
@@ -3205,7 +3840,7 @@ function tplTeachers(school){
     <td><input type="checkbox" ${t.canApproveEditRequests?'checked':''} onchange="toggleTeacherPerm('${t.id}','canApproveEditRequests',this.checked)"></td>
     <td><input type="checkbox" ${t.canManageEntry?'checked':''} onchange="toggleTeacherPerm('${t.id}','canManageEntry',this.checked)"></td>
     <td><button class="ghost" onclick="resetTeacherPassword('${t.id}')">🔑 Reset Password</button> <button class="danger" onclick="delTeacher('${t.id}')">✕</button></td>
-  </tr>`).join('') || '<tr><td colspan="10" class="small">No teachers yet.</td></tr>'}
+  </tr>`).join('') || '<tr><td colspan="12" class="small">No teachers yet.</td></tr>'}
   </table>
   <p class="small" style="margin-top:8px"><b>Class Teacher For</b> marks which grade(s) a teacher is class teacher of. A grade can have more than one.</p>
   <p class="small">The next three permissions only apply to grade(s) checked under <b>Class Teacher For</b>, letting that teacher handle their own grade's exam sign-off without waiting on you: <b>Approve/Disapprove Results</b>, <b>Decide Edit Requests</b>, and <b>Open/Close Entry</b>. You can always act directly on any exam yourself regardless.</p>
@@ -3221,13 +3856,24 @@ function toggleClassTeacherOf(tid,classId,checked){
 function addTeacher(){
   const name=qs('#teName').value.trim(), username=qs('#teUser').value.trim();
   let password=qs('#tePass').value.trim();
+  const email=qs('#teEmail').value.trim(), phone=qs('#tePhone').value.trim();
   if(!name||!username){ toast('Fill in name & username','err'); return; }
   if(!password) password = 'tea123';
   const school = currentSchool();
   if(school.teachers.some(t=>t.username===username)){ toast('That username is already taken','err'); return; }
-  school.teachers.push({id:uid('t_'), name, username, password, assignments:[], canPrint:true, canPrintAssess:false,
+  school.teachers.push({id:uid('t_'), name, username, password, email, phone, assignments:[], canPrint:true, canPrintAssess:false,
     classTeacherOf:[], canApproveResults:false, canApproveEditRequests:false, canManageEntry:false});
   saveDB(DB); toast(`Teacher added. Password: ${password}`); renderDOS();
+}
+// Lets the DOS/HOI (from this table) or the teacher themselves (from My Account, once
+// logged in) keep a registered email/phone on file — the only thing "Forgot password?"
+// on the login screen checks against before it will send that teacher a reset code.
+function setTeacherContact(tid, field, value){
+  const t = currentSchool().teachers.find(x=>x.id===tid);
+  if(!t) return;
+  t[field] = value.trim();
+  saveDB(DB);
+  toast('Saved');
 }
 function assignTeacher(tid,val){
   if(!val) return;
@@ -3247,6 +3893,44 @@ function toggleTeacherPerm(tid,perm,val){
 function delTeacher(tid){
   if(!confirm('Remove this teacher?')) return;
   const school = currentSchool(); school.teachers = school.teachers.filter(t=>t.id!==tid); saveDB(DB); renderDOS();
+}
+// A teacher's own small self-service card — email/phone (so "Forgot password?" on the
+// login screen has something to send a code to) and their own password change. Kept
+// separate from the DOS/HOI's fuller "My Account" tab since a teacher has no other tabs.
+function tplTeacherAccount(t){
+  return `<div class="card no-print"><h2>🔑 My Account</h2>
+  <div class="row">
+    <div><label>Your Email</label><input id="myTEmail" type="email" value="${escapeHtml(t.email||'')}" placeholder="for password-reset codes"></div>
+    <div><label>Your Phone</label><input id="myTPhone" value="${escapeHtml(t.phone||'')}" placeholder="for password-reset codes"></div>
+    <div style="align-self:flex-end"><button class="ghost" onclick="saveMyTeacherContact()">Save Contact</button></div>
+  </div>
+  <p class="small">Forgot your password on the login screen? Set an email or phone here first (while you're still signed in) — "Forgot password?" sends a code to whichever is on file.</p>
+  <div class="row">
+    <div><label>Current Password</label><input type="password" id="curTPw"></div>
+    <div><label>New Password</label><input type="password" id="newTPw"></div>
+    <div><label>Confirm New Password</label><input type="password" id="confTPw"></div>
+    <div style="align-self:flex-end"><button onclick="changeTeacherPassword()">Update Password</button></div>
+  </div>
+  <div id="tAcctMsg"></div>
+  </div>`;
+}
+function saveMyTeacherContact(){
+  const t = currentTeacher(); if(!t) return;
+  t.email = qs('#myTEmail').value.trim();
+  t.phone = qs('#myTPhone').value.trim();
+  saveDB(DB);
+  qs('#tAcctMsg').innerHTML = '<div class="msg ok">Contact details saved.</div>';
+}
+function changeTeacherPassword(){
+  const t = currentTeacher();
+  const cur = qs('#curTPw').value, nw = qs('#newTPw').value, conf = qs('#confTPw').value;
+  if(!t){ qs('#tAcctMsg').innerHTML='<div class="msg err">Account not found.</div>'; return; }
+  if(t.password !== cur){ qs('#tAcctMsg').innerHTML='<div class="msg err">Current password is incorrect.</div>'; return; }
+  if(!nw || nw.length<4){ qs('#tAcctMsg').innerHTML='<div class="msg err">New password must be at least 4 characters.</div>'; return; }
+  if(nw !== conf){ qs('#tAcctMsg').innerHTML='<div class="msg err">New password and confirmation do not match.</div>'; return; }
+  t.password = nw; saveDB(DB);
+  qs('#tAcctMsg').innerHTML='<div class="msg ok">Password updated.</div>';
+  qs('#curTPw').value=''; qs('#newTPw').value=''; qs('#confTPw').value='';
 }
 function resetTeacherPassword(tid){
   const school = currentSchool();
@@ -3423,10 +4107,18 @@ function renderTeacher(){
   ${chips || '<span class="small">No assignments yet — contact your DOS/HOI.</span>'}
   <p class="small" style="margin-top:8px">Access: ✏️ Enter marks${t.canPrint?' · 📄 Reports':''}${t.canPrintAssess?' · 🖨 Assessment sheets':''}${classTeacherNames.length?` · 📋 Class Teacher — ${classTeacherNames.map(escapeHtml).join(', ')}`:''}</p>
   </div>`;
+  const acct = tplTeacherAccount(t);
   const ctTools = tplClassTeacherExams(school, t);
-  if(!myClasses.length){ app.innerHTML = welcome + ctTools; return; }
+  if(!myClasses.length){ app.innerHTML = welcome + acct + ctTools; return; }
+  const dash = `<div class="card"><h2>🏠 My Dashboard</h2>
+  <p class="small no-print">Snapshot of your own assigned grade(s)/learning area(s) — mean, top learner, and a stream comparison where you teach the same subject in more than one grade.</p>
+  <div class="row no-print">
+    <div><label>Term</label><select id="tdashTerm" onchange="runTeacherDashboard()"></select></div>
+    <div><label>Year</label><input id="tdashYear" type="number"></div>
+  </div>
+  <div id="tdashArea"></div></div>`;
   const classOpts = myClasses.map(cid=>{const c=school.classes.find(x=>x.id===cid);return `<option value="${cid}">${escapeHtml(c.name)}</option>`;}).join('');
-  app.innerHTML = welcome + ctTools + `
+  app.innerHTML = welcome + acct + dash + ctTools + `
   <div class="card"><h2 class="no-print">✏️ Enter Marks</h2>
   <div class="row no-print">
     <div><label>Grade</label><select id="tClass" onchange="renderTeacherAreaOptions()">${classOpts}</select></div>
@@ -3454,6 +4146,8 @@ function renderTeacher(){
   </div>` : ''}
   ${t.canPrintAssess ? tplTeacherAssessPicker(school, myClasses) : ''}
   ${t.canPrintAssess ? `<div class="card"><h2 class="no-print">🖨 Grade List of Previous Exams</h2><div id="teacherHistory"></div></div>` : ''}`;
+  initTeacherDashboardControls();
+  runTeacherDashboard();
   renderTeacherAreaOptions();
   renderTeacherApprovals();
   if(t.canPrintAssess) renderTeacherHistory();
@@ -3985,6 +4679,148 @@ function runResultsAnalysis(){
   </div>`;
 }
 
+/* ============================= DASHBOARD (landing page) ============================= */
+// Shown first, before the DOS/HOI taps into any menu tab. Auto-computes the snapshot
+// for the most recent term/year that actually has marks entered — no picking required —
+// but still lets them switch term/year if they want an older snapshot.
+function latestDataTermYear(school){
+  const combos = {};
+  school.exams.forEach(e=>{
+    if(school.marks[e.id] && Object.keys(school.marks[e.id]).length) combos[e.year+'|'+e.term] = {year:e.year, term:e.term};
+  });
+  const list = Object.values(combos);
+  if(!list.length) return null;
+  const tn = t=>Number(t.slice(-1));
+  list.sort((a,b)=> b.year-a.year || tn(b.term)-tn(a.term));
+  return list[0];
+}
+function tplDashboard(school){
+  if(!school.classes.length){
+    return `<div class="card"><h2>🏠 Dashboard</h2><p class="small">Add your grades (🏷 Grades) and enter marks to see a results snapshot here as soon as data comes in.</p></div>`;
+  }
+  const latest = latestDataTermYear(school), now = new Date().getFullYear();
+  const term = latest ? latest.term : 'Term 1', year = latest ? latest.year : now;
+  return `<div class="card"><h2>🏠 Dashboard</h2>
+  <p class="small no-print">Snapshot of the latest results across every grade — school mean, grade comparison, best learner and best learning area per grade. Switch term/year below for an older snapshot.</p>
+  <div class="row no-print">
+    <div><label>Term</label><select id="dashTerm" onchange="runDashboard()">${['Term 1','Term 2','Term 3'].map(t=>`<option ${t===term?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div><label>Year</label><input id="dashYear" type="number" value="${year}" onchange="runDashboard()"></div>
+  </div>
+  <div id="dashArea"></div></div>`;
+}
+function runDashboard(){
+  const school = currentSchool(), target = qs('#dashArea');
+  const term = qs('#dashTerm').value, year = Number(qs('#dashYear').value);
+  const stats = raCompute(school, term, year, '');
+  if(!stats.length){
+    target.innerHTML = `<p class="small">No marks recorded yet for ${term} ${year}. Enter marks under ✏️ Enter/Edit Marks, or pick a different term/year above.</p>`;
+    return;
+  }
+  const ranked = stats.slice(); raRank(ranked,'mean','rank');
+  const best = ranked.filter(r=>r.rank===1);
+  const nAll = stats.reduce((s,r)=>s+r.assessed,0);
+  const schoolMean = stats.reduce((s,r)=>s+r.sumMeans,0)/nAll;
+  const subj = {};
+  stats.forEach(r=>r.areas.forEach(a=>{ if(a.avg==null) return; const o=subj[a.name]=subj[a.name]||{sum:0,n:0}; o.sum+=a.avg*r.assessed; o.n+=r.assessed; }));
+  const subjects = Object.entries(subj).map(([name,o])=>({name, mean:o.sum/o.n})).sort((a,b)=>b.mean-a.mean);
+  const topPerGrade = ranked.map(r=>{
+    const sorted = r.lrn.slice().sort((a,b)=>b.mean-a.mean);
+    const topMean = sorted.length ? sorted[0].mean : null;
+    return {cls:r.cls, winners: sorted.filter(l=>l.mean===topMean), mean: topMean};
+  });
+  const bestAreaPerGrade = ranked.map(r=>{
+    const withScores = r.areas.filter(a=>a.avg!=null).sort((a,b)=>b.avg-a.avg);
+    return {cls:r.cls, area: withScores[0] || null};
+  });
+  target.innerHTML = `
+  <div class="dash-stats">
+    <div class="dash-card"><div class="dash-num">${schoolMean.toFixed(1)}%</div><div class="dash-lbl">School Mean</div></div>
+    <div class="dash-card"><div class="dash-num">${best.map(r=>escapeHtml(r.cls.name)).join(', ')}</div><div class="dash-lbl">Best Grade (${best[0].mean.toFixed(1)}%)</div></div>
+    <div class="dash-card"><div class="dash-num">${subjects.length?escapeHtml(subjects[0].name):'—'}</div><div class="dash-lbl">Strongest Learning Area${subjects.length?' ('+subjects[0].mean.toFixed(1)+'%)':''}</div></div>
+    <div class="dash-card"><div class="dash-num">${subjects.length?escapeHtml(subjects[subjects.length-1].name):'—'}</div><div class="dash-lbl">Weakest Learning Area${subjects.length?' ('+subjects[subjects.length-1].mean.toFixed(1)+'%)':''}</div></div>
+    <div class="dash-card"><div class="dash-num">${nAll} of ${school.students.length}</div><div class="dash-lbl">Learners Assessed</div></div>
+  </div>
+  <div class="ra-sec" style="margin-top:16px"><h3 style="color:var(--navy);margin:0 0 6px">Grade Comparison</h3>
+  <table class="ra-table"><tr><th>Rank</th><th>Grade</th><th>Assessed</th><th>Mean %</th><th>Level</th></tr>
+  ${ranked.map(r=>`<tr class="${r.rank===1?'ra-best':''}"><td>${r.rank}</td><td style="text-align:left">${escapeHtml(r.cls.name)}</td><td>${r.assessed} of ${r.enrolled}</td><td><b>${r.mean.toFixed(1)}%</b></td><td>${raBadge(school,r.cls.id,r.level.level)}</td></tr>`).join('')}
+  </table></div>
+  <div class="ra-sec" style="margin-top:16px"><h3 style="color:var(--navy);margin:0 0 6px">🏅 Best Learner per Grade</h3>
+  <table class="ra-table"><tr><th>Grade</th><th>Top Learner(s)</th><th>Mean %</th></tr>
+  ${topPerGrade.map(r=>`<tr><td style="text-align:left">${escapeHtml(r.cls.name)}</td><td style="text-align:left">${r.winners.length?r.winners.map(w=>escapeHtml(w.s.name)+(w.s.adm?' ('+escapeHtml(w.s.adm)+')':'')).join(', '):'—'}</td><td>${r.mean!=null?r.mean.toFixed(1)+'%':'—'}</td></tr>`).join('')}
+  </table></div>
+  <div class="ra-sec" style="margin-top:16px"><h3 style="color:var(--navy);margin:0 0 6px">📚 Best Learning Area per Grade</h3>
+  <table class="ra-table"><tr><th>Grade</th><th>Best Learning Area</th><th>Mean %</th></tr>
+  ${bestAreaPerGrade.map(r=>`<tr><td style="text-align:left">${escapeHtml(r.cls.name)}</td><td style="text-align:left">${r.area?escapeHtml(r.area.name):'—'}</td><td>${r.area?r.area.avg.toFixed(1)+'%':'—'}</td></tr>`).join('')}
+  </table></div>
+  <div class="flexbtns no-print" style="margin-top:16px"><button class="ghost" onclick="dosTab='analysis';renderDOS();setTimeout(()=>{qs('#raTerm').value='${term}';qs('#raYear').value=${year};raFillExams();},50)">📈 Open Full Results Analysis</button></div>`;
+}
+/* ============================= TEACHER DASHBOARD (own grades/areas only) ============================= */
+function teacherLatestTermYear(school, myClasses){
+  const combos = {};
+  school.exams.forEach(e=>{
+    if(!myClasses.includes(e.classId)) return;
+    if(school.marks[e.id] && Object.keys(school.marks[e.id]).length) combos[e.year+'|'+e.term] = {year:e.year, term:e.term};
+  });
+  const list = Object.values(combos);
+  if(!list.length) return null;
+  const tn = x=>Number(x.slice(-1));
+  list.sort((a,b)=> b.year-a.year || tn(b.term)-tn(a.term));
+  return list[0];
+}
+function initTeacherDashboardControls(){
+  const school = currentSchool(), t = currentTeacher(), myClasses = teacherClassIds(school, t);
+  const latest = teacherLatestTermYear(school, myClasses), now = new Date().getFullYear();
+  const term = latest ? latest.term : 'Term 1', year = latest ? latest.year : now;
+  const sel = qs('#tdashTerm'); if(!sel) return;
+  sel.innerHTML = ['Term 1','Term 2','Term 3'].map(x=>`<option ${x===term?'selected':''}>${x}</option>`).join('');
+  qs('#tdashYear').value = year;
+}
+function runTeacherDashboard(){
+  const target = qs('#tdashArea'); if(!target) return;
+  const school = currentSchool(), t = currentTeacher();
+  const term = qs('#tdashTerm').value, year = Number(qs('#tdashYear').value);
+  const myClasses = teacherClassIds(school, t);
+  const rows = [];
+  myClasses.forEach(cid=>{
+    const cls = school.classes.find(c=>c.id===cid);
+    teacherAreaIds(school, t, cid).forEach(aid=>{
+      const area = school.learningAreas.find(a=>a.id===aid);
+      const exams = school.exams.filter(e=>e.classId===cid && e.term===term && e.year===year);
+      if(!exams.length || !area) return;
+      const learners = unionStudents(exams.flatMap(ex=>studentsForExam(school, ex)));
+      const scores = [];
+      learners.forEach(s=>{
+        let sp=0, n=0;
+        exams.forEach(ex=>{ const sc=(school.marks[ex.id]||{})[s.id]?.[aid]; if(sc!=null){ sp+=pctOf(sc, ex.maxMarksByArea[aid]??100); n++; } });
+        if(n) scores.push({s, pct: sp/n});
+      });
+      if(!scores.length) return;
+      const mean = scores.reduce((x,y)=>x+y.pct,0)/scores.length;
+      const sorted = scores.slice().sort((a,b)=>b.pct-a.pct), topPct = sorted[0].pct;
+      rows.push({cls, area, mean, assessed:scores.length, enrolled:learners.length, winners: sorted.filter(x=>x.pct===topPct)});
+    });
+  });
+  if(!rows.length){ target.innerHTML = `<p class="small">No marks recorded yet for ${term} ${year} in your assigned grade(s)/learning area(s).</p>`; return; }
+  const overallMean = rows.reduce((s,r)=>s+r.mean*r.assessed,0)/rows.reduce((s,r)=>s+r.assessed,0);
+  const byArea = {}; rows.forEach(r=>{ (byArea[r.area.name]=byArea[r.area.name]||[]).push(r); });
+  target.innerHTML = `
+  <div class="dash-stats">
+    <div class="dash-card"><div class="dash-num">${overallMean.toFixed(1)}%</div><div class="dash-lbl">Your Overall Mean</div></div>
+    <div class="dash-card"><div class="dash-num">${rows.length}</div><div class="dash-lbl">Grade × Subject combos</div></div>
+    <div class="dash-card"><div class="dash-num">${rows.reduce((s,r)=>s+r.assessed,0)}</div><div class="dash-lbl">Learners Assessed</div></div>
+  </div>
+  <div class="ra-sec" style="margin-top:16px"><h3 style="color:var(--navy);margin:0 0 6px">Your Grades &amp; Subjects</h3>
+  <table class="ra-table"><tr><th>Grade</th><th>Learning Area</th><th>Assessed</th><th>Mean %</th><th>Top Learner(s)</th></tr>
+  ${rows.slice().sort((a,b)=>b.mean-a.mean).map(r=>`<tr><td style="text-align:left">${escapeHtml(r.cls.name)}</td><td style="text-align:left">${escapeHtml(r.area.name)}</td><td>${r.assessed} of ${r.enrolled}</td><td><b>${r.mean.toFixed(1)}%</b></td><td style="text-align:left">${r.winners.map(w=>escapeHtml(w.s.name)+' ('+w.pct.toFixed(1)+'%)').join(', ')}</td></tr>`).join('')}
+  </table></div>
+  ${Object.entries(byArea).filter(([,g])=>g.length>1).map(([name,g])=>{
+    const sorted = g.slice().sort((a,b)=>b.mean-a.mean);
+    return `<div class="ra-sec" style="margin-top:16px"><h3 style="color:var(--navy);margin:0 0 6px">${escapeHtml(name)} — Stream Comparison</h3>
+    <table class="ra-table"><tr><th>Rank</th><th>Grade</th><th>Mean %</th></tr>
+    ${sorted.map((r,i)=>`<tr class="${i===0?'ra-best':''}"><td>${i+1}</td><td style="text-align:left">${escapeHtml(r.cls.name)}</td><td><b>${r.mean.toFixed(1)}%</b></td></tr>`).join('')}
+    </table></div>`;
+  }).join('')}`;
+}
 /* ============================= REPORTS ============================= */
 function tplReportsPicker(school){
   const firstClassId = school.classes[0].id;
@@ -4112,7 +4948,7 @@ function buildReportHTML(school, sid, examId){
       <div class="sig-line">Parent / Guardian Signature</div>
     </div>
     ${gradingKey}
-    <div class="rc-footer">Generated by Asion Analytics &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
+    <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
     </div>
   </div>`;
   // Returned alongside the HTML (instead of an inline <script> tag) because content
@@ -4156,7 +4992,10 @@ function drawProgressChart(chartId, data){
    size again once printing is done, so on-screen viewing is unaffected. */
 function fitReportCardsToPage(){
   const mmToPx = mm => mm * 96/25.4;
-  const pageHeightPx = mmToPx(297) - mmToPx(8)*2; // A4 height minus the 8mm @page margins
+  // A small safety buffer (2mm) below the true printable height, so a report that lands
+  // right on the edge (rounding, font metrics, etc.) still shrinks a hair rather than
+  // spilling onto a second, otherwise-empty page.
+  const pageHeightPx = mmToPx(297) - mmToPx(8)*2 - mmToPx(2);
   document.querySelectorAll('.report-card').forEach(el=>{
     el.style.zoom = 1;
     const h = el.scrollHeight;
@@ -4252,6 +5091,385 @@ function tplHistory(school){
     <td><button class="ghost" onclick="dosTab='assess';renderDOS();setTimeout(()=>{qs('#asExam').value='${e.id}';viewClassAssessment('${e.id}')},50)">View</button> <button class="danger" onclick="delExam('${e.id}')">✕ Delete</button></td></tr>`;
   }).join('') || '<tr><td colspan="8" class="small">No exams recorded yet.</td></tr>'}
   </table></div>`;
+}
+
+/* ============================= SMS TO PARENTS ============================= */
+// Sends real SMS via a Cloud Function (see SMS_SETUP.md) that holds the Africa's Talking
+// API key server-side. Each school pays for its own messages out of a prepaid credit
+// wallet (1 credit = 1 SMS segment) topped up by the platform admin — see Admin → 💬 SMS
+// Credits. Nothing here ever sees or stores the real API key.
+
+/* ---------- Admin: pricing, payment instructions, top-ups, test SMS ---------- */
+// The simplest possible payment method for schools in this context: no card/payment-
+// gateway integration at all. The admin sets a price-per-credit and free-text payment
+// instructions (typically an M-Pesa Paybill/Till number) here; a school pays that number
+// directly and submits what they paid + their M-Pesa code from their own SMS tab; the
+// admin approves it with one click, which credits the wallet and logs it. Everything
+// below is scoped to the platform admin dashboard.
+function tplSmsAdmin(){
+  const schools = Object.values(DB.schools);
+  const price = DB.settings.smsPricePerCredit||0;
+  const pending = [];
+  schools.forEach(s=>{ (s.smsTopupRequests||[]).forEach(r=>{ if(r.status==='pending') pending.push({school:s, req:r}); }); });
+  pending.sort((a,b)=>a.req.ts-b.req.ts);
+  return `
+    <h2>💬 SMS Credits &amp; Payment</h2>
+    <p class="small">Schools pay you directly (e.g. M-Pesa Paybill/Till) — there's no in-app card payment to set up. Set the price and payment instructions below; when a school tells you they've paid, approve their request to credit their wallet, or top up manually any time.</p>
+    <div class="row">
+      <div><label>Price per SMS Credit (KES)</label><input id="smsPriceKES" type="number" min="0" step="0.1" value="${price}"></div>
+    </div>
+    <label>Payment instructions shown to schools</label>
+    <textarea id="smsPayInstructions" rows="3" placeholder="e.g. Pay via M-Pesa Paybill 400200, Account Number = your School Code. Then submit a Top-up Request from your SMS tab with the M-Pesa code.">${escapeHtml(DB.settings.smsPaymentInstructions||'')}</textarea>
+    <div class="flexbtns">
+      <button onclick="saveSmsAdminSettings()">💾 Save Pricing &amp; Instructions</button>
+      ${hasSmsConfig()?`<button class="ghost" onclick="sendTestSmsPrompt()">📱 Send Test SMS</button>`:`<span class="small" style="align-self:center">⚠ Cloud Function not configured yet — see SMS_SETUP.md, then this tab (and Test SMS) unlocks.</span>`}
+    </div>
+    <div id="smsAdminMsg"></div>
+    ${pending.length?`
+    <h3 style="margin-top:18px;color:var(--navy)">⏳ Pending Top-up Requests (${pending.length})</h3>
+    <table><tr><th>School</th><th>When</th><th>Amount Paid</th><th>M-Pesa Code</th><th>Credits</th><th>Note</th><th>Action</th></tr>
+    ${pending.map(({school:s,req:r})=>`<tr>
+      <td>${escapeHtml(s.name)}<br><span class="small">${s.code}</span></td>
+      <td>${new Date(r.ts).toLocaleString()}</td>
+      <td>KES ${r.amountPaid}</td>
+      <td>${escapeHtml(r.mpesaCode||'-')}</td>
+      <td>${r.credits}</td>
+      <td class="small">${escapeHtml(r.note||'')}</td>
+      <td><button onclick="approveSmsTopupRequest('${s.code}','${r.id}')">✅ Approve</button> <button class="danger" onclick="rejectSmsTopupRequest('${s.code}','${r.id}')">✖ Reject</button></td>
+    </tr>`).join('')}
+    </table>`:''}
+    <h3 style="margin-top:18px;color:var(--navy)">🏫 School Balances</h3>
+    <table><tr><th>School</th><th>Balance</th><th>Top Up</th><th>History</th></tr>
+    ${schools.map(s=>`<tr>
+      <td>${escapeHtml(s.name)}<br><span class="small">${s.code}</span></td>
+      <td style="font-weight:700">${s.smsCredits||0}</td>
+      <td>
+        <button class="ghost" onclick="quickTopUpSms('${s.code}',50)">+50</button>
+        <button class="ghost" onclick="quickTopUpSms('${s.code}',100)">+100</button>
+        <button class="ghost" onclick="quickTopUpSms('${s.code}',500)">+500</button>
+        <button class="ghost" onclick="customTopUpSms('${s.code}')">Custom…</button>
+      </td>
+      <td><button class="ghost" onclick="showSmsTopupHistory('${s.code}')">📜 View</button></td>
+    </tr>`).join('') || '<tr><td colspan="4" class="small">No schools yet.</td></tr>'}
+    </table>
+    <div id="smsHistoryArea"></div>`;
+}
+function saveSmsAdminSettings(){
+  const price = Number(qs('#smsPriceKES').value);
+  if(isNaN(price)||price<0){ toast('Enter a valid price','err'); return; }
+  DB.settings.smsPricePerCredit = price;
+  DB.settings.smsPaymentInstructions = qs('#smsPayInstructions').value.trim();
+  saveDB(DB);
+  qs('#smsAdminMsg').innerHTML = '<div class="msg ok">SMS pricing &amp; payment instructions saved.</div>';
+}
+async function quickTopUpSms(code, credits){
+  if(!confirm(`Add ${credits} credit(s) to this school's SMS balance?`)) return;
+  await adminEditAndPush(code, s=>{
+    s.smsCredits = (s.smsCredits||0) + credits;
+    s.smsTopups = s.smsTopups||[];
+    s.smsTopups.push({id:uid('top_'), ts:Date.now(), credits, note:'Manual top-up by admin'});
+  });
+  toast(`+${credits} credit(s) added`); renderAdmin();
+}
+async function customTopUpSms(code){
+  const input = prompt('How many credits to add?');
+  if(input==null) return;
+  const credits = Number(input);
+  if(isNaN(credits)||credits<=0){ toast('Enter a valid number','err'); return; }
+  const note = prompt('Optional note (e.g. M-Pesa code, amount paid):','') || '';
+  await adminEditAndPush(code, s=>{
+    s.smsCredits = (s.smsCredits||0) + credits;
+    s.smsTopups = s.smsTopups||[];
+    s.smsTopups.push({id:uid('top_'), ts:Date.now(), credits, note});
+  });
+  toast(`+${credits} credit(s) added`); renderAdmin();
+}
+function showSmsTopupHistory(code){
+  const s = DB.schools[code]; if(!s) return;
+  const rows = (s.smsTopups||[]).slice().reverse();
+  qs('#smsHistoryArea').innerHTML = `<div class="card" style="background:#f7f9fc">
+    <h2 style="margin-top:0">📜 Top-up History — ${escapeHtml(s.name)}</h2>
+    <table><tr><th>When</th><th>Credits Added</th><th>Note</th></tr>
+    ${rows.map(t=>`<tr><td>${new Date(t.ts).toLocaleString()}</td><td>+${t.credits}</td><td class="small">${escapeHtml(t.note||'')}</td></tr>`).join('') || '<tr><td colspan="3" class="small">No top-ups yet.</td></tr>'}
+    </table>
+  </div>`;
+}
+async function approveSmsTopupRequest(code, reqId){
+  const school = DB.schools[code];
+  const preview = school && (school.smsTopupRequests||[]).find(r=>r.id===reqId);
+  if(!preview){ toast('Request not found','err'); return; }
+  if(!confirm(`Approve and add ${preview.credits} credit(s) to ${school.name}?`)) return;
+  await adminEditAndPush(code, s=>{
+    const r = (s.smsTopupRequests||[]).find(x=>x.id===reqId);
+    if(!r || r.status!=='pending') return;
+    r.status = 'approved'; r.resolvedTs = Date.now();
+    s.smsCredits = (s.smsCredits||0) + r.credits;
+    s.smsTopups = s.smsTopups||[];
+    s.smsTopups.push({id:uid('top_'), ts:Date.now(), credits:r.credits, note:`Approved request — M-Pesa ${r.mpesaCode||'-'}, paid KES ${r.amountPaid}`});
+  });
+  toast('Top-up approved'); renderAdmin();
+}
+async function rejectSmsTopupRequest(code, reqId){
+  const reason = prompt("Optional reason for rejecting (the school will see this on their own Top-up Request list):",'') || '';
+  await adminEditAndPush(code, s=>{
+    const r = (s.smsTopupRequests||[]).find(x=>x.id===reqId);
+    if(!r || r.status!=='pending') return;
+    r.status = 'rejected'; r.resolvedTs = Date.now(); r.resolvedNote = reason;
+  });
+  toast('Request rejected'); renderAdmin();
+}
+// Sends one real SMS through the same Cloud Function, flagged test:true so it never
+// touches any school's credit balance (the Cloud Function should bill this — if at all —
+// to the platform's own account). Lets the admin confirm the Africa's Talking wiring
+// actually works before any school relies on it. See the `test` flag in SMS_SETUP.md.
+async function sendTestSmsPrompt(){
+  const phone = prompt("Send a test SMS to which number? (e.g. 0712345678)");
+  if(!phone) return;
+  const norm = normalizePhone(phone);
+  if(!norm){ toast('Enter a valid phone number','err'); return; }
+  qs('#smsAdminMsg').innerHTML = '<p class="small">Sending test SMS…</p>';
+  try{
+    const res = await fetch(window.PLATFORM_SMS_ENDPOINT, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({test:true, recipients:[{phone:norm, message:'This is a test message from EduTrack CBC. If you received this, SMS sending is working correctly.'}]})
+    });
+    const data = await res.json();
+    if(!res.ok || !data.ok){ qs('#smsAdminMsg').innerHTML = `<div class="msg err">Test failed: ${escapeHtml(data.error||('HTTP '+res.status))}</div>`; return; }
+    qs('#smsAdminMsg').innerHTML = `<div class="msg ok">✅ Test SMS sent to ${norm}. This does not use any school's credit.</div>`;
+  }catch(err){
+    qs('#smsAdminMsg').innerHTML = `<div class="msg err">Could not reach the SMS service: ${escapeHtml(String(err.message||err))}</div>`;
+  }
+}
+
+/* ---------- DOS/HOI + shared sending logic ---------- */
+function normalizePhone(raw){
+  let p = (raw||'').replace(/[^\d+]/g,'');
+  if(!p) return '';
+  if(p.startsWith('+')) return p;
+  if(p.startsWith('0')) return '254'+p.slice(1); // Kenyan local format → international
+  if(p.startsWith('254')) return '+'+p;
+  return p;
+}
+function tplSms(school){
+  const bal = school.smsCredits||0;
+  const price = DB.settings.smsPricePerCredit||0;
+  const payNote = DB.settings.smsPaymentInstructions
+    ? `<div class="msg" style="background:#f7f9fc;border-color:#cfe0ef">${escapeHtml(DB.settings.smsPaymentInstructions).replace(/\n/g,'<br>')}</div>`
+    : `<p class="small">Contact the platform administrator to buy more SMS credit.</p>`;
+  if(!hasSmsConfig()){
+    return `<div class="card">
+      <h2>💬 SMS to Parents</h2>
+      <p class="msg err">⚠ SMS sending isn't set up for this deployment yet. This needs a one-time, free-tier Cloud Function setup by whoever manages this app (see <b>SMS_SETUP.md</b> in this project) — until then this tab stays disabled so nothing here can be mistaken for working.</p>
+    </div>`;
+  }
+  const withPhone = school.students.filter(s=>s.parentPhone && s.parentPhone.trim()).length;
+  const LOW_BALANCE = 20; // below this, warn before a big send rather than let it fail mid-batch
+  const myRequests = (school.smsTopupRequests||[]).slice().reverse();
+  return `<div class="card">
+    <h2>💬 SMS to Parents</h2>
+    <div class="row">
+      <div><label>SMS Credit Balance</label><div class="linkbox" style="text-align:center;font-size:20px;font-weight:700">${bal}${price?` <span class="small" style="font-weight:400">(≈ KES ${(bal*price).toFixed(0)})</span>`:''}</div></div>
+      <div><label>Learners with a parent phone on file</label><div class="linkbox" style="text-align:center">${withPhone} of ${school.students.length}</div></div>
+    </div>
+    ${bal < LOW_BALANCE ? `<p class="msg err" style="margin-top:8px">⚠ Low balance — top up below before sending to a large grade or the whole school.</p>` : ''}
+    <p class="small">Add parent phone numbers on the <b>🧑‍🎓 Learners</b> tab — a learner with no number is skipped and shown as "missing" below. 1 credit = 1 SMS (up to 153 characters); longer messages use more credits per recipient.</p>
+  </div>
+
+  <div class="card">
+    <h2>💳 Buy SMS Credit</h2>
+    ${payNote}
+    ${price?`<p class="small">Price: <b>KES ${price}</b> per credit.</p>`:''}
+    <div class="row">
+      <div><label>Amount Paid (KES)</label><input id="topupAmount" type="number" min="1" oninput="updateTopupCreditsPreview()"></div>
+      <div><label>M-Pesa Code</label><input id="topupMpesa" placeholder="e.g. QAB1C2D3E4"></div>
+    </div>
+    <label>Note (optional)</label>
+    <input id="topupNote" placeholder="Anything else we should know">
+    <p class="small" id="topupCreditsPreview"></p>
+    <div class="flexbtns"><button onclick="submitSmsTopupRequest()">📨 I've Paid — Request Top-up</button></div>
+    <div id="topupMsg"></div>
+    ${myRequests.length?`<table style="margin-top:10px"><tr><th>When</th><th>Amount</th><th>M-Pesa Code</th><th>Status</th></tr>
+    ${myRequests.map(r=>`<tr><td>${new Date(r.ts).toLocaleString()}</td><td>KES ${r.amountPaid}</td><td>${escapeHtml(r.mpesaCode||'-')}</td><td>${r.status==='pending'?'<span class="badge AE">Pending</span>':r.status==='approved'?'<span class="badge EE">Approved</span>':`<span class="badge BE">Rejected${r.resolvedNote?': '+escapeHtml(r.resolvedNote):''}</span>`}</td></tr>`).join('')}
+    </table>`:''}
+  </div>
+
+  <div class="card">
+    <h2>📊 Send Exam Results by SMS</h2>
+    <div class="row">
+      <div><label>Grade</label><select id="smsClass" onchange="smsPreviewResults()">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
+      <div><label>Exam</label><select id="smsExam" onchange="smsPreviewResults()"></select></div>
+    </div>
+    <div id="smsResultsPreview" class="small"></div>
+    <div class="flexbtns"><button onclick="sendResultsSms()">📤 Send Results SMS</button></div>
+    <div id="smsResultsMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>📣 Send an Announcement</h2>
+    <div class="row">
+      <div><label>Send to</label><select id="smsAudience" onchange="smsPreviewAnnouncement()"><option value="">All grades (whole school)</option>${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)} only</option>`).join('')}</select></div>
+    </div>
+    <label>Message</label>
+    <textarea id="smsAnnounceText" rows="3" maxlength="600" oninput="smsPreviewAnnouncement()" placeholder="e.g. Reminder: School closes for the term this Friday at 1pm. — ${school.name}"></textarea>
+    <div id="smsAnnouncePreview" class="small"></div>
+    <div class="flexbtns"><button onclick="sendAnnouncementSms()">📤 Send Announcement</button></div>
+    <div id="smsAnnounceMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>🗂 Message History</h2>
+    <table><tr><th>When</th><th>Type</th><th>Audience</th><th>Recipients</th><th>Credits Used</th><th>Status</th><th>Action</th></tr>
+    ${(school.smsLog||[]).slice().reverse().map(l=>`<tr><td>${new Date(l.ts).toLocaleString()}</td><td>${escapeHtml(l.type)}</td><td>${escapeHtml(l.audience)}</td><td>${l.recipients}</td><td>${l.credits}</td><td>${l.ok?`<span class="badge EE">Sent ${l.sent||l.recipients}${l.failed?`, ${l.failed} failed`:''}</span>`:`<span class="badge BE">Failed: ${escapeHtml(l.error||'')}</span>`}</td><td>${l.ok && l.failed && l.failedNumbers && l.failedNumbers.length?`<button class="ghost" style="font-size:11px;padding:3px 8px" onclick="retryFailedSms('${l.id}')">🔁 Retry Failed</button>`:''}</td></tr>`).join('') || '<tr><td colspan="7" class="small">No messages sent yet.</td></tr>'}
+    </table>
+  </div>`;
+}
+function updateTopupCreditsPreview(){
+  const el = qs('#topupCreditsPreview'); if(!el) return;
+  const price = DB.settings.smsPricePerCredit||0;
+  const amt = Number(qs('#topupAmount').value)||0;
+  el.textContent = (price && amt) ? `≈ ${Math.floor(amt/price)} credit(s) at KES ${price}/credit — the admin confirms the exact amount when approving.` : '';
+}
+// Records what the school says they paid; nothing is credited yet — an admin has to
+// approve it (Admin → 💬 SMS Credits) before smsCredits actually moves. This is the whole
+// "payment" flow: no card processor, just a paper trail the admin checks against M-Pesa.
+function submitSmsTopupRequest(){
+  const school = currentSchool();
+  const amount = Number(qs('#topupAmount').value);
+  const mpesa = qs('#topupMpesa').value.trim();
+  const note = qs('#topupNote').value.trim();
+  if(!amount || amount<=0){ toast('Enter the amount you paid','err'); return; }
+  const price = DB.settings.smsPricePerCredit||0;
+  const credits = price ? Math.floor(amount/price) : 0;
+  school.smsTopupRequests = school.smsTopupRequests||[];
+  school.smsTopupRequests.push({id:uid('req_'), ts:Date.now(), amountPaid:amount, mpesaCode:mpesa, note, credits, status:'pending'});
+  saveDB(DB);
+  qs('#topupMsg').innerHTML = '<div class="msg ok">Request submitted — the admin will confirm and top up your balance.</div>';
+  renderDOS();
+}
+// Re-sends only to the numbers the server reported as failed last time, using the exact
+// same per-recipient message text as the original batch (stored in recipientsSnapshot),
+// so a retry never has to guess what a learner's result message said.
+function retryFailedSms(logId){
+  const school = currentSchool();
+  const log = (school.smsLog||[]).find(l=>l.id===logId);
+  if(!log || !log.failedNumbers || !log.failedNumbers.length){ toast('Nothing to retry','err'); return; }
+  const snap = log.recipientsSnapshot||[];
+  const retry = snap.filter(r=>log.failedNumbers.includes(r.phone));
+  if(!retry.length){ toast('Could not match the failed numbers to the original message list','err'); return; }
+  const credits = retry.reduce((n,r)=>n+smsSegments(r.message),0);
+  if(credits > (school.smsCredits||0)){ toast(`Not enough credit: need ${credits}, have ${school.smsCredits||0}`,'err'); return; }
+  if(!confirm(`Retry sending to ${retry.length} failed recipient(s) for ${credits} credit(s)?`)) return;
+  sendSmsBatch(school, retry, {type:'Retry: '+log.type, audience: log.audience}, log.type==='Results'?'smsResultsMsg':'smsAnnounceMsg');
+}
+function smsFillExamOptions(){
+  const school = currentSchool(); if(!school || !qs('#smsClass')) return;
+  const classId = qs('#smsClass').value;
+  const exams = school.exams.filter(e=>e.classId===classId).slice().reverse();
+  qs('#smsExam').innerHTML = exams.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} — ${e.term} ${e.year}</option>`).join('') || '<option value="">No exams for this grade yet</option>';
+  smsPreviewResults();
+}
+// Builds one short results text for a single learner — same underlying numbers as the
+// printed report card (see buildReportHTML), just condensed to SMS length.
+function learnerResultSummary(school, sid, examId){
+  const exam = school.exams.find(e=>e.id===examId); if(!exam) return null;
+  const student = school.students.find(s=>s.id===sid); if(!student) return null;
+  const areas = areasForClass(school, exam.classId);
+  const marksForExam = school.marks[examId] || {};
+  let sumPct=0;
+  areas.forEach(a=>{ const max=exam.maxMarksByArea[a.id]??100; const score=(marksForExam[sid]||{})[a.id]; if(score!=null) sumPct+=pctOf(score,max); });
+  const meanPct = areas.length ? sumPct/areas.length : 0;
+  const overall = gradeFor(school, meanPct, exam.classId);
+  const learners = studentsForExam(school, exam);
+  const totals = learners.map(s=>{ let t=0; areas.forEach(a=>{ const sc=(marksForExam[s.id]||{})[a.id]; if(sc!=null) t+=sc; }); return {id:s.id,t}; }).sort((a,b)=>b.t-a.t);
+  const position = totals.findIndex(x=>x.id===sid)+1;
+  const text = `Dear Parent, ${student.name}'s results for ${exam.name} (${exam.term} ${exam.year}): Mean ${meanPct.toFixed(1)}%, Grade ${overall.level}, Position ${position}/${learners.length}. - ${school.name}`;
+  return text;
+}
+function smsPreviewResults(){
+  const school = currentSchool(); const el = qs('#smsResultsPreview'); if(!el) return;
+  const classId = qs('#smsClass').value, examId = qs('#smsExam').value;
+  if(!examId){ el.innerHTML = ''; return; }
+  const exam = school.exams.find(e=>e.id===examId);
+  if(exam && school.requireApproval && exam.resultsApproval!=='approved'){
+    el.innerHTML = '<p class="msg err">⚠ This exam has not been approved yet — approve it under Exams before sending results to parents.</p>'; return;
+  }
+  const learners = studentsInClass(school, classId);
+  const withPhone = learners.filter(s=>s.parentPhone && s.parentPhone.trim());
+  const sample = withPhone[0] ? learnerResultSummary(school, withPhone[0].id, examId) : null;
+  const credits = sample ? smsCreditsNeeded(withPhone.length, sample) : 0;
+  el.innerHTML = `<p>${withPhone.length} of ${learners.length} learner(s) have a parent phone on file — ${learners.length-withPhone.length} will be skipped.</p>
+  ${sample?`<p><b>Sample message</b> (${sample.length} chars, ${smsSegments(sample)} credit(s) each): <i>"${escapeHtml(sample)}"</i></p><p>Estimated cost: <b>${credits} credit(s)</b> · Balance: ${school.smsCredits||0}</p>`:'<p class="small">No learner with a phone number has marks for this exam yet.</p>'}`;
+}
+function sendResultsSms(){
+  const school = currentSchool();
+  const classId = qs('#smsClass').value, examId = qs('#smsExam').value;
+  if(!examId){ toast('Choose a grade and exam first','err'); return; }
+  const exam = school.exams.find(e=>e.id===examId);
+  if(exam && school.requireApproval && exam.resultsApproval!=='approved'){ toast('Approve this exam\'s results before sending to parents','err'); return; }
+  const learners = studentsInClass(school, classId).filter(s=>s.parentPhone && s.parentPhone.trim());
+  if(!learners.length){ toast('No learner in this grade has a parent phone number on file','err'); return; }
+  const recipients = learners.map(s=>({phone: normalizePhone(s.parentPhone), message: learnerResultSummary(school, s.id, examId)})).filter(r=>r.phone);
+  const credits = recipients.reduce((n,r)=>n+smsSegments(r.message),0);
+  if(credits > (school.smsCredits||0)){ qs('#smsResultsMsg').innerHTML = `<div class="msg err">Not enough credit: need ${credits}, have ${school.smsCredits||0}.</div>`; return; }
+  if(!confirm(`Send exam results to ${recipients.length} parent(s) for ${credits} credit(s)?`)) return;
+  sendSmsBatch(school, recipients, {type:'Results', audience: (school.classes.find(c=>c.id===classId)||{}).name || classId}, 'smsResultsMsg');
+}
+function smsPreviewAnnouncement(){
+  const el = qs('#smsAnnouncePreview'); if(!el) return;
+  const school = currentSchool();
+  const classId = qs('#smsAudience').value;
+  const text = qs('#smsAnnounceText').value.trim();
+  const learners = (classId ? studentsInClass(school, classId) : school.students).filter(s=>s.parentPhone && s.parentPhone.trim());
+  const totalInAudience = (classId ? studentsInClass(school, classId) : school.students).length;
+  if(!text){ el.innerHTML = `<p>${learners.length} of ${totalInAudience} learner(s) in this audience have a parent phone on file.</p>`; return; }
+  const credits = smsCreditsNeeded(learners.length, text);
+  el.innerHTML = `<p>${text.length} character(s), ${smsSegments(text)} credit(s) per recipient · ${learners.length} of ${totalInAudience} recipient(s) reachable.</p><p>Estimated cost: <b>${credits} credit(s)</b> · Balance: ${school.smsCredits||0}</p>`;
+}
+function sendAnnouncementSms(){
+  const school = currentSchool();
+  const classId = qs('#smsAudience').value;
+  const text = qs('#smsAnnounceText').value.trim();
+  if(!text){ toast('Write a message first','err'); return; }
+  const learners = (classId ? studentsInClass(school, classId) : school.students).filter(s=>s.parentPhone && s.parentPhone.trim());
+  if(!learners.length){ toast('No learner in this audience has a parent phone number on file','err'); return; }
+  const recipients = learners.map(s=>({phone: normalizePhone(s.parentPhone), message: text})).filter(r=>r.phone);
+  const credits = smsCreditsNeeded(recipients.length, text);
+  if(credits > (school.smsCredits||0)){ qs('#smsAnnounceMsg').innerHTML = `<div class="msg err">Not enough credit: need ${credits}, have ${school.smsCredits||0}.</div>`; return; }
+  if(!confirm(`Send this announcement to ${recipients.length} parent(s) for ${credits} credit(s)?`)) return;
+  const audienceName = classId ? (school.classes.find(c=>c.id===classId)||{}).name || classId : 'Whole school';
+  sendSmsBatch(school, recipients, {type:'Announcement', audience: audienceName}, 'smsAnnounceMsg');
+}
+// Posts to the Cloud Function, which checks/deducts the school's real credit balance
+// server-side (so a tampered client value can't be used to send SMS for free) and
+// returns the authoritative new balance, which we then store locally.
+async function sendSmsBatch(school, recipients, meta, msgElId){
+  const msgEl = qs('#'+msgElId);
+  if(msgEl) msgEl.innerHTML = '<p class="small">Sending…</p>';
+  try{
+    const res = await fetch(window.PLATFORM_SMS_ENDPOINT, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({schoolCode: school.code, recipients})
+    });
+    const data = await res.json();
+    if(!res.ok || !data.ok){
+      school.smsLog.push({id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, recipients:recipients.length, credits:0, ok:false, error:data.error||('HTTP '+res.status), recipientsSnapshot:recipients});
+      saveDB(DB);
+      if(msgEl) msgEl.innerHTML = `<div class="msg err">Send failed: ${escapeHtml(data.error||'server error')}</div>`;
+      return;
+    }
+    if(typeof data.newBalance==='number') school.smsCredits = data.newBalance;
+    // recipientsSnapshot (phone+message actually sent) + failedNumbers (from the server)
+    // together let "Retry Failed" re-target exactly the numbers that didn't go through,
+    // with the exact same message text, without the school retyping or re-picking anything.
+    school.smsLog.push({id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, recipients:recipients.length, credits:data.creditsUsed||0, ok:true, sent:data.sent, failed:data.failed, failedNumbers:data.failedNumbers||[], recipientsSnapshot:recipients});
+    saveDB(DB);
+    toast(`Sent to ${data.sent||recipients.length} parent(s)${data.failed?`, ${data.failed} failed`:''}`);
+    renderDOS();
+  }catch(err){
+    school.smsLog.push({id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, recipients:recipients.length, credits:0, ok:false, error:String(err.message||err), recipientsSnapshot:recipients});
+    saveDB(DB);
+    if(msgEl) msgEl.innerHTML = `<div class="msg err">Could not reach the SMS service: ${escapeHtml(String(err.message||err))}</div>`;
+  }
 }
 
 /* ============================= INIT ============================= */
