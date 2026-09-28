@@ -151,6 +151,15 @@ table.rc-table tr.rc-total td{background:#fdf6e5;font-weight:800;border-top:2px 
 .sig-line{border-top:1px solid #333;margin-top:42px;padding-top:6px;font-size:14px;text-align:center;}
 .rc-sigrow .sig-line{border-top:1px dotted #8a9bad;margin-top:0;}
 .rc-sig-img{display:block;max-width:100%;max-height:46px;margin:0 auto 2px;}
+/* Signature block: a fixed-height slot sits ABOVE the rule so a stamped signature (or date)
+   rests right on the line, and every block in a row shares the same slot height so the
+   lines stay level even when only some of them carry a signature. */
+.sig-box{margin-top:14px;break-inside:avoid;page-break-inside:avoid;}
+.sig-box .sig-slot{height:62px;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;font-size:13px;color:#123a63;}
+.sig-box .sig-slot img{display:block;max-width:80%;max-height:60px;width:auto;height:auto;object-fit:contain;margin:0 0 -1px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.sig-box .sig-slot .sig-date{padding-bottom:3px;font-weight:600;}
+.sig-box .sig-line{margin-top:0;}
+.rc-sigrow .sig-box{margin-top:0;}
 .sig-pad-wrap{border:1.5px dashed var(--navy);border-radius:8px;background:#fafcfe;display:inline-block;max-width:100%;}
 #hoiSigPad{display:block;max-width:100%;touch-action:none;cursor:crosshair;border-radius:8px;}
 .rc-footer{text-align:center;font-size:11px;color:#a9b6c4;margin-top:12px;letter-spacing:.3px;}
@@ -173,7 +182,7 @@ canvas{max-width:100%;}
   /* Only the generated report/sheet (.print-only-block) should ever hit paper — everything
      else (topbar, tabs, nav/header cards, form controls, history tables) is UI chrome and is
      marked .no-print so it never eats page space or shifts the report onto a later page. */
-  header.topbar,.tabs,.no-print,.card>h2 + .no-print{display:none !important;}
+  header.topbar,.tabs,.stat-grid,.dos-bar,.dos-drawer,.dos-backdrop,.dos-quick,.no-print,.card>h2 + .no-print{display:none !important;}
   body{background:#fff;font-size:11px;}
   .container{max-width:100%;padding:0;}
   /* NOTE: page breaks belong on .print-only-block only (below) — a generic .card rule here
@@ -230,6 +239,10 @@ canvas{max-width:100%;}
   .rc-sigrow{margin-top:auto;}
   .rc-sigrow .sig-line{padding-top:3px;font-size:11.5px;}
   .rc-sig-img{max-height:32px;}
+  .sig-box{margin-top:8px;}
+  .sig-box .sig-slot{height:42px;}
+  .sig-box .sig-slot img{max-height:40px;}
+  .rc-sigrow .sig-box{margin-top:0;}
   .rc-meta{font-size:10.5px;margin-top:5px;}
   .rc-key{font-size:9.5px;margin-top:6px;padding-top:5px;}
   .rc-footer{margin-top:6px;}
@@ -249,6 +262,43 @@ canvas{max-width:100%;}
 .tbl{width:100%;border-collapse:collapse;margin:6px 0;font-size:13px;}
 .tbl th,.tbl td{border:1px solid var(--border);padding:6px 8px;text-align:left;vertical-align:top;}
 .tbl th{background:#f2f5f9;font-weight:700;}
+/* ---- DOS/HOI side menu (slide-in drawer) ----
+   The DOS/HOI screen opens on the dashboard alone; every other feature lives behind the
+   ☰ Menu button. .dos-bar is the slim sticky strip under the top header; .dos-drawer slides
+   in from the left over a dimmed .dos-backdrop. All of it is .no-print. */
+.dos-bar{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--border);border-radius:12px;padding:8px 12px;margin-bottom:14px;position:sticky;top:60px;z-index:40;box-shadow:0 2px 10px rgba(18,58,99,.06);}
+.dos-bar .menu-btn{position:relative;display:flex;align-items:center;gap:8px;padding:9px 14px;}
+.dos-bar .menu-btn .dot{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#d1473f;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;border:2px solid #fff;}
+.dos-bar .dos-title{font-weight:700;color:var(--navy);font-size:16px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.dos-bar .dos-school{font-size:12px;color:#6a7c8f;white-space:nowrap;}
+.dos-backdrop{position:fixed;inset:0;background:rgba(9,30,55,.5);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:90;}
+.dos-backdrop.open{opacity:1;pointer-events:auto;}
+.dos-drawer{position:fixed;top:0;left:0;bottom:0;width:290px;max-width:86vw;background:#fff;z-index:100;transform:translateX(-102%);transition:transform .22s ease;display:flex;flex-direction:column;box-shadow:6px 0 24px rgba(9,30,55,.25);}
+.dos-drawer.open{transform:translateX(0);}
+.dos-drawer .dd-head{background:linear-gradient(100deg,var(--navy),var(--navy2) 70%);color:#fff;padding:16px 16px 14px;}
+.dos-drawer .dd-head .dd-name{font-weight:800;font-size:15px;line-height:1.3;}
+.dos-drawer .dd-head .dd-code{font-size:12px;opacity:.85;margin-top:3px;}
+.dos-drawer .dd-head .dd-close{float:right;background:rgba(255,255,255,.15);box-shadow:none;padding:4px 10px;font-size:16px;line-height:1;}
+.dos-drawer .dd-head .dd-close:hover{background:rgba(255,255,255,.28);transform:none;}
+.dos-drawer .dd-body{flex:1;overflow-y:auto;padding:8px 8px 16px;-webkit-overflow-scrolling:touch;}
+.dos-drawer .dd-group{font-size:11px;font-weight:800;letter-spacing:.8px;color:#8a9bad;text-transform:uppercase;padding:14px 10px 4px;}
+.dos-drawer .dd-item{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;background:transparent;color:#1c2b3a;box-shadow:none;font-weight:600;font-size:14px;padding:11px 10px;border-radius:8px;}
+.dos-drawer .dd-item:hover{background:#eef4fb;transform:none;box-shadow:none;}
+.dos-drawer .dd-item.active{background:var(--navy);color:#fff;}
+.dos-drawer .dd-item .dd-count{background:#d1473f;color:#fff;border-radius:9px;font-size:11px;font-weight:800;padding:1px 7px;}
+.dos-drawer .dd-foot{border-top:1px solid var(--border);padding:10px 8px;}
+body.dos-menu-open{overflow:hidden;}
+.dos-quick{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.dos-quick button{flex:1;min-width:130px;background:#fff;color:var(--navy);border:1.5px solid var(--border);box-shadow:0 1px 4px rgba(18,58,99,.06);padding:12px 10px;}
+.dos-quick button:hover{background:#eef4fb;border-color:var(--navy);}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px;}
+.stat-tile{background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;box-shadow:0 2px 10px rgba(18,58,99,.06);}
+.stat-tile b{display:block;font-size:24px;font-family:var(--font-brand);color:var(--navy);line-height:1.2;}
+.stat-tile span{font-size:12px;color:#6a7c8f;}
+@media (max-width:480px){.dos-bar .dos-school{display:none;}}
+tr.gender-head td{background:#eef2f7 !important;font-weight:700;text-align:left !important;color:var(--navy);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.gender-summary table{font-size:12px;}
+.gender-summary th,.gender-summary td{text-align:center;}
 </style>
 </head>
 <body>
@@ -338,9 +388,31 @@ function loadDB(){
 // tab like Classes or Learners silently render blank — the template throws partway
 // through building its HTML, so the tab's content area is just left empty. Safe to call
 // repeatedly; every line is a no-op once the field already exists.
+/* Grades are always kept in teaching order: Baby/Playgroup/Nursery, PP1, PP2, then Grade 1, 2 … 12
+   (by the number in the name, so "Grade 10" comes after "Grade 9", and streams like "Grade 6 Blue"
+   / "Grade 6 Red" stay together, A-Z). Sorted in place, so every dropdown and list follows. */
+function gradeSortKey(name){
+  const n = String(name||'').trim(), m = n.match(/\d+/), num = m ? parseInt(m[0],10) : null;
+  if(/baby/i.test(n)) return {tier:0, num:0, name:n};
+  if(/play\s*-?group/i.test(n)) return {tier:0, num:1, name:n};
+  if(/nursery/i.test(n)) return {tier:0, num:2, name:n};
+  if(/\bpp\s*-?\s*\d|pre[\s-]?(unit|primary|school)/i.test(n)) return {tier:0, num:10+(num||0), name:n};
+  return {tier:1, num:num===null?Infinity:num, name:n};
+}
+function sortClasses(school){
+  if(!school || !Array.isArray(school.classes)) return school;
+  school.classes.sort((a,b)=>{
+    const x = gradeSortKey(a.name), y = gradeSortKey(b.name);
+    if(x.tier!==y.tier) return x.tier-y.tier;
+    if(x.num!==y.num) return x.num<y.num ? -1 : 1;
+    return x.name.localeCompare(y.name, undefined, {numeric:true, sensitivity:'base'});
+  });
+  return school;
+}
 function ensureSchoolShape(s){
   if(!s) return s;
   if(!Array.isArray(s.classes)) s.classes = [];
+  sortClasses(s);
   if(!Array.isArray(s.students)) s.students = [];
   if(!Array.isArray(s.teachers)) s.teachers = [];
   if(!Array.isArray(s.exams)) s.exams = [];
@@ -353,6 +425,23 @@ function ensureSchoolShape(s){
   // marks so it survives class/exam edits the same way, but kept in its own object since
   // it isn't a score and shouldn't feed into grading/positions.
   if(!s.attendance || typeof s.attendance!=='object') s.attendance = {};
+  // Personalized report-card remarks: s.remarks[examId][studentId] = custom text, keyed
+  // the same way as attendance. Left unset for a learner, buildReportHTML() falls back to
+  // the auto remark tied to their grading level (see defaultGrading() / Grading System).
+  if(!s.remarks || typeof s.remarks!=='object') s.remarks = {};
+  // Printable assignments/homework sent to the Parent Portal, per grade. A school that
+  // existed before this feature simply has none yet.
+  if(!Array.isArray(s.assignments)) s.assignments = [];
+  s.assignments.forEach(a=>{
+    if(typeof a.title !== 'string') a.title = '';
+    if(typeof a.instructions !== 'string') a.instructions = '';
+    if(typeof a.attachment !== 'string') a.attachment = ''; // optional image, data URL — see uploadSchoolLogo for the same pattern
+    if(typeof a.dueDate !== 'string') a.dueDate = '';
+    if(typeof a.postedAt !== 'number') a.postedAt = Date.now();
+    // Visible-to-parents toggle, same idea as exam.parentVisible: lets a DOS/HOI prepare
+    // an assignment and only publish it to the Parent Portal when it's actually ready.
+    if(typeof a.visible !== 'boolean') a.visible = true;
+  });
   if(typeof s.hoiSignature !== 'string') s.hoiSignature = '';
   if(typeof s.logo !== 'string') s.logo = '';
   if(typeof s.motto !== 'string') s.motto = '';
@@ -370,6 +459,10 @@ function ensureSchoolShape(s){
     // cumulative sheet) tab, separately from canPrint which only covers learner report
     // cards. Defaults to false so a DOS/HOI must deliberately grant it.
     if(typeof t.canPrintAssess !== 'boolean') t.canPrintAssess = false;
+    // canPostAssignments governs a teacher's access to the Assignments tab (sending
+    // printable assignments/homework to the Parent Portal), scoped to their own assigned
+    // grade(s) only. Defaults to false, same as canPrintAssess.
+    if(typeof t.canPostAssignments !== 'boolean') t.canPostAssignments = false;
     // classTeacherOf: the grade(s) this teacher is designated Class Teacher for — separate
     // from the free-text "Class Teacher" name shown on report cards (school.classTeachers),
     // and separate from subject/learning-area assignments above. A teacher can be Class
@@ -523,6 +616,7 @@ function saveDB(db, opts){
   if(!opts || !opts.skipCloud){ scheduleCloudPush(); scheduleAdminCloudPush(); }
 }
 let DB = loadDB();
+window.addEventListener('load', ()=>{ try{ ensureSignaturesTrimmed(); }catch(e){} });
 
 /* ============================= MULTI-DEVICE CLOUD SYNC =============================
    Lets a teacher enter marks on their own phone and have them appear automatically in
@@ -572,6 +666,9 @@ let DB = loadDB();
      Function) that this static, backend-less app doesn't have — a further step if you
      want that stronger guarantee. */
 let firebaseApp = null, fbDb = null;
+// Last copy of each school's (non-marks) data seen in the cloud — the common ancestor used to merge
+// two people's simultaneous edits instead of letting one overwrite the other.
+const syncBase = {};
 const syncState = { enabled:false, connectedCode:null, pushTimer:null, marksReady:false, dataReady:false, marksListenerRef:null, dataListenerRef:null, sdkLoading:null };
 
 function loadFirebaseSdk(cb){
@@ -766,7 +863,7 @@ function buildParentSafeSchool(fullSchool, student){
   // Classmates' marks are needed (unnamed, via id) to compute this learner's position — but nothing
   // beyond id/name/adm/classId about them leaves the school.
   const students = fullSchool.students.filter(s=>s.id===student.id || s.classId===student.classId || [...examIds].some(id=>(fullSchool.marks[id]||{})[s.id]))
-    .map(s=>({id:s.id, name:s.name, adm:s.adm, classId:s.classId}));
+    .map(s=>({id:s.id, name:s.name, adm:s.adm, classId:s.classId, gender:s.gender||''}));
   const teachers = fullSchool.teachers
     .filter(t=>t.assignments.some(a=>gradeIds.has(a.classId)))
     .map(t=>({id:t.id, name:t.name, assignments:t.assignments.filter(a=>gradeIds.has(a.classId))}));
@@ -778,6 +875,16 @@ function buildParentSafeSchool(fullSchool, student){
     const days = (fullSchool.attendance[id]||{})[student.id];
     if(days!=null) attendance[id] = {[student.id]: days};
   });
+  // Printable assignments: only the ones for this learner's own grade, and only once the
+  // DOS/HOI has marked them visible to parents.
+  const assignments = fullSchool.assignments.filter(a=>a.classId===student.classId && a.visible);
+  // Personalized remarks: only this one learner's own custom remark (if any), same scoping
+  // as attendance — the report falls back to the level's auto remark when there isn't one.
+  const remarks = {};
+  examIds.forEach(id=>{
+    const r = (fullSchool.remarks[id]||{})[student.id];
+    if(r) remarks[id] = {[student.id]: r};
+  });
   return ensureSchoolShape({
     name: fullSchool.name, code: fullSchool.code, address: fullSchool.address,
     phone: fullSchool.phone, email: fullSchool.email, hoiName: fullSchool.hoiName, hoiSignature: fullSchool.hoiSignature,
@@ -786,7 +893,7 @@ function buildParentSafeSchool(fullSchool, student){
     gradingSystem: fullSchool.gradingSystem, learningAreas: fullSchool.learningAreas,
     classes: fullSchool.classes.filter(c=>gradeIds.has(c.id)),
     classTeachers,
-    exams, marks, students, teachers, dos: [], attendance
+    exams, marks, students, teachers, dos: [], attendance, assignments, remarks
   });
 }
 
@@ -811,7 +918,20 @@ function scheduleCloudPush(){
   if(!school || !school.syncConfig || !school.syncConfig.enabled || !fbDb) return;
   clearTimeout(syncState.pushTimer);
   syncState.pushTimer = setTimeout(()=>{
-    schoolDataRef(school.code).set(nonMarksSnapshot(school)).catch(e=>console.warn('Cloud sync push failed', e));
+    const code = school.code, snapshot = nonMarksSnapshot(school);
+    // A transaction reads what is in the cloud RIGHT NOW and merges this device's changes into it,
+    // so someone else's edit saved a moment ago is kept instead of being written over.
+    schoolDataRef(code).transaction(cur=>{
+      if(cur==null) return snapshot;
+      const merged = mergeSchoolData(syncBase[code], snapshot, cur, (cur._updatedAt||0) > (snapshot._updatedAt||0));
+      if(dataEqual(merged, stripForMerge(cur))) return;            // nothing new to write
+      merged._updatedAt = Math.max(cur._updatedAt||0, snapshot._updatedAt||0) + 1;
+      if(snapshot.syncConfig) merged.syncConfig = snapshot.syncConfig;
+      return merged;
+    }).then(res=>{
+      const val = res && res.snapshot && res.snapshot.val();
+      if(val) mergeDataFromCloud(code, val);
+    }).catch(e=>console.warn('Cloud sync push failed', e));
   }, 300);
 }
 function pushMarkToCloud(code, examId, sid, areaId, val){
@@ -989,20 +1109,70 @@ async function refreshAllSchoolsFromCloud(silent){
 // colleague's save just quietly appears next to the row they're on, instead of disturbing
 // the sheet. A full reload only happens when patching isn't safe (nothing loaded yet, or
 // the roster itself changed under us).
-function softRefresh(){
+// Which top-level school fields each DOS/HOI screen actually shows. A change from another device that
+// touches none of them needs no redraw at all, so nothing on screen moves.
+const DOS_TAB_DEPS = {
+  classes:['classes','classTeachers','students'], areas:['learningAreas','classes'], grading:['gradingSystem','classes'],
+  students:['students','classes'], teachers:['teachers','classes','learningAreas','classTeachers'], assignments:['assignments','classes']
+};
+let _lastInputAt = 0, _pendingRedraw = null, _redrawTimer = null;
+['input','keydown'].forEach(ev=>document.addEventListener(ev, ()=>{ _lastInputAt = Date.now(); }, true));
+// True while the person is typing/choosing in a field, or has the side menu open.
+function userIsBusy(){
+  if(document.body.classList.contains('dos-menu-open')) return true;
+  const a = document.activeElement;
+  if(!a || !a.closest || !a.closest('#app')) return false;
+  if(a.tagName==='TEXTAREA' || a.tagName==='SELECT') return true;
+  return a.tagName==='INPUT' && !['checkbox','radio','button','submit','file'].includes(a.type);
+}
+// Redraws with the scroll position and every filled-in field kept, so it doesn't jump or wipe a form.
+function redrawKeepingState(fn){
+  const y = window.scrollY, st = [];
+  document.querySelectorAll('#app input[id],#app select[id],#app textarea[id]').forEach(el=>{
+    if(el.type==='file' || el.type==='password') return;
+    st.push({id:el.id, tag:el.tagName, type:el.type, value:el.value, checked:el.checked});
+  });
+  fn();
+  const reselect = [];
+  st.forEach(o=>{
+    const el = document.getElementById(o.id); if(!el || el.tagName!==o.tag) return;
+    if(o.type==='checkbox' || o.type==='radio'){ el.checked = o.checked; return; }
+    if(el.value!==o.value){ el.value = o.value; if(el.tagName==='SELECT' && el.value===o.value && el.getAttribute('onchange')) reselect.push(el); }
+  });
+  reselect.forEach(el=>el.dispatchEvent(new Event('change',{bubbles:true})));
+  window.scrollTo(0, y);
+}
+// If someone is mid-edit, wait until they pause (about a second and a half after the last keystroke,
+// and not inside a field) — their typing is never interrupted and nothing shakes.
+function calmRedraw(fn){
+  if(!userIsBusy() && Date.now()-_lastInputAt > 1500){ _pendingRedraw = null; redrawKeepingState(fn); return; }
+  _pendingRedraw = fn;
+  if(_redrawTimer) return;
+  _redrawTimer = setInterval(()=>{
+    if(!_pendingRedraw){ clearInterval(_redrawTimer); _redrawTimer = null; return; }
+    if(userIsBusy() || Date.now()-_lastInputAt <= 1500) return;
+    const f = _pendingRedraw; _pendingRedraw = null;
+    clearInterval(_redrawTimer); _redrawTimer = null;
+    if(session) redrawKeepingState(f);
+  }, 700);
+}
+function softRefresh(changed){
   if(!session) return;
+  const keys = Array.isArray(changed) ? changed : null;
   if(session.role==='teacher'){
     // The DOS/HOI may have changed this teacher's assignments or permissions — redraw at once.
     const _t = currentTeacher();
     if(!_t){ logout(); setTimeout(()=>toast('Your teacher account is no longer available','err'),50); return; }
-    if(teacherSig(currentSchool(), _t)!==_teacherSig){ renderTeacher(); toast('Your access was updated by the DOS/HOI'); return; }
+    if(teacherSig(currentSchool(), _t)!==_teacherSig){ calmRedraw(renderTeacher); toast('Your access was updated by the DOS/HOI'); return; }
     try{ renderTeacherApprovals(); }catch(e){}
     softRefreshMarksGrid('#marksGridArea', ()=>({examId: qs('#tExam')&&qs('#tExam').value, areaId: qs('#tArea')&&qs('#tArea').value, classId: qs('#tClass')&&qs('#tClass').value}), loadMarksGrid);
   } else if(session.role==='dos'){
     if(dosTab==='marks'){
       softRefreshMarksGrid('#dosMarksGridArea', ()=>({examId: qs('#dmExam')&&qs('#dmExam').value, areaId: qs('#dmArea')&&qs('#dmArea').value, classId: qs('#dmClass')&&qs('#dmClass').value}), loadDosMarksGrid);
     } else {
-      renderDOS();
+      const deps = DOS_TAB_DEPS[dosTab];
+      if(keys && deps && !keys.some(k=>deps.includes(k))) return;   // nothing on this screen changed
+      calmRedraw(renderDOS);
     }
   }
 }
@@ -1059,6 +1229,74 @@ function deepEqual(a,b){
   for(const k of ka){ if(!deepEqual(a[k], b[k])) return false; }
   return true;
 }
+
+/* ---- Merging simultaneous edits (HOI/DOS + teachers on several devices) ----
+   The school's non-marks data used to sync last-write-wins as one blob, so two people editing
+   different things at the same moment overwrote each other. It now merges three ways:
+   base (last cloud copy this device saw) + local (this device) + remote (cloud). Lists of
+   records (grades, learners, teachers, exams…) merge record-by-record by id; fields merge
+   field-by-field; an edit beats a delete; only when two people change the very same field
+   to different values does the newer save win. */
+const MERGE_SKIP = ['marks','syncConfig','_updatedAt'];
+function stripForMerge(o){ const c = Object.assign({}, o||{}); MERGE_SKIP.forEach(k=>delete c[k]); return c; }
+function isPlainObj(v){ return v!==null && typeof v==='object' && !Array.isArray(v); }
+function isEmptyVal(v){ return v==null || (Array.isArray(v) && !v.length) || (isPlainObj(v) && !Object.keys(v).length); }
+// Firebase never stores empty lists/objects or nulls, so compare with those dropped.
+function normEmpty(v){
+  if(Array.isArray(v)){ const a=v.map(normEmpty); return a.length?a:undefined; }
+  if(isPlainObj(v)){ const o={}; Object.keys(v).forEach(k=>{ const x=normEmpty(v[k]); if(x!==undefined) o[k]=x; }); return Object.keys(o).length?o:undefined; }
+  return v===null?undefined:v;
+}
+function dataEqual(a,b){ return deepEqual(normEmpty(a)===undefined?{}:normEmpty(a), normEmpty(b)===undefined?{}:normEmpty(b)); }
+function merge3(b,l,r,rn){
+  if(isEmptyVal(l) && isEmptyVal(r)) return l!==undefined ? l : r;
+  if(deepEqual(l,r)) return l;
+  if(deepEqual(l,b)) return r;      // only the other side changed it
+  if(deepEqual(r,b)) return l;      // only this side changed it
+  if(isPlainObj(l) && isPlainObj(r)){
+    const bb = isPlainObj(b) ? b : {}, out = {};
+    new Set([...Object.keys(l), ...Object.keys(r)]).forEach(k=>{
+      const inL = k in l, inR = k in r, inB = k in bb;
+      if(inL && inR) out[k] = merge3(bb[k], l[k], r[k], rn);
+      else if(inL){ if(!inB || !deepEqual(l[k], bb[k])) out[k] = l[k]; }
+      else { if(!inB || !deepEqual(r[k], bb[k])) out[k] = r[k]; }
+    });
+    return out;
+  }
+  const arrish = v => v==null || Array.isArray(v);
+  const hasIds = a => Array.isArray(a) && a.length>0 && a.every(x=>isPlainObj(x) && x.id!=null);
+  if(arrish(l) && arrish(r) && (hasIds(l)||hasIds(r)) && (l||[]).concat(r||[]).every(x=>isPlainObj(x) && x.id!=null)){
+    const mp = a => new Map((Array.isArray(a)?a:[]).map(x=>[x.id,x]));
+    const bm = mp(b), lm = mp(l), rm = mp(r), ids = [];
+    (r||[]).forEach(x=>ids.push(x.id));
+    (l||[]).forEach(x=>{ if(!rm.has(x.id)) ids.push(x.id); });
+    const out = [];
+    ids.forEach(id=>{
+      const inL = lm.has(id), inR = rm.has(id), inB = bm.has(id);
+      if(inL && inR) out.push(merge3(bm.get(id), lm.get(id), rm.get(id), rn));
+      else if(inL){ if(!inB || !deepEqual(lm.get(id), bm.get(id))) out.push(lm.get(id)); }
+      else { if(!inB || !deepEqual(rm.get(id), bm.get(id))) out.push(rm.get(id)); }
+    });
+    return out;
+  }
+  return rn ? r : l;                // same field changed on both sides: the newer save wins
+}
+// Two people adding "Grade 4" at the same moment would create two grades with one name. Rename the
+// later one (by id, so every device makes the same choice) rather than lose or merge either.
+function dedupeGradeNames(sc){
+  if(!sc || !Array.isArray(sc.classes)) return sc;
+  const seen = new Set();
+  sc.classes.slice().sort((x,y)=>String(x.id)<String(y.id)?-1:1).forEach(c=>{
+    let n = c.name, k = 2;
+    while(seen.has(n.toLowerCase())){ n = c.name+' ('+(k++)+')'; }
+    c.name = n; seen.add(n.toLowerCase());
+  });
+  return sc;
+}
+function mergeSchoolData(base, local, remote, remoteNewer){
+  const m = merge3(base ? stripForMerge(base) : undefined, stripForMerge(local), stripForMerge(remote), remoteNewer);
+  return dedupeGradeNames(JSON.parse(JSON.stringify(m||{})));
+}
 /* Exam approval helpers ---------------------------------------------------------- */
 function touchExam(e){ e.stateAt = Date.now(); }
 // Is this exam's result allowed out to parents / teacher-printed reports?
@@ -1108,27 +1346,36 @@ function mergeMarksFromCloud(code, remote){
   if(changed){
     school.marks = incoming;
     saveDB(DB, {skipCloud:true});
-    if(syncState.marksReady){ toast('🔄 Marks updated from another device'); softRefresh(); }
+    if(syncState.marksReady){ toast('🔄 Marks updated from another device'); softRefresh(['marks']); }
   }
   syncState.marksReady = true;
 }
 function mergeDataFromCloud(code, remote){
   if(!remote){ syncState.dataReady = true; return; }
   const local = DB.schools[code];
-  const localTime = local ? (local._updatedAt||0) : -1;
-  const remoteTime = remote._updatedAt || 0;
-  if(!local || remoteTime > localTime){
-    const marks = local ? local.marks : {};
-    const merged = ensureSchoolShape(Object.assign({}, remote, {marks: marks||{}}));
-    // Keep any edit request / approval change made on THIS device that the incoming copy hasn't seen yet.
-    const keptLocal = local ? mergeExamStates(merged, local) : false;
-    DB.schools[code] = merged;
-    saveDB(DB, keptLocal ? undefined : {skipCloud:true});
-    if(syncState.dataReady){ toast('🔄 School data updated from another device'); softRefresh(); }
-  } else if(local && localTime > remoteTime){
-    if(mergeExamStates(local, remote)) saveDB(DB, {skipCloud:true});
-    scheduleCloudPush();
+  if(!local){
+    DB.schools[code] = ensureSchoolShape(Object.assign({}, remote, {marks:{}}));
+    syncBase[code] = JSON.parse(JSON.stringify(stripForMerge(remote)));
+    saveDB(DB, {skipCloud:true});
+    syncState.dataReady = true; enforceAccessForActiveSession(code); return;
   }
+  const lt = local._updatedAt||0, rt = remote._updatedAt||0;
+  // No earlier cloud copy in memory (just logged in): if the cloud is newer, trust it as before;
+  // otherwise merge without assuming anything was deleted.
+  const base = syncBase[code] || (rt>lt ? stripForMerge(local) : undefined);
+  const next = Object.assign(mergeSchoolData(base, local, remote, rt>lt), {marks: local.marks||{}, syncConfig: local.syncConfig || remote.syncConfig});
+  mergeExamStates(next, remote); mergeExamStates(next, local);   // approval / edit-request state, as before
+  ensureSchoolShape(next);
+  const nx = stripForMerge(next), lo = stripForMerge(local);
+  const changed = [...new Set([...Object.keys(nx), ...Object.keys(lo)])].filter(k=>!dataEqual(nx[k], lo[k]));
+  const pushBack = !dataEqual(nx, stripForMerge(remote));        // this device holds changes the cloud lacks
+  next._updatedAt = pushBack ? Math.max(lt, rt) + 1 : Math.max(rt, 0);
+  syncBase[code] = JSON.parse(JSON.stringify(stripForMerge(remote)));
+  if(changed.length || pushBack || !deepEqual(local._updatedAt, next._updatedAt)){
+    DB.schools[code] = next;
+    saveDB(DB, pushBack ? undefined : {skipCloud:true});
+  }
+  if(changed.length && syncState.dataReady){ toast('🔄 Updated from another device'); softRefresh(changed); }
   syncState.dataReady = true;
   enforceAccessForActiveSession(code);
 }
@@ -1364,10 +1611,14 @@ function gen8DigitCode(){
 
 function defaultGrading(){
   return [
-    {level:'EE', label:'Exceeding Expectation', min:80, max:100, points:4, remark:'Excellent work, keep soaring high!'},
-    {level:'ME', label:'Meeting Expectation', min:60, max:79, points:3, remark:'Good performance, aim higher next term.'},
-    {level:'AE', label:'Approaching Expectation', min:40, max:59, points:2, remark:'Fair effort, more practice needed.'},
-    {level:'BE', label:'Below Expectation', min:0, max:39, points:1, remark:'Needs serious improvement and support.'}
+    {level:'EE', label:'Exceeding Expectation', min:80, max:100, points:4,
+      remark:'An outstanding performance this term. The learner has fully grasped the concepts covered, applies them confidently and independently, and consistently produces work above the standard expected for this level. Keep encouraging this learner with more challenging tasks and opportunities to mentor peers.'},
+    {level:'ME', label:'Meeting Expectation', min:60, max:79, points:3,
+      remark:'A solid, dependable performance this term. The learner understands and applies most of the concepts covered with only minor gaps, and completes set work with reasonable independence. Continued practice on the more challenging areas will help push this towards an even stronger result next term.'},
+    {level:'AE', label:'Approaching Expectation', min:40, max:59, points:2,
+      remark:'The learner is making genuine progress but has not yet fully grasped several of the concepts covered this term, often needing guidance to complete tasks correctly. With more consistent practice, closer follow-up at home, and revisiting foundational topics, steady improvement is well within reach.'},
+    {level:'BE', label:'Below Expectation', min:0, max:39, points:1,
+      remark:'The learner is finding this term’s work considerably challenging and has struggled to grasp the core concepts covered so far, even with support. Closer follow-up both at school and at home, extra remedial practice, and revisiting earlier foundational topics are strongly recommended going forward.'}
   ];
 }
 function defaultAreas(){
@@ -1398,6 +1649,10 @@ function newSchool(name, dosUsername, dosPassword, hoiName, address, email, phon
     exams: [],
     marks: {}, // examId -> { adm -> {areaId: score} }
     classTeachers: {}, // classId -> teacher name
+    // Printable assignments/homework the DOS/HOI sends to the Parent Portal, per grade —
+    // see tplAssignments(). Each parent only ever receives the ones for their own child's
+    // grade, and only once marked visible (see buildParentSafeSchool).
+    assignments: [],
     // Default every new school onto the deployment's shared project (if configured) so
     // its DOS/HOI and Teacher links resolve automatically on any device, with no manual
     // Multi-Device Sync setup needed. The school can still switch to its own private
@@ -1434,7 +1689,7 @@ let session = JSON.parse(sessionStorage.getItem('cbc_session')||'null');
 // parent actively re-identifies their child.
 let parentSchoolData = null;
 function setSession(s){ session = s; sessionStorage.setItem('cbc_session', JSON.stringify(s)); resetInactivityTimer(); }
-function logout(){ session=null; parentSchoolData=null; sessionStorage.removeItem('cbc_session'); syncState.enabled=false; syncState.connectedCode=null; detachLiveListeners(); detachAdminLiveListener(); clearTimeout(inactivityTimer); route(); }
+function logout(){ teacherTab='dashboard'; parentTab='dashboard'; adminTab='dashboard'; session=null; parentSchoolData=null; sessionStorage.removeItem('cbc_session'); syncState.enabled=false; syncState.connectedCode=null; detachLiveListeners(); detachAdminLiveListener(); clearTimeout(inactivityTimer); route(); }
 
 function currentSchool(){ return session && session.schoolCode ? DB.schools[session.schoolCode] : null; }
 
@@ -1512,6 +1767,50 @@ function studentsForExam(school, e){
   return school.students.filter(s=> s.classId===e.classId || (mk[s.id] && Object.keys(mk[s.id]).length)).sort(admOrName);
 }
 function unionStudents(list){ return [...new Map(list.map(s=>[s.id,s])).values()].sort(admOrName); }
+/* ===== Gender helpers ===== */
+function normGender(v){ const t=String(v||'').trim().toLowerCase(); if(['m','male','boy'].includes(t)) return 'M'; if(['f','female','girl'].includes(t)) return 'F'; return ''; }
+function genderLabel(g){ return g==='M'?'Boy':g==='F'?'Girl':''; }
+function genderPickerHTML(id){
+  return `<div><label>Print for</label><select id="${id}"><option value="all">All learners</option><option value="M">Boys only</option><option value="F">Girls only</option><option value="split">Boys &amp; Girls (separate lists)</option></select></div>`;
+}
+function genderMode(id){ const el=qs('#'+id); return el?el.value:'all'; }
+function genderNote(mode){
+  if(mode==='M') return '<p class="small">Showing: Boys only (positions are class positions)</p>';
+  if(mode==='F') return '<p class="small">Showing: Girls only (positions are class positions)</p>';
+  if(mode==='split') return '<p class="small">Listed separately: Boys, then Girls (positions are class positions)</p>';
+  return '';
+}
+function applyGenderMode(list, mode, getS){
+  getS = getS || (x=>x);
+  const g = x=>getS(x).gender;
+  if(mode==='M' || mode==='F') return list.filter(x=>g(x)===mode);
+  if(mode==='split') return [...list.filter(x=>g(x)==='M'), ...list.filter(x=>g(x)==='F'), ...list.filter(x=>g(x)!=='M' && g(x)!=='F')];
+  return list;
+}
+// Renders table rows; in "split" mode adds a Boys / Girls heading row before each group (numbering restarts per group via idx).
+function groupedRowsHTML(list, mode, colspan, getS, rowFn){
+  if(mode!=='split') return list.map((x,i)=>rowFn(x,i)).join('');
+  return [['Boys','M'],['Girls','F'],['Gender not specified','']].map(([label,code])=>{
+    const grp = list.filter(x=>{ const gg=getS(x).gender; return code ? gg===code : (gg!=='M' && gg!=='F'); });
+    if(!grp.length) return '';
+    return `<tr class="gender-head"><td colspan="${colspan}">${label} (${grp.length})</td></tr>` + grp.map((x,i)=>rowFn(x,i)).join('');
+  }).join('');
+}
+// Boys vs Girls performance table for a class (rows = [{s, meanPct}] for the WHOLE class).
+function genderSummaryHTML(school, classId, rows){
+  if(!rows.some(r=>r.s.gender==='M' || r.s.gender==='F')) return '';
+  const levels = gradingFor(school, classId).map(k=>k.level);
+  const line = (label, list)=>{
+    const n = list.length, mean = n ? list.reduce((t,r)=>t+r.meanPct,0)/n : null, cnt = {};
+    list.forEach(r=>{ const lv = gradeFor(school, r.meanPct, classId).level; cnt[lv] = (cnt[lv]||0)+1; });
+    return `<tr><td style="text-align:left"><b>${label}</b></td><td>${n}</td><td>${mean!=null?mean.toFixed(1)+'%':'-'}</td>${levels.map(l=>`<td>${cnt[l]||0}</td>`).join('')}</tr>`;
+  };
+  const boys = rows.filter(r=>r.s.gender==='M'), girls = rows.filter(r=>r.s.gender==='F');
+  const none = rows.filter(r=>r.s.gender!=='M' && r.s.gender!=='F');
+  return `<div class="gender-summary"><p class="small" style="margin:14px 0 4px"><b>Performance by gender</b> (whole class)</p>
+  <table><tr><th style="text-align:left">Group</th><th>Learners</th><th>Mean %</th>${levels.map(l=>`<th>${escapeHtml(l)}</th>`).join('')}</tr>
+  ${line('Boys',boys)}${line('Girls',girls)}${none.length?line('Not specified',none):''}${line('All learners',rows)}</table></div>`;
+}
 function studentsInClass(school, classId){
   return school.students.filter(s=>s.classId===classId).sort(admOrName);
 }
@@ -1623,7 +1922,7 @@ async function adminRetrieveSchoolByCode(){
   catch(e){ msgEl.innerHTML = '<div class="msg err">Lookup timed out — check your connection and try again.</div>'; return; }
   if(!DB.schools[code]){ msgEl.innerHTML = '<div class="msg err">No school found for that code with that database. Double-check the code, or that the Sync Code is the right one for this specific school.</div>'; return; }
   msgEl.innerHTML = `<div class="msg ok">✅ Found "${escapeHtml(DB.schools[code].name)}" — added to your list below.</div>`;
-  renderAdmin();
+  adminTab = 'schools'; renderAdmin(); toast('School found and added to All Schools');
 }
 
 /* ============================= ROUTER / RENDER ============================= */
@@ -1631,6 +1930,7 @@ const app = document.getElementById('app');
 const whoBar = document.getElementById('whoBar');
 
 function route(){
+  document.body.classList.remove('dos-menu-open');
   whoBar.innerHTML='';
   if(!session){
     renderLogin();
@@ -2187,23 +2487,24 @@ async function doParentLogin(){
 /* ============================= ADMIN VIEW ============================= */
 function renderAdmin(){
   const schools = Object.values(DB.schools);
-  app.innerHTML = `
+  const S = {
+    banner: `
   ${hasPlatformConfig() ? `
   <div class="card" style="background:#eefbf2;border-color:#bfe8cc">
     <p class="small" style="margin:0">🟢 <b>Shared database connected.</b> Every school you add here — and every DOS/HOI or Teacher login link you generate — will resolve automatically on any device, the first time it's opened. No per-school setup needed.</p>
   </div>` : `
   <div class="card" style="background:#fff7ea;border-color:#f0dba8">
     <p class="small" style="margin:0">⚠ <b>No shared database configured for this deployment yet.</b> Schools and login links currently only work on the device that created/opened them — a DOS/HOI or Teacher opening their link for the first time on a different device will see "School code not found". This takes ~5 minutes to fix for free — see <b>firebase-config.js</b> and the setup section of <b>README.md</b> in this project, then redeploy.</p>
-  </div>`}
-  <div class="card">
+  </div>`}`,
+    settings: `  <div class="card">
     <h2>⚙️ Platform Settings</h2>
     <div class="row">
       <div><label>Default Trial Period (days) for new schools</label><input id="defTrialDays" type="number" min="0" value="${DB.settings.trialDays}"></div>
       <div style="align-self:flex-end"><button onclick="saveTrialDefault()">Save Default</button></div>
     </div>
     <p class="small">This applies to newly registered schools. Use "Edit Trial" on any existing school below to change its individual trial length or expiry.</p>
-  </div>
-  <div class="card">
+  </div>`,
+    password: `  <div class="card">
     <h2>🔑 Change Admin Password</h2>
     <div class="row">
       <div><label>Current Password</label><input type="password" id="curAdminPw"></div>
@@ -2213,10 +2514,10 @@ function renderAdmin(){
     </div>
     <p class="small">Forgot it in future? On the login screen, click "Forgot your password?" under the Admin/Owner tab to restore from a backup file or reset it directly.</p>
     <div id="changeAdminMsg"></div>
-  </div>
-  <div class="card" id="adminCloudCard">${tplAdminCloud()}</div>
-  <div class="card" id="adminSmsCard">${tplSmsAdmin()}</div>
-  <div class="card">
+  </div>`,
+    cloud: `  <div class="card" id="adminCloudCard">${tplAdminCloud()}</div>`,
+    sms: `  <div class="card" id="adminSmsCard">${tplSmsAdmin()}</div>`,
+    register: `  <div class="card">
     <h2>🏫 Register a New School</h2>
     <div class="row">
       <div><label>School Name</label><input id="newSchoolName" placeholder="e.g. Sunrise Primary School"></div>
@@ -2234,10 +2535,10 @@ function renderAdmin(){
     </div>
     <div class="flexbtns"><button onclick="createSchoolNow()">➕ Create School</button></div>
     <div id="adminMsg"></div>
-  </div>
-  <div class="card">
+  </div>`,
+    retrieve: `  <div class="card">
     <h2>🔎 Retrieve a Missing School</h2>
-    <p class="small">Already created somewhere else but not showing in "All Schools" below (e.g. created on a different device/browser)? Look it up by its code and add it back to this list — its data isn't lost, it's just not on this device yet.</p>
+    <p class="small">Already created somewhere else but not showing in "All Schools" (e.g. created on a different device/browser)? Look it up by its code and add it back to this list — its data isn't lost, it's just not on this device yet.</p>
     <div class="row">
       <div><label>School Code</label><input id="adminLookupCode" placeholder="e.g. 88382912 — or paste a DOS/Teacher login link"></div>
       <div><label>Sync Code (only if needed — see below)</label><input id="adminLookupSync" placeholder="Paste the school's Sync Code if this deployment has no shared database"></div>
@@ -2245,8 +2546,8 @@ function renderAdmin(){
     <p class="small">Works automatically if this deployment has a shared database (see the banner at the top of this page). Otherwise, ask that school's DOS/HOI for their Sync Code — <b>My Account → Multi-Device Sync → "Get Teacher Sync Link / Code"</b> — and paste it (or the whole link) into either box above.</p>
     <div class="flexbtns"><button onclick="adminRetrieveSchoolByCode()">🔍 Retrieve School</button></div>
     <div id="adminLookupMsg"></div>
-  </div>
-  <div class="card">
+  </div>`,
+    schools: `  <div class="card">
     <h2>📋 All Schools (${schools.length}) ${schools.some(s=>s.syncConfig&&s.syncConfig.enabled)?`<button class="ghost" style="font-size:11px;padding:3px 8px;font-weight:600" onclick="refreshAllSchoolsFromCloud(false)">🔄 Refresh from cloud</button>`:''}</h2>
     <p class="small" style="margin-top:-6px">Grade/Student counts are pulled from the cloud automatically when you open this page; use Refresh if a school's DOS just added data on their own device.</p>
     <table>
@@ -2271,11 +2572,11 @@ function renderAdmin(){
             <button class="ghost" onclick="editSchoolTrialDays('${s.code}')">Edit Trial</button>
             <button class="danger" onclick="deleteSchool('${s.code}')">Delete</button>
           </td>
-        </tr>`).join('') || '<tr><td colspan="8" class="small">No schools yet. Add one above — you can add unlimited schools.</td></tr>'}
+        </tr>`).join('') || '<tr><td colspan="8" class="small">No schools yet. Open ☰ Menu → Register a School — you can add unlimited schools.</td></tr>'}
     </table>
     <div id="linkArea"></div>
-  </div>
-  <div class="card">
+  </div>`,
+    backup: `  <div class="card">
     <h2>💾 Backup &amp; Restore (Device Change)</h2>
     <p class="small">This app stores its data only in the browser/device it's running on. Before switching devices, wiping browser data, or reinstalling, export a backup. On the new device, open this same file and import the backup — every school, its DOS/teacher accounts, learners and marks will be restored exactly as they were, so nothing already created gets lost. Exporting includes the current admin password too, so restoring on a fresh device brings your admin account back rather than forcing you to create a new one.</p>
     <div class="flexbtns">
@@ -2284,7 +2585,34 @@ function renderAdmin(){
       <input type="file" id="restoreFile" accept="application/json" class="hidden" onchange="importBackup(event)">
     </div>
     <div id="backupMsg"></div>
-  </div>`;
+  </div>`
+  };
+  const pendingTopups = schools.reduce((n,s)=>n+(s.smsTopupRequests||[]).filter(r=>r.status==='pending').length, 0);
+  const menu = [
+    {group:'Overview', items:[['dashboard','🏠 Dashboard']]},
+    {group:'Schools', items:[['schools','📋 All Schools'],['register','➕ Register a School'],['retrieve','🔎 Retrieve a School']]},
+    {group:'Messaging', items:[['sms','💬 SMS Credits', pendingTopups]]},
+    {group:'Settings &amp; data', items:[['settings','⚙️ Platform Settings'],['password','🔑 Admin Password'],['cloud','☁️ Cloud Account'],['backup','💾 Backup &amp; Restore']]}
+  ];
+  if(!menu.some(g=>g.items.some(i=>i[0]===adminTab))) adminTab = 'dashboard';
+  const nActive = schools.filter(x=>x.status==='active').length;
+  const nSusp = schools.filter(x=>x.status==='suspended').length;
+  const nLearners = schools.reduce((n,x)=>n+x.students.length, 0);
+  const dashboard = S.banner
+    + (pendingTopups ? `<div class="card no-print" style="border-left:4px solid #d1473f"><b>⏳ Needs your attention</b>
+      <p class="small" style="margin:6px 0 8px"><b>${pendingTopups}</b> SMS top-up request(s) waiting for your approval.</p>
+      <button onclick="gotoAdminTab('sms')">Review SMS Credits</button></div>` : '')
+    + `<div class="stat-grid no-print">
+      <div class="stat-tile"><b>${schools.length}</b><span>Schools</span></div>
+      <div class="stat-tile"><b>${nActive}</b><span>Active (paid)</span></div>
+      <div class="stat-tile"><b>${schools.length-nActive-nSusp}</b><span>On trial / other</span></div>
+      <div class="stat-tile"><b>${nSusp}</b><span>Suspended</span></div>
+      <div class="stat-tile"><b>${nLearners}</b><span>Learners in total</span></div>
+    </div>`
+    + portalQuick('gotoAdminTab', [['register','➕ Register a School'],['schools','📋 All Schools'],['sms','💬 SMS Credits'],['backup','💾 Backup']]);
+  const content = {dashboard, schools:S.schools, register:S.register, retrieve:S.retrieve, sms:S.sms, settings:S.settings, password:S.password, cloud:S.cloud, backup:S.backup}[adminTab] || '';
+  app.innerHTML = portalShell({menu, tab:adminTab, goto:'gotoAdminTab', side:'Admin', headName:'Platform Admin', headSub:'EduTrack CBC', badge:pendingTopups}) + `<div id="dosContent">${content}</div>`;
+  dosSyncBarOffset();
 }
 function tplAdminCloud(){
   const as = DB.adminSync;
@@ -2455,8 +2783,8 @@ function createSchoolNow(){
   const phone = qs('#newSchoolPhone').value.trim();
   if(!name||!u){ qs('#adminMsg').innerHTML='<div class="msg err">Fill in at least the school name & DOS username.</div>'; return; }
   const code = newSchool(name,u,p,hoi,address,email,phone);
-  renderAdmin();
-  qs('#adminMsg').innerHTML = `<div class="msg ok">School created! See the credentials card below to share with the school.</div>`;
+  adminTab = 'schools'; renderAdmin();
+  toast('School created! Share the credentials shown below with the school.');
   showCredentials(code);
   const box = qs('#linkArea'); if(box) box.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
@@ -2569,6 +2897,7 @@ function showLink(code, role){
 
 /* ============================= DOS VIEW ============================= */
 let dosTab = 'dashboard';
+let teacherTab = 'dashboard', parentTab = 'dashboard', adminTab = 'dashboard';
 let gradingClassId = ''; // '' = editing the school-wide default grading; else a grade id being customized
 /* ============================= DOS/HOI: WHATSAPP GROUP PROMPT ============================= */
 // A one-time-per-login popup inviting a DOS/HOI to join the school-admin WhatsApp group.
@@ -2601,24 +2930,130 @@ function dismissWaGroupPrompt(){
   if(qs('#waGroupDontAsk') && qs('#waGroupDontAsk').checked) storageSet('cbc_wa_group_dismissed','1');
   const el = qs('#waGroupOverlay'); if(el) el.remove();
 }
+/* ---- DOS/HOI side menu ----
+   Single source of truth for the drawer AND the title strip: add/rename/regroup a feature
+   here and the menu follows. Each item is [tabKey, label]; tabKey must match a dispatch
+   line in renderDOS(). The screen opens on the dashboard alone — everything else is one
+   tap away behind ☰ Menu. */
+const DOS_MENU = [
+  {group:'Overview', items:[['dashboard','🏠 Dashboard']]},
+  {group:'School setup', items:[['classes','🏷 Grades'],['areas','📚 Learning Areas'],['grading','🎯 Grading System'],['students','🧑‍🎓 Learners'],['teachers','👩‍🏫 Teachers &amp; Permissions']]},
+  {group:'Exams &amp; marks', items:[['exams','📝 Exams'],['marks','✏️ Enter/Edit Marks']]},
+  {group:'Results &amp; reports', items:[['assess','🖨 Assessment Sheets'],['analysis','📈 Results Analysis'],['reports','📄 Reports'],['history','🗂 Exam History']]},
+  {group:'Parents', items:[['assignments','📎 Assignments'],['sms','💬 SMS to Parents'],['links','🔗 Share Login Links']]},
+  {group:'School &amp; account', items:[['profile','🏫 School Details'],['account','🔑 My Account'],['help','❓ Help / Manual']]}
+];
+// Things that need the DOS/HOI's decision — surfaced on the ☰ button, the Exams menu item
+// and the dashboard, because with the menu tucked away nobody would otherwise notice them.
+function dosAttention(school){
+  const editReqs = school.exams.reduce((n,e)=>n+(e.editRequests||[]).filter(r=>r.status==='pending').length,0);
+  const awaiting = school.requireApproval
+    ? school.exams.filter(e=>e.resultsApproval==='pending' && Object.keys(school.marks[e.id]||{}).length>0).length : 0;
+  return {editReqs, awaiting, total: editReqs+awaiting};
+}
+function dosMenuOpen(open){
+  const d = qs('#dosDrawer'), b = qs('#dosBackdrop');
+  if(!d || !b) return;
+  d.classList.toggle('open', open); b.classList.toggle('open', open);
+  d.setAttribute('aria-hidden', open ? 'false' : 'true');
+  document.body.classList.toggle('dos-menu-open', open);
+  const btn = qs('#dosMenuBtn'); if(btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if(open){ const a = d.querySelector('.dd-item.active') || d.querySelector('.dd-item'); if(a) a.focus(); }
+  else if(btn) btn.focus();
+}
+function gotoDosTab(k){
+  dosTab = k;
+  document.body.classList.remove('dos-menu-open');
+  renderDOS();
+  window.scrollTo(0,0);
+}
+// The sticky title strip sits directly under the sticky top header, whose height changes
+// when it wraps on a narrow phone — so measure it instead of hard-coding an offset.
+function dosSyncBarOffset(){
+  const h = document.querySelector('header.topbar'), bar = qs('.dos-bar');
+  if(h && bar) bar.style.top = (h.offsetHeight + 6) + 'px';
+}
+window.addEventListener('resize', dosSyncBarOffset);
+document.addEventListener('keydown', ev=>{
+  if(ev.key==='Escape' && document.body.classList.contains('dos-menu-open')) dosMenuOpen(false);
+});
+function tplShareLinks(school){
+  return `<div class="card"><h2>🔗 Share Login Links</h2>
+  <p class="small">School Code: <b class="school-code">${school.code}</b></p>
+  <p class="small">Get a ready-made link to share on WhatsApp or the notice board, so nobody has to type the school code by hand.</p>
+  <div class="flexbtns"><button class="ghost" onclick="showLinkDos()">🔗 Get Teacher Login Link</button> <button class="ghost" onclick="showLinkParent()">🔗 Get Parent Portal Link</button></div>
+  <div id="dosLinkArea"></div></div>`;
+}
+function copyLinkBox(btn){
+  const box = btn.parentElement.querySelector('.linkbox'); if(!box) return;
+  const text = box.textContent.trim();
+  const done = ()=>{ btn.textContent = '✅ Copied'; setTimeout(()=>{ btn.textContent = '📋 Copy link'; }, 1800); };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, ()=>toast('Could not copy — select the link and copy it manually.','err')); }
+  else { const r = document.createRange(); r.selectNodeContents(box); const s = getSelection(); s.removeAllRanges(); s.addRange(r); try{ document.execCommand('copy'); done(); }catch(e){ toast('Select the link and copy it manually.','err'); } }
+}
+/* ---- Shared side-menu shell for the Teacher, Parent and Admin screens ----
+   Same drawer + ☰ Menu strip the DOS/HOI screen uses (it reuses dosMenuOpen and the .dos-* styles).
+   o = {menu:[{group, items:[[key,label,count?]]}], tab, goto:'fnName', side, headName, headSub, badge}
+   Every screen opens on its dashboard alone; everything else is one tap away behind ☰ Menu. */
+function portalShell(o){
+  const titleOf = k=>{ for(const g of o.menu){ const it = g.items.find(i=>i[0]===k); if(it) return it[1]; } return o.menu[0].items[0][1]; };
+  return `<div class="dos-bar no-print">
+    <button class="menu-btn" id="dosMenuBtn" aria-label="Open menu" aria-controls="dosDrawer" aria-expanded="false" onclick="dosMenuOpen(true)">☰ Menu${o.badge?`<span class="dot">${o.badge}</span>`:''}</button>
+    <div class="dos-title">${titleOf(o.tab)}</div>
+    <div class="dos-school">${escapeHtml(o.side||'')}</div>
+  </div>
+  <div class="dos-backdrop no-print" id="dosBackdrop" onclick="dosMenuOpen(false)"></div>
+  <nav class="dos-drawer no-print" id="dosDrawer" aria-label="Main menu" aria-hidden="true">
+    <div class="dd-head"><button class="dd-close" aria-label="Close menu" onclick="dosMenuOpen(false)">✕</button>
+      <div class="dd-name">${escapeHtml(o.headName||'')}</div><div class="dd-code">${escapeHtml(o.headSub||'')}</div></div>
+    <div class="dd-body">
+      ${o.menu.map(g=>`<div class="dd-group">${g.group}</div>${g.items.map(([k,l,n])=>`<button class="dd-item ${o.tab===k?'active':''}" onclick="${o.goto}('${k}')"><span>${l}</span>${n?`<span class="dd-count">${n}</span>`:''}</button>`).join('')}`).join('')}
+    </div>
+    <div class="dd-foot"><button class="dd-item" onclick="dosMenuOpen(false);logout()"><span>🚪 Logout</span></button></div>
+  </nav>`;
+}
+function portalQuick(goto, items){
+  return `<div class="dos-quick no-print">${items.map(([k,l])=>`<button onclick="${goto}('${k}')">${l}</button>`).join('')}</div>`;
+}
+function gotoTeacherTab(k){ teacherTab = k; document.body.classList.remove('dos-menu-open'); renderTeacher(); window.scrollTo(0,0); }
+function gotoParentTab(k){ parentTab = k; document.body.classList.remove('dos-menu-open'); renderParent(); window.scrollTo(0,0); }
+function gotoAdminTab(k){ adminTab = k; document.body.classList.remove('dos-menu-open'); renderAdmin(); window.scrollTo(0,0); }
 function renderDOS(){
   const school = currentSchool();
+  document.body.classList.remove('dos-menu-open');
+  const att = dosAttention(school);
+  const titleOf = k=>{ for(const g of DOS_MENU){ const it = g.items.find(i=>i[0]===k); if(it) return it[1]; } return 'Dashboard'; };
   app.innerHTML = `
-  <div class="tabs no-print">
-    ${[['dashboard','🏠 Dashboard'],['classes','🏷 Grades'],['areas','📚 Learning Areas'],['grading','🎯 Grading System'],
-       ['students','🧑‍🎓 Learners'],['exams','📝 Exams'],['teachers','👩‍🏫 Teachers & Permissions'],
-       ['marks','✏️ Enter/Edit Marks'],
-       ['assess','🖨 Assessment Sheets'],['analysis','📈 Results Analysis'],['reports','📄 Reports'],['history','🗂 Exam History'],
-       ['sms','💬 SMS to Parents'],
-       ['profile','🏫 School Details'],['account','🔑 My Account'],['help','❓ Help / Manual']]
-      .map(([k,l])=>`<button class="${dosTab===k?'active':''}" onclick="dosTab='${k}';renderDOS()">${l}</button>`).join('')}
+  <div class="dos-bar no-print">
+    <button class="menu-btn" id="dosMenuBtn" aria-label="Open menu" aria-controls="dosDrawer" aria-expanded="false" onclick="dosMenuOpen(true)">☰ Menu${att.total?`<span class="dot">${att.total}</span>`:''}</button>
+    <div class="dos-title">${titleOf(dosTab)}</div>
+    <div class="dos-school">${escapeHtml(school.name)}</div>
   </div>
-  <div class="card small no-print">School: <b>${escapeHtml(school.name)}</b> &nbsp; Code: <b class="school-code">${school.code}</b>
-  <div class="flexbtns"><button class="ghost" onclick="showLinkDos()">🔗 Get Teacher Login Link</button> <button class="ghost" onclick="showLinkParent()">🔗 Get Parent Portal Link</button></div>
-  <div id="dosLinkArea"></div></div>
+  <div class="dos-backdrop no-print" id="dosBackdrop" onclick="dosMenuOpen(false)"></div>
+  <nav class="dos-drawer no-print" id="dosDrawer" aria-label="Main menu" aria-hidden="true">
+    <div class="dd-head"><button class="dd-close" aria-label="Close menu" onclick="dosMenuOpen(false)">✕</button>
+      <div class="dd-name">${escapeHtml(school.name)}</div><div class="dd-code">School Code: ${school.code}</div></div>
+    <div class="dd-body">
+      ${DOS_MENU.map(g=>`<div class="dd-group">${g.group}</div>${g.items.map(([k,l])=>`<button class="dd-item ${dosTab===k?'active':''}" onclick="gotoDosTab('${k}')"><span>${l}</span>${k==='exams'&&att.total?`<span class="dd-count">${att.total}</span>`:''}</button>`).join('')}`).join('')}
+    </div>
+    <div class="dd-foot"><button class="dd-item" onclick="dosMenuOpen(false);logout()"><span>🚪 Logout</span></button></div>
+  </nav>
   <div id="dosContent"></div>`;
+  dosSyncBarOffset();
   const c = qs('#dosContent');
-  if(dosTab==='dashboard'){ c.innerHTML = tplDashboard(school); if(school.classes.length) runDashboard(); }
+  if(dosTab==='dashboard'){
+    c.innerHTML = `${att.total ? `<div class="card no-print" style="border-left:4px solid #d1473f"><b>⏳ Needs your attention</b>
+      <p class="small" style="margin:6px 0 8px">${att.editReqs?`<b>${att.editReqs}</b> teacher edit request(s) waiting for your decision`:''}${att.editReqs&&att.awaiting?' · ':''}${att.awaiting?`<b>${att.awaiting}</b> exam(s) with marks awaiting your approval`:''}.</p>
+      <button onclick="gotoDosTab('exams')">Review in Exams</button></div>` : ''}
+    <div class="dos-quick no-print">
+      <button onclick="gotoDosTab('marks')">✏️ Enter Marks</button>
+      <button onclick="gotoDosTab('reports')">📄 Reports</button>
+      <button onclick="gotoDosTab('exams')">📝 Exams</button>
+      <button onclick="gotoDosTab('assignments')">📎 Assignments</button>
+    </div>` + tplDashboard(school);
+    if(school.classes.length) runDashboard();
+  }
+  if(dosTab==='links') c.innerHTML = tplShareLinks(school);
   if(dosTab==='classes') c.innerHTML = tplClasses(school);
   if(dosTab==='areas') c.innerHTML = tplAreas(school);
   if(dosTab==='grading') c.innerHTML = tplGrading(school);
@@ -2630,6 +3065,7 @@ function renderDOS(){
   if(dosTab==='analysis'){ c.innerHTML = tplResultsAnalysis(school); raFillExams(); }
   if(dosTab==='reports'){ c.innerHTML = tplReportsPicker(school); if(school.classes.length){ fillRepExams(); fillRepLearners(); } }
   if(dosTab==='history') c.innerHTML = tplHistory(school);
+  if(dosTab==='assignments') c.innerHTML = tplAssignments(school);
   if(dosTab==='sms'){ c.innerHTML = tplSms(school); smsFillExamOptions(); }
   if(dosTab==='profile'){ c.innerHTML = tplSchoolProfile(school); initHoiSigPad(); }
   if(dosTab==='account') c.innerHTML = tplAccount(school);
@@ -2654,6 +3090,10 @@ const HELP_SECTIONS = [
     own child's results through a public link you share, with no login of their own.</p>` },
 
   { title: '🧭 Menu overview', body: `
+    <p>The screen opens on your <b>Dashboard</b> only. Tap <b>☰ Menu</b> (top-left) to open the side menu, then tap any
+    feature to go to it — the menu closes by itself. Tap outside it, the ✕, or press Esc to close it without choosing.
+    A red number on the ☰ button (and beside <b>Exams</b>) means something is waiting for your decision, such as a
+    teacher's edit request or results awaiting approval. Your <b>Logout</b> button is at the bottom of the menu.</p>
     <table class="tbl"><tbody>
       <tr><td><b>Dashboard</b></td><td>Snapshot of the latest results: school mean, best-performing grade, strongest/weakest learning areas, top learner per grade.</td></tr>
       <tr><td><b>Grades</b></td><td>Create and manage the school's grades/classes.</td></tr>
@@ -2667,21 +3107,24 @@ const HELP_SECTIONS = [
       <tr><td><b>Results Analysis</b></td><td>Deeper analysis than the dashboard: rank grades, compare learning areas, drill into an exam.</td></tr>
       <tr><td><b>Reports</b></td><td>Generate and print individual learner progress reports.</td></tr>
       <tr><td><b>Exam History</b></td><td>Look back at past exams and their results.</td></tr>
+      <tr><td><b>Assignments</b></td><td>Send a printable assignment/homework sheet to a grade's Parent Portal, with an optional image attachment.</td></tr>
       <tr><td><b>SMS to Parents</b></td><td>Send results/announcements by SMS (requires SMS to be configured).</td></tr>
+      <tr><td><b>Share Login Links</b></td><td>Get a ready-made Teacher Login Link and Parent Portal Link, with a Copy button, to share on WhatsApp or the notice board.</td></tr>
       <tr><td><b>School Details</b></td><td>Edit school name, address, contact details, motto, badge/crest — used on every printed report.</td></tr>
       <tr><td><b>My Account</b></td><td>Set your own email/phone for password-reset codes; manage cloud sync; download a backup.</td></tr>
     </tbody></table>` },
 
-  { title: '👩‍🏫 Teacher permissions (5 switches)', body: `
-    <p>When adding or editing a teacher under <b>Teachers &amp; Permissions</b>, five switches control what that teacher can do:</p>
+  { title: '👩‍🏫 Teacher permissions (6 switches)', body: `
+    <p>When adding or editing a teacher under <b>Teachers &amp; Permissions</b>, six switches control what that teacher can do:</p>
     <ul>
       <li><b>Can Print Reports?</b> — lets the teacher generate and print learner progress reports.</li>
       <li><b>Can Print Assessment Sheets?</b> — lets the teacher generate and print class assessment sheets.</li>
+      <li><b>Can Post Assignments?</b> — lets the teacher send printable assignments/homework to the Parent Portal, for their own assigned grade(s) only.</li>
       <li><b>Can Approve/Disapprove Results?</b>, <b>Can Decide Edit Requests?</b>, <b>Can Open/Close Entry?</b> — these
       three only take effect for grades where the teacher is set as <b>Class Teacher</b>. They let a class teacher
       manage their own grade's exam sign-off without needing you every time.</li>
     </ul>
-    <p class="small">You (the DOS/HOI) can always act directly on any exam regardless of these switches.</p>` },
+    <p class="small">You (the DOS/HOI) can always act directly on any exam — or assignment — regardless of these switches.</p>` },
 
   { title: '🔓 Opening/closing entry, approvals &amp; edit requests', body: `
     <p>Each exam has a mark-entry period that you (or an authorised class teacher) open and close. Once an exam is
@@ -2698,6 +3141,18 @@ const HELP_SECTIONS = [
     (under Exams).</p>
     <p class="small">A parent never gets a username/password — they open a link you share and enter the School Code,
     the learner's Admission Number, and a PIN if you've set one.</p>` },
+
+  { title: '📎 Sending assignments to parents', body: `
+    <p>Under <b>Assignments</b>, pick a grade, give the assignment a title, and type the instructions — that text is
+    exactly what parents will see and print. You can optionally attach a single image (e.g. a photo or scan of a
+    worksheet), up to 2MB.</p>
+    <p>Each assignment has a <b>Visible to Parents</b> toggle, the same idea as the Parent Access toggle on an exam:
+    leave it unchecked to prepare an assignment first and publish it later, or leave it checked to send it
+    immediately. A parent only ever sees the assignments for their own child's grade, never another grade's.</p>
+    <p>A teacher can send assignments too, for their own assigned grade(s) only, once you switch on
+    <b>Can Post Assignments?</b> for them under Teachers &amp; Permissions.</p>
+    <p class="small">Assignments are plain text plus an optional image rather than an uploaded PDF, so they're
+    guaranteed to display and print the same way on every parent's phone or computer.</p>` },
 
   { title: '☁️ Multi-device sync &amp; backups', body: `
     <p>By default, all data stays on the device it was entered on. Turn on <b>Multi-Device Sync</b> (My Account) so
@@ -2719,14 +3174,26 @@ const HELP_SECTIONS = [
     </ul>` },
 
   { title: '🎯 The CBC grading scale', body: `
-    <table class="tbl"><thead><tr><th>Level</th><th>Meaning</th><th>Mark range</th><th>Typical remark</th></tr></thead>
+    <table class="tbl"><thead><tr><th>Level</th><th>Meaning</th><th>Mark range</th></tr></thead>
     <tbody>
-      <tr><td>EE</td><td>Exceeding Expectation</td><td>80–100%</td><td>Excellent work, keep soaring high!</td></tr>
-      <tr><td>ME</td><td>Meeting Expectation</td><td>60–79%</td><td>Good performance, aim higher next term.</td></tr>
-      <tr><td>AE</td><td>Approaching Expectation</td><td>40–59%</td><td>Fair effort, more practice needed.</td></tr>
-      <tr><td>BE</td><td>Below Expectation</td><td>0–39%</td><td>Needs serious improvement and support.</td></tr>
+      <tr><td>EE</td><td>Exceeding Expectation</td><td>80–100%</td></tr>
+      <tr><td>ME</td><td>Meeting Expectation</td><td>60–79%</td></tr>
+      <tr><td>AE</td><td>Approaching Expectation</td><td>40–59%</td></tr>
+      <tr><td>BE</td><td>Below Expectation</td><td>0–39%</td></tr>
     </tbody></table>
-    <p class="small">Every mark entered is graded against this rubric automatically — there is no manual grading step.</p>` },
+    <p class="small">Every mark entered is graded against this rubric automatically — there is no manual grading step. Each level
+    also has a full default remark shown on report cards (editable under Grading System), and every individual learner's remark
+    can be personalized further for a specific exam — see the next section.</p>` },
+
+  { title: '📝 Personalizing report remarks', body: `
+    <p>Every report card carries a "Grade Teacher's Remark." By default this is the remark tied to whichever grading level
+    the learner's overall mean % falls into for that exam (set under <b>Grading System</b> — see above) — a longer, genuinely
+    descriptive paragraph rather than a one-line phrase.</p>
+    <p>To write something specific to one learner instead, open that exam under <b>Exams</b> and expand
+    <b>📝 Personalize Report Remarks</b> — every learner in the grade is listed with a text box. Leave it blank and the auto
+    remark for their level is used; type something and it's used instead, only for that learner, only for that exam.
+    A class teacher can do the same for their own grade(s) from <b>Class Teacher Tools</b>, whether or not they hold the
+    other sign-off permissions.</p>` },
 
   { title: '🛠 Troubleshooting &amp; FAQ', body: `
     <p><b>"School code not found."</b> — Double-check the 8-digit School Code. If the school was only just created
@@ -2788,7 +3255,7 @@ function tplSchoolProfile(school){
   </div>
   <div class="card">
     <h2>✍️ HOI Signature</h2>
-    <p class="small">Stamped automatically on every report card. Leave blank for a plain signature line.</p>
+    <p class="small">Sign in the box below (finger or mouse). It is cropped automatically and stamped on the signature line of every report card, assessment sheet and results analysis. Leave blank for a plain line to sign by hand.</p>
     <div class="sig-pad-wrap">
       <canvas id="hoiSigPad" width="600" height="180"></canvas>
     </div>
@@ -2797,7 +3264,7 @@ function tplSchoolProfile(school){
       <button class="ghost" onclick="clearHoiSigPad()">🧹 Clear</button>
       ${school.hoiSignature ? `<button class="danger ghost" onclick="removeHoiSignature()">✕ Remove Saved Signature</button>` : ''}
     </div>
-    ${school.hoiSignature ? `<div style="margin-top:10px"><p class="small" style="margin:0 0 4px">Currently saved signature (as it appears on reports):</p><img src="${school.hoiSignature}" alt="HOI signature" style="max-width:260px;max-height:80px;border:1px solid var(--border);border-radius:6px;background:#fff;padding:4px"></div>` : '<p class="small">No signature saved yet.</p>'}
+    ${school.hoiSignature ? `<div style="margin-top:10px;max-width:280px"><p class="small" style="margin:0 0 4px">Currently saved signature (exactly as it appears on reports):</p>${sigBox('DOS/HOI: '+escapeHtml(school.hoiName), hoiSigImg(school))}</div>` : '<p class="small">No signature saved yet.</p>'}
     <div id="hoiSigMsg"></div>
   </div>`;
 }
@@ -2848,7 +3315,7 @@ function initHoiSigPad(){
     const clientX = t ? t.clientX : evt.clientX, clientY = t ? t.clientY : evt.clientY;
     return {x:(clientX-rect.left)*(canvas.width/rect.width), y:(clientY-rect.top)*(canvas.height/rect.height)};
   };
-  const start = evt=>{ evt.preventDefault(); sigDrawing = true; const p = posFromEvent(evt); sigLastX = p.x; sigLastY = p.y; };
+  const start = evt=>{ evt.preventDefault(); sigDrawing = true; const p = posFromEvent(evt); sigLastX = p.x; sigLastY = p.y; ctx.beginPath(); ctx.arc(p.x,p.y,1.2,0,Math.PI*2); ctx.fillStyle='#123a63'; ctx.fill(); };
   const move = evt=>{
     if(!sigDrawing) return; evt.preventDefault();
     const p = posFromEvent(evt);
@@ -2857,7 +3324,50 @@ function initHoiSigPad(){
   };
   const end = ()=>{ sigDrawing = false; };
   canvas.onmousedown = start; canvas.onmousemove = move; canvas.onmouseup = end; canvas.onmouseleave = end;
+  window.addEventListener('mouseup', end); window.addEventListener('touchcancel', end);
   canvas.ontouchstart = start; canvas.ontouchmove = move; canvas.ontouchend = end;
+}
+/* Helpers used by every printed sheet that carries a signature line. */
+function hoiSigImg(school){
+  return school && school.hoiSignature ? `<img src="${school.hoiSignature}" alt="HOI signature">` : '';
+}
+function sigBox(label, slotHtml){
+  return `<div class="sig-box"><div class="sig-slot">${slotHtml||''}</div><div class="sig-line">${label}</div></div>`;
+}
+/* Crops a drawn signature to its ink (plus a small margin). The pad is 600x180 and people
+   rarely sign edge-to-edge, so without this the visible strokes float in the middle of a
+   big transparent image and never land on the line. */
+function trimSignature(dataUrl, cb){
+  const im = new Image();
+  im.onload = ()=>{
+    try{
+      const w = im.naturalWidth, h = im.naturalHeight;
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const x = c.getContext('2d'); x.drawImage(im,0,0);
+      const d = x.getImageData(0,0,w,h).data;
+      let x0=w, y0=h, x1=-1, y1=-1;
+      for(let y=0;y<h;y++) for(let xx=0;xx<w;xx++){
+        if(d[(y*w+xx)*4+3]>12){ if(xx<x0)x0=xx; if(xx>x1)x1=xx; if(y<y0)y0=y; if(y>y1)y1=y; }
+      }
+      if(x1<0){ cb(dataUrl); return; }
+      const pad = 3;
+      x0=Math.max(0,x0-pad); y0=Math.max(0,y0-pad); x1=Math.min(w-1,x1+pad); y1=Math.min(h-1,y1+pad);
+      const cw = x1-x0+1, ch = y1-y0+1;
+      const o = document.createElement('canvas'); o.width = cw; o.height = ch;
+      o.getContext('2d').drawImage(c, x0,y0,cw,ch, 0,0,cw,ch);
+      cb(o.toDataURL('image/png'));
+    }catch(e){ cb(dataUrl); }
+  };
+  im.onerror = ()=>cb(dataUrl);
+  im.src = dataUrl;
+}
+// One-time tidy-up of signatures saved before cropping existed.
+function ensureSignaturesTrimmed(){
+  Object.keys(DB.schools||{}).forEach(code=>{
+    const s = DB.schools[code];
+    if(!s || !s.hoiSignature || s.hoiSigTrimmed) return;
+    trimSignature(s.hoiSignature, out=>{ s.hoiSignature = out; s.hoiSigTrimmed = true; try{ saveDB(DB); }catch(e){} });
+  });
 }
 function clearHoiSigPad(){
   const canvas = qs('#hoiSigPad'); if(!canvas) return;
@@ -2869,15 +3379,17 @@ function saveHoiSignature(){
   const blank = !ctx.getImageData(0,0,canvas.width,canvas.height).data.some((v,i)=> i%4===3 && v!==0);
   if(blank){ qs('#hoiSigMsg').innerHTML = '<div class="msg err">Draw a signature above before saving.</div>'; return; }
   const school = currentSchool();
-  school.hoiSignature = canvas.toDataURL('image/png');
-  saveDB(DB);
-  toast('HOI signature saved — it will now appear on every report card');
-  renderDOS();
+  trimSignature(canvas.toDataURL('image/png'), out=>{
+    school.hoiSignature = out; school.hoiSigTrimmed = true;
+    saveDB(DB);
+    toast('HOI signature saved — it will now appear on every report, sitting on the signature line');
+    renderDOS();
+  });
 }
 function removeHoiSignature(){
   if(!confirm('Remove the saved HOI signature? Reports will go back to a plain signature line until a new one is saved.')) return;
   const school = currentSchool();
-  school.hoiSignature = '';
+  school.hoiSignature = ''; school.hoiSigTrimmed = false;
   saveDB(DB); renderDOS();
 }
 function saveSchoolProfile(){
@@ -3038,29 +3550,66 @@ function changeDosPassword(){
 }
 function showLinkDos(){
   const url = location.origin + location.pathname + `?school=${session.schoolCode}&p=${TEACHER_ACCESS_KEY}`;
-  qs('#dosLinkArea').innerHTML = `<div class="linkbox">${url}</div><p class="small">Share with your teachers along with their username/password below.</p>`;
+  qs('#dosLinkArea').innerHTML = `<div class="linkbox">${url}</div><button class="ghost" style="margin-top:6px" onclick="copyLinkBox(this)">📋 Copy link</button><p class="small">Share with your teachers along with their username/password (see Teachers &amp; Permissions in the ☰ Menu).</p>`;
 }
 function showLinkParent(){
   const url = location.origin + location.pathname + `?school=${session.schoolCode}&role=parent`;
-  qs('#dosLinkArea').innerHTML = `<div class="linkbox">${url}</div><p class="small">Share with parents — opens straight to the results lookup form.</p>`;
+  qs('#dosLinkArea').innerHTML = `<div class="linkbox">${url}</div><button class="ghost" style="margin-top:6px" onclick="copyLinkBox(this)">📋 Copy link</button><p class="small">Share with parents — opens straight to the results lookup form.</p>`;
 }
 
 /* --- Classes --- */
 function tplClasses(school){
+  sortClasses(school);
+  const have = new Set(school.classes.map(c=>c.name.toLowerCase()));
+  const std = ['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'].filter(n=>!have.has(n.toLowerCase()));
+  const unassigned = school.students.filter(st=>!school.classes.some(c=>c.id===st.classId)).length;
   return `<div class="card"><h2>🏷 Grades</h2>
-  <p class="small">Use <b>Promote</b> at year/term end to move a whole grade up in one go. Past exams stay filed under the old grade.</p>
-  <div class="row"><div><label>Grade Name</label><input id="clsName" placeholder="e.g. Grade 6 Blue"></div>
+  <p class="small">Grades are listed in order automatically (PP1, PP2, Grade 1, 2, 3 …), whatever order you add them in. Use <b>Promote</b> at year/term end to move a whole grade up in one go. Past exams stay filed under the old grade.</p>
+  <div class="row"><div><label>Grade Name</label><input id="clsName" placeholder="e.g. Grade 6 Blue" onkeydown="if(event.key==='Enter'){addClass();}"></div>
+  <div><label>Copy learning areas from</label><select id="clsCopy"><option value="auto">Nearest lower grade (recommended)</option><option value="">None — I'll tick them later</option>${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
   <div style="align-self:flex-end"><button onclick="addClass()">Add Grade</button></div></div>
+  ${std.length ? `<div class="small" style="margin-top:8px">Quick add:</div><div class="flexbtns" style="margin-top:4px">${std.map(n=>`<button class="ghost" onclick="addQuickGrade('${n}')">+ ${n}</button>`).join('')}</div>` : ''}
   <table style="margin-top:10px"><tr><th>Grade</th><th>Grade Teacher</th><th>Learners</th><th>Actions</th></tr>
   ${school.classes.map(c=>`<tr><td><input value="${escapeHtml(c.name)}" style="min-width:150px" onchange="updClassName('${c.id}',this.value,this)"></td>
     <td><input value="${escapeHtml((school.classTeachers||{})[c.id]||'')}" onchange="setClassTeacher('${c.id}',this.value)"></td>
     <td>${school.students.filter(s=>s.classId===c.id).length}</td>
-    <td><button class="ghost" onclick="promoteClass('${c.id}')">🎓 Promote</button> <button class="danger" onclick="delClass('${c.id}')">Delete</button></td></tr>`).join('') || '<tr><td colspan="4" class="small">No grades yet.</td></tr>'}
-  </table></div>`;
+    <td><button class="ghost" onclick="promoteClass('${c.id}')">🎓 Promote</button> <button class="danger" onclick="delClass('${c.id}')">Delete</button></td></tr>`).join('') || '<tr><td colspan="4" class="small">No grades yet. Type a name above or tap a Quick add button.</td></tr>'}
+  </table>
+  ${school.classes.length ? `<p class="small" style="margin:8px 0 0">${school.classes.length} grade(s) · ${school.students.length} learner(s) in total${unassigned?` · <b>${unassigned}</b> not in any grade`:''}</p>` : ''}</div>`;
+}
+// Creates a grade, files it in the right order, and (unless copyFrom is '') gives it the same
+// learning areas and custom grading table as another grade so it isn't left with zero subjects.
+// copyFrom: a grade id, 'auto' = the nearest lower grade already in the list, or '' = none.
+function createGrade(school, name, copyFrom){
+  const cls = {id:uid('cls_'), name};
+  school.classes.push(cls); sortClasses(school);
+  let src = null;
+  if(copyFrom==='auto'){ const i = school.classes.indexOf(cls); src = i>0 ? school.classes[i-1] : null; }
+  else if(copyFrom){ src = school.classes.find(c=>c.id===copyFrom) || null; }
+  if(src){
+    school.learningAreas.forEach(a=>{ if(a.classIds && a.classIds.includes(src.id) && !a.classIds.includes(cls.id)) a.classIds.push(cls.id); });
+    if(src.gradingSystem && src.gradingSystem.length) cls.gradingSystem = JSON.parse(JSON.stringify(src.gradingSystem));
+  }
+  return {cls, src};
 }
 function addClass(){
-  const name = qs('#clsName').value.trim(); if(!name) return;
-  currentSchool().classes.push({id:uid('cls_'), name}); saveDB(DB); renderDOS();
+  const inp = qs('#clsName'); if(!inp) return;
+  const name = inp.value.trim().replace(/\s+/g,' ');
+  if(!name){ toast('Type a grade name first','err'); inp.focus(); return; }
+  const school = currentSchool();
+  if(school.classes.some(c=>c.name.toLowerCase()===name.toLowerCase())){ toast('That grade already exists','err'); return; }
+  const copy = qs('#clsCopy') ? qs('#clsCopy').value : 'auto';
+  const r = createGrade(school, name, copy);
+  saveDB(DB);
+  toast(`${name} added${r.src?` — learning areas copied from ${r.src.name}`:''}`);
+  renderDOS();
+  setTimeout(()=>{ const i = qs('#clsName'); if(i) i.focus(); }, 30);
+}
+function addQuickGrade(name){
+  const school = currentSchool();
+  if(school.classes.some(c=>c.name.toLowerCase()===name.toLowerCase())) return;
+  const r = createGrade(school, name, 'auto');
+  saveDB(DB); toast(`${name} added`); renderDOS();
 }
 // Guesses the next grade's name from the current one by incrementing its LAST number —
 // "Grade 7" → "Grade 8", "Grade 7 Blue" → "Grade 8 Blue". Just a starting suggestion in
@@ -3096,7 +3645,7 @@ function promoteClass(classId){
   if(!confirm(`Move all ${learners.length} learner(s) from "${cls.name}" into ${willCreate?`a new grade "${trimmed}"`:`"${destCls.name}"`}? Their past exam results and report history stay exactly as they were, filed under "${cls.name}".`)) return;
   if(!destCls){
     destCls = {id:uid('cls_'), name: trimmed};
-    school.classes.push(destCls);
+    school.classes.push(destCls); sortClasses(school);
     school.learningAreas.forEach(a=>{ if(a.classIds && a.classIds.includes(classId) && !a.classIds.includes(destCls.id)) a.classIds.push(destCls.id); });
     if(cls.gradingSystem && cls.gradingSystem.length){ destCls.gradingSystem = JSON.parse(JSON.stringify(cls.gradingSystem)); }
   }
@@ -3111,7 +3660,9 @@ function updClassName(id, val, inputEl){
   const name = val.trim().replace(/\s+/g,' ');
   if(!name){ toast('A grade needs a name','err'); if(inputEl) inputEl.value = c.name; return; }
   if(school.classes.some(x=>x.id!==id && x.name.toLowerCase()===name.toLowerCase())){ toast('Another grade already has that name','err'); if(inputEl) inputEl.value = c.name; return; }
-  c.name = name; saveDB(DB); toast('Grade name updated');
+  const before = school.classes.map(x=>x.id).join();
+  c.name = name; sortClasses(school); saveDB(DB); toast('Grade name updated');
+  if(school.classes.map(x=>x.id).join()!==before) renderDOS();
 }
 function delClass(id){
   const _s = currentSchool();
@@ -3254,9 +3805,31 @@ function activeGradingArray(school){
   }
   return school.gradingSystem;
 }
+// Suggests a ready-to-use, full-length remark for a custom grading level based on its level
+// code's prefix (EE/ME/AE/BE, with or without a trailing sub-level digit like EE1/EE2) — used
+// only to pre-fill a brand-new or freshly-renamed level's remark field; the DOS/HOI can freely
+// edit or clear it afterwards from the same table. Returns '' for an unrecognized code.
+function suggestRemarkForLevelCode(code){
+  const c = String(code||'').trim().toUpperCase();
+  const prefix = c.replace(/\d+$/,''); // "EE1" -> "EE", "ME2" -> "ME", "EE" -> "EE"
+  const bank = {
+    EE: 'An outstanding performance this term. The learner has fully grasped the concepts covered, applies them confidently and independently, and consistently produces work above the standard expected for this level. Keep encouraging this learner with more challenging tasks and opportunities to mentor peers.',
+    ME: 'A solid, dependable performance this term. The learner understands and applies most of the concepts covered with only minor gaps, and completes set work with reasonable independence. Continued practice on the more challenging areas will help push this towards an even stronger result next term.',
+    AE: 'The learner is making genuine progress but has not yet fully grasped several of the concepts covered this term, often needing guidance to complete tasks correctly. With more consistent practice, closer follow-up at home, and revisiting foundational topics, steady improvement is well within reach.',
+    BE: 'The learner is finding this term’s work considerably challenging and has struggled to grasp the core concepts covered so far, even with support. Closer follow-up both at school and at home, extra remedial practice, and revisiting earlier foundational topics are strongly recommended going forward.'
+  };
+  return bank[prefix] || '';
+}
 function updGrade(i,field,val){
   const g = activeGradingArray(currentSchool())[i];
   g[field] = (field==='min'||field==='max'||field==='points') ? Number(val) : val;
+  // Auto-fill a full remark the moment a level's code is set/changed to a recognized CBC
+  // prefix — but only while the remark is still blank, so this never overwrites text the
+  // DOS/HOI already typed. Still fully editable afterwards, same as any other level.
+  if(field==='level' && !g.remark){
+    const suggested = suggestRemarkForLevelCode(val);
+    if(suggested) g.remark = suggested;
+  }
   saveDB(DB); renderDOS();
 }
 function addGrade(){
@@ -3279,12 +3852,13 @@ function revertClassGrading(classId){
 }
 
 /* --- Students --- */
-let stuFilterGrade = '', stuSearch = '';
+let stuFilterGrade = '', stuSearch = '', stuFilterGender = '';
 function filteredStudents(school){
   const q = stuSearch.trim().toLowerCase();
   const g = school.classes.some(c=>c.id===stuFilterGrade) ? stuFilterGrade : '';
   return [...school.students].filter(s=>{
     if(g && s.classId!==g) return false;
+    if(stuFilterGender){ if(stuFilterGender==='none'){ if(s.gender==='M'||s.gender==='F') return false; } else if(s.gender!==stuFilterGender) return false; }
     if(q && !(String(s.name||'').toLowerCase().includes(q) || String(s.adm||'').toLowerCase().includes(q))) return false;
     return true;
   }).sort((a,b)=>{
@@ -3300,13 +3874,17 @@ function studentRowsHTML(school){
     const cls = school.classes.find(c=>c.id===s.classId);
     return `<tr><td><input value="${escapeHtml(s.adm||'')}" placeholder="— none —" style="min-width:90px" onchange="updStudentAdm('${s.id}', this.value, this)"></td>
     <td><input value="${escapeHtml(s.name)}" style="min-width:170px" onchange="updStudentName('${s.id}', this.value, this)"></td>
+    <td><select onchange="updStudentGender('${s.id}', this.value)"><option value="" ${!s.gender?'selected':''}>— Not set —</option><option value="M" ${s.gender==='M'?'selected':''}>Boy</option><option value="F" ${s.gender==='F'?'selected':''}>Girl</option></select></td>
     <td><select onchange="updStudentClass('${s.id}', this.value, this)">${cls?'':'<option value="" selected>— Unassigned —</option>'}${school.classes.map(c=>`<option value="${c.id}" ${c.id===s.classId?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></td>
     <td><input value="${escapeHtml(s.parentPin||'')}" placeholder="— not set —" style="min-width:90px" inputmode="numeric" onchange="updStudentPin('${s.id}', this.value, this)"> <button class="ghost" title="Generate a new PIN" onclick="regenStudentPin('${s.id}')">🔁</button></td>
     <td><input value="${escapeHtml(s.parentPhone||'')}" placeholder="e.g. 0712345678" style="min-width:120px" inputmode="tel" onchange="updStudentPhone('${s.id}', this.value, this)"></td>
     <td><button class="danger" onclick="delStudent('${s.id}')">✕</button></td></tr>`;
-  }).join('') || `<tr><td colspan="6" class="small">${school.students.length?'No learners match your filter.':'No learners yet.'}</td></tr>`;
+  }).join('') || `<tr><td colspan="7" class="small">${school.students.length?'No learners match your filter.':'No learners yet.'}</td></tr>`;
 }
-function stuCountText(school){ return `Showing ${filteredStudents(school).length} of ${school.students.length} learner(s)`; }
+function stuCountText(school){
+  const l = filteredStudents(school), b = l.filter(s=>s.gender==='M').length, g = l.filter(s=>s.gender==='F').length, u = l.length-b-g;
+  return `Showing ${l.length} of ${school.students.length} learner(s) · Boys: ${b} · Girls: ${g}` + (u ? ` · Gender not set: ${u}` : '');
+}
 function renderStudentRows(){
   const school = currentSchool(); if(!school || !qs('#stuRows')) return;
   qs('#stuRows').innerHTML = studentRowsHTML(school);
@@ -3317,23 +3895,25 @@ function tplStudents(school){
   <div class="row">
     <div><label>Admission No. <span class="small">(optional)</span></label><input id="stuAdm" placeholder="Leave blank if not assigned yet"></div>
     <div><label>Learner Name</label><input id="stuName"></div>
+    <div><label>Gender</label><select id="stuGender"><option value="">— Select —</option><option value="M">Boy</option><option value="F">Girl</option></select></div>
     <div><label>Grade</label><select id="stuClass">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
     <div><label>Parent Phone <span class="small">(optional, for SMS)</span></label><input id="stuPhone" placeholder="e.g. 0712345678"></div>
     <div style="align-self:flex-end"><button onclick="addStudent()">Add Learner</button></div>
   </div>
-  <p class="small">Bulk paste — one learner per line, "Admission,Name,ParentPhone" (blank admission or phone OK):</p>
-  <textarea id="bulkStu" rows="3" placeholder="1001,John Mwangi,0712345678
-,Faith Wanjiru,
+  <p class="small">Bulk paste — one learner per line, "Admission,Name,Gender,ParentPhone" — Gender is <b>Boy/Girl</b> (or M/F), and may be left out. Blank admission or phone OK:</p>
+  <textarea id="bulkStu" rows="3" placeholder="1001,John Mwangi,Boy,0712345678
+,Faith Wanjiru,Girl,
 Amina Hassan"></textarea>
   <div class="flexbtns"><button class="ghost" onclick="bulkAddStudents()">Add Bulk to Selected Grade</button></div>
   <p class="small" style="margin-top:12px">Edit a learner directly in the table below, including their <b>Parent PIN</b> — the fourth Parent Portal login factor. Hand each learner's PIN to that learner's parent directly (not on a public notice); it's never shown anywhere else in the app. Moving grades keeps their past results filed under the old one.</p>
   <div class="flexbtns"><button class="ghost" onclick="fillMissingParentPins()">🔑 Generate PINs for learners without one</button></div>
   <div class="row">
     <div><label>Filter by Grade</label><select id="stuFilter" onchange="stuFilterGrade=this.value;renderStudentRows()"><option value="">All grades</option>${school.classes.map(c=>`<option value="${c.id}" ${c.id===stuFilterGrade?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
+    <div><label>Filter by Gender</label><select id="stuFilterG" onchange="stuFilterGender=this.value;renderStudentRows()"><option value="">All</option><option value="M" ${stuFilterGender==='M'?'selected':''}>Boys</option><option value="F" ${stuFilterGender==='F'?'selected':''}>Girls</option><option value="none" ${stuFilterGender==='none'?'selected':''}>Gender not set</option></select></div>
     <div><label>Search name / admission no.</label><input id="stuSearch" value="${escapeHtml(stuSearch)}" oninput="stuSearch=this.value;renderStudentRows()" placeholder="Type to search…"></div>
   </div>
   <p class="small" id="stuCount">${stuCountText(school)}</p>
-  <table style="margin-top:6px"><tr><th>Adm No.</th><th>Name</th><th>Grade</th><th>Parent PIN</th><th>Parent Phone</th><th>Actions</th></tr><tbody id="stuRows">${studentRowsHTML(school)}</tbody></table></div>`;
+  <table style="margin-top:6px"><tr><th>Adm No.</th><th>Name</th><th>Gender</th><th>Grade</th><th>Parent PIN</th><th>Parent Phone</th><th>Actions</th></tr><tbody id="stuRows">${studentRowsHTML(school)}</tbody></table></div>`;
 }
 // Saves the phone number results/announcements SMS are sent to for this learner's parent.
 // Accepts any format the school types (spaces, +254, leading 0, etc.) — normalized to
@@ -3345,6 +3925,11 @@ function updStudentPhone(id, val, inputEl){
 }
 // Correct a learner's name in place. Marks are keyed on the learner's internal id, so
 // nothing already recorded is affected — reports and sheets simply show the new spelling.
+function updStudentGender(id, val){
+  const school = currentSchool(); const s = school.students.find(x=>x.id===id); if(!s) return;
+  s.gender = normGender(val); saveDB(DB); toast(s.gender ? `Marked as ${genderLabel(s.gender)}` : 'Gender cleared');
+  if(qs('#stuCount')) qs('#stuCount').textContent = stuCountText(school);
+}
 function updStudentName(id, val, inputEl){
   const school = currentSchool(); const s = school.students.find(x=>x.id===id); if(!s) return;
   const name = val.trim().replace(/\s+/g,' ');
@@ -3370,12 +3955,13 @@ function updStudentClass(id, newClassId, selectEl){
 function addStudent(){
   const adm = qs('#stuAdm').value.trim(), name = qs('#stuName').value.trim(), classId = qs('#stuClass').value;
   const parentPhone = qs('#stuPhone') ? qs('#stuPhone').value.trim() : '';
+  const gender = normGender(qs('#stuGender') ? qs('#stuGender').value : '');
   if(!name||!classId){ toast('Enter at least the learner name and grade','err'); return; }
   const school = currentSchool();
   // Uniqueness only matters when an admission number was actually given — multiple
   // learners are allowed to have no admission number at the same time.
   if(adm && school.students.some(s=>s.adm===adm)){ toast('Admission number already exists','err'); return; }
-  school.students.push({id:uid('stu_'), adm, name: name.replace(/\s+/g,' '), classId, parentPhone, parentPin: genParentPin()}); saveDB(DB); renderDOS();
+  school.students.push({id:uid('stu_'), adm, name: name.replace(/\s+/g,' '), classId, gender, parentPhone, parentPin: genParentPin()}); saveDB(DB); renderDOS();
 }
 // Lets HOI/DOS correct a learner's admission number directly from the Learners table
 // (e.g. it was mistyped or a number gets assigned later) without removing and re-adding
@@ -3433,21 +4019,26 @@ function bulkAddStudents(){
   const lines = qs('#bulkStu').value.split('\n').map(l=>l.trim()).filter(Boolean);
   let added=0;
   lines.forEach(l=>{
-    let adm='', name='', parentPhone='';
+    let adm='', name='', parentPhone='', gender='';
     if(l.includes(',')){
-      const parts = l.split(',');
-      adm = parts[0].trim();
-      // Name is everything between the admission no. and a trailing phone column (if any),
-      // rejoined with commas so a name that itself contains a comma still survives intact.
-      const nameParts = parts.length>2 ? parts.slice(1,-1) : parts.slice(1);
-      name = nameParts.join(',').trim();
-      parentPhone = parts.length>2 ? parts[parts.length-1].trim() : '';
+      const parts = l.split(',').map(x=>x.trim());
+      // A Boy/Girl (or M/F) cell anywhere after the first column is read as the gender.
+      for(let k=1;k<parts.length;k++){ const gg = normGender(parts[k]); if(gg){ gender = gg; parts.splice(k,1); break; } }
+      if(parts.length===1){ name = parts[0]; }
+      else {
+        adm = parts[0];
+        // Name is everything between the admission no. and a trailing phone column (if any),
+        // rejoined with commas so a name that itself contains a comma still survives intact.
+        const nameParts = parts.length>2 ? parts.slice(1,-1) : parts.slice(1);
+        name = nameParts.join(',').trim();
+        parentPhone = parts.length>2 ? parts[parts.length-1].trim() : '';
+      }
     } else {
       name = l; // no comma at all → treat the whole line as a name with no admission number
     }
     if(!name) return;
     if(adm && school.students.some(s=>s.adm===adm)) return; // skip duplicate admission numbers
-    school.students.push({id:uid('stu_'), adm, name, classId, parentPhone, parentPin: genParentPin()}); added++;
+    school.students.push({id:uid('stu_'), adm, name, classId, gender, parentPhone, parentPin: genParentPin()}); added++;
   });
   saveDB(DB); toast(added+' learners added'); renderDOS();
 }
@@ -3482,6 +4073,54 @@ function tplExams(school){
 }
 /* Per-exam management card: entry-closing period, results approval, and any
    pending teacher edit requests waiting on a DOS/HOI decision. */
+// Builds the per-learner remarks-editing table for one exam — a personalized override
+// stored in school.remarks[examId][sid]. Left blank, a learner's report falls back to the
+// auto remark tied to whichever grading level their overall mean % lands in (see
+// buildReportHTML/gradeFor) — so nothing needs to be typed until someone wants to add
+// something specific to that child. Shared by the DOS/HOI's Exams tab and Class Teacher Tools.
+function remarksTableHTML(school, examId){
+  const exam = school.exams.find(e=>e.id===examId);
+  if(!exam) return '<p class="small">Exam not found.</p>';
+  const learners = studentsForExam(school, exam);
+  if(!learners.length) return '<p class="small">No learners in this grade.</p>';
+  const areas = areasForClass(school, exam.classId);
+  const marksForExam = school.marks[examId] || {};
+  return `<table><tr><th>Adm No.</th><th>Name</th><th>Auto Level</th><th>Remark for their report (leave blank to use the auto remark for their level)</th></tr>
+  ${learners.map(s=>{
+    let sumPct=0, n=0;
+    areas.forEach(a=>{ const max=exam.maxMarksByArea[a.id]??100; const sc=(marksForExam[s.id]||{})[a.id]; if(sc!=null){ sumPct+=pctOf(sc,max); n++; } });
+    const meanPct = areas.length ? sumPct/areas.length : 0;
+    const g = gradeFor(school, meanPct, exam.classId);
+    const custom = (school.remarks[examId]||{})[s.id] || '';
+    return `<tr>
+      <td>${s.adm?escapeHtml(s.adm):'—'}</td>
+      <td style="text-align:left">${escapeHtml(s.name)}</td>
+      <td>${n?raBadge(school,exam.classId,g.level):'—'}</td>
+      <td><textarea rows="2" style="width:100%;min-width:220px" placeholder="${escapeHtml(g.remark)}" onchange="setLearnerRemark('${examId}','${s.id}',this.value)">${escapeHtml(custom)}</textarea></td>
+    </tr>`;
+  }).join('')}
+  </table>`;
+}
+// Guard mirrors teacherDenied's shape, but writing a remark is treated as a base Class
+// Teacher duty — available the moment a teacher is listed under classTeacherOf for that
+// grade, independent of the separate canApproveResults/canApproveEditRequests/canManageEntry
+// switches (those gate exam sign-off, not report-card remarks).
+function setLearnerRemark(examId, sid, value){
+  const school = currentSchool();
+  const exam = school.exams.find(e=>e.id===examId);
+  if(!exam) return;
+  if(session && session.role==='teacher'){
+    const t = currentTeacher();
+    if(!t || !(t.classTeacherOf||[]).includes(exam.classId)){
+      toast("You don't have access to that — ask your DOS/HOI","err");
+      return;
+    }
+  }
+  const text = value.trim();
+  school.remarks[examId] = school.remarks[examId] || {};
+  if(text) school.remarks[examId][sid] = text; else delete school.remarks[examId][sid];
+  saveDB(DB);
+}
 function tplExamCard(school, e){
   const cls = school.classes.find(c=>c.id===e.classId);
   const closed = isExamClosed(e);
@@ -3524,6 +4163,12 @@ function tplExamCard(school, e){
     ${studentsForExam(school,e).map(s=>`<tr><td>${s.adm?escapeHtml(s.adm):'—'}</td><td>${escapeHtml(s.name)}</td>
       <td><input type="number" min="0" max="${e.totalDays}" value="${(school.attendance[e.id]||{})[s.id] ?? ''}" style="max-width:90px;margin:0 auto" onchange="setAttendance('${e.id}','${s.id}',this.value)"></td></tr>`).join('') || '<tr><td colspan="3" class="small">No learners in this grade.</td></tr>'}
     </table>` : '<p class="small">Set total school days above to enter each learner’s days present.</p>'}
+  </details>
+  <details style="margin:0 0 10px">
+    <summary class="small" style="cursor:pointer">📝 Personalize Report Remarks</summary>
+    <p class="small" style="margin-top:6px">By default every report uses the auto remark tied to that learner's grading level (set under
+    Grading System). Type something here to override it for just this learner, just this exam.</p>
+    ${remarksTableHTML(school, e.id)}
   </details>
   <div class="grid2">
     <div>
@@ -3809,7 +4454,7 @@ function tplTeachers(school){
   </div>
   <div class="flexbtns"><button onclick="addTeacher()">➕ Add Teacher</button></div>
   <p class="small">Email/phone are only used so a teacher can reset a forgotten password themselves via a code sent to them — leave blank and they'll need to ask you instead. You (or the teacher, once logged in) can add or edit these later in the table below.</p>
-  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Assigned Grade / Learning Area</th><th>Class Teacher For</th><th>Can Print Reports?</th><th>Can Print Assessment Sheets?</th><th>Can Approve/<br>Disapprove Results?</th><th>Can Decide Edit Requests?</th><th>Can Open/Close Entry?</th><th>Actions</th></tr>
+  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Assigned Grade / Learning Area</th><th>Class Teacher For</th><th>Can Print Reports?</th><th>Can Print Assessment Sheets?</th><th>Can Post Assignments?</th><th>Can Approve/<br>Disapprove Results?</th><th>Can Decide Edit Requests?</th><th>Can Open/Close Entry?</th><th>Actions</th></tr>
   ${school.teachers.map(t=>`<tr>
     <td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.username)}</td>
     <td><input value="${escapeHtml(t.email||'')}" placeholder="email" onchange="setTeacherContact('${t.id}','email',this.value)"></td>
@@ -3836,11 +4481,12 @@ function tplTeachers(school){
     </td>
     <td><input type="checkbox" ${t.canPrint?'checked':''} onchange="toggleTeacherPerm('${t.id}','canPrint',this.checked)"></td>
     <td><input type="checkbox" ${t.canPrintAssess?'checked':''} onchange="toggleTeacherPerm('${t.id}','canPrintAssess',this.checked)"></td>
+    <td><input type="checkbox" ${t.canPostAssignments?'checked':''} onchange="toggleTeacherPerm('${t.id}','canPostAssignments',this.checked)"></td>
     <td><input type="checkbox" ${t.canApproveResults?'checked':''} onchange="toggleTeacherPerm('${t.id}','canApproveResults',this.checked)"></td>
     <td><input type="checkbox" ${t.canApproveEditRequests?'checked':''} onchange="toggleTeacherPerm('${t.id}','canApproveEditRequests',this.checked)"></td>
     <td><input type="checkbox" ${t.canManageEntry?'checked':''} onchange="toggleTeacherPerm('${t.id}','canManageEntry',this.checked)"></td>
     <td><button class="ghost" onclick="resetTeacherPassword('${t.id}')">🔑 Reset Password</button> <button class="danger" onclick="delTeacher('${t.id}')">✕</button></td>
-  </tr>`).join('') || '<tr><td colspan="12" class="small">No teachers yet.</td></tr>'}
+  </tr>`).join('') || '<tr><td colspan="13" class="small">No teachers yet.</td></tr>'}
   </table>
   <p class="small" style="margin-top:8px"><b>Class Teacher For</b> marks which grade(s) a teacher is class teacher of. A grade can have more than one.</p>
   <p class="small">The next three permissions only apply to grade(s) checked under <b>Class Teacher For</b>, letting that teacher handle their own grade's exam sign-off without waiting on you: <b>Approve/Disapprove Results</b>, <b>Decide Edit Requests</b>, and <b>Open/Close Entry</b>. You can always act directly on any exam yourself regardless.</p>
@@ -3861,7 +4507,7 @@ function addTeacher(){
   if(!password) password = 'tea123';
   const school = currentSchool();
   if(school.teachers.some(t=>t.username===username)){ toast('That username is already taken','err'); return; }
-  school.teachers.push({id:uid('t_'), name, username, password, email, phone, assignments:[], canPrint:true, canPrintAssess:false,
+  school.teachers.push({id:uid('t_'), name, username, password, email, phone, assignments:[], canPrint:true, canPrintAssess:false, canPostAssignments:false,
     classTeacherOf:[], canApproveResults:false, canApproveEditRequests:false, canManageEntry:false});
   saveDB(DB); toast(`Teacher added. Password: ${password}`); renderDOS();
 }
@@ -3991,7 +4637,8 @@ function loadDosMarksGrid(){
 /* --- Teacher access scope ---------------------------------------------------------
    A teacher only ever gets: (1) the class + learning-area combinations the DOS/HOI has
    assigned to them, and (2) the extra screens the DOS/HOI has switched on for them
-   (canPrint = learner reports, canPrintAssess = assessment sheets / previous exams).
+   (canPrint = learner reports, canPrintAssess = assessment sheets / previous exams,
+   canPostAssignments = sending printable assignments to the Parent Portal).
    Enforced here at function level — not just by hiding buttons — so every screen, sheet
    and save re-checks it. All helpers are inert for DOS/HOI, Admin and Parent sessions. */
 let _teacherSig = '';
@@ -4018,7 +4665,7 @@ function visibleAreas(school, classId){
   const ids = new Set(teacherAreaIds(school, t, classId));
   return all.filter(a=>ids.has(a.id));
 }
-// perm: null | 'canPrint' | 'canPrintAssess'. areaId optional (checks that exact assignment).
+// perm: null | 'canPrint' | 'canPrintAssess' | 'canPostAssignments'. areaId optional (checks that exact assignment).
 function teacherMay(perm, classId, areaId){
   const t = currentTeacher(); if(!t) return false;
   const school = currentSchool();
@@ -4036,7 +4683,7 @@ function teacherDenied(perm, classId, areaId){
 // Fingerprint of everything that decides what a teacher may see, so a live change made by
 // the DOS/HOI (new/removed assignment, permission on/off) re-draws the teacher's screen.
 function teacherSig(school, t){
-  return JSON.stringify([teacherClassIds(school,t).map(cid=>[cid, teacherAreaIds(school,t,cid).sort()]), !!t.canPrint, !!t.canPrintAssess,
+  return JSON.stringify([teacherClassIds(school,t).map(cid=>[cid, teacherAreaIds(school,t,cid).sort()]), !!t.canPrint, !!t.canPrintAssess, !!t.canPostAssignments,
     (t.classTeacherOf||[]).slice().sort(), !!t.canApproveResults, !!t.canApproveEditRequests, !!t.canManageEntry]);
 }
 
@@ -4048,7 +4695,6 @@ function teacherSig(school, t){
 function tplClassTeacherExams(school, t){
   const classes = (t.classTeacherOf||[]).filter(cid=>school.classes.some(c=>c.id===cid));
   if(!classes.length) return '';
-  if(!t.canApproveResults && !t.canApproveEditRequests && !t.canManageEntry) return '';
   const classNames = classes.map(cid=>escapeHtml(school.classes.find(c=>c.id===cid).name)).join(', ');
   const exams = school.exams.filter(e=>classes.includes(e.classId)).slice().reverse();
   return `<div class="card no-print"><h2>📋 Class Teacher Tools</h2>
@@ -4063,9 +4709,10 @@ function tplClassTeacherExamCard(school, e, t){
   const approvalBadge = e.resultsApproval==='approved' ? '<span class="badge EE">✅ Approved</span>'
     : e.resultsApproval==='disapproved' ? '<span class="badge BE">❌ Disapproved</span>'
     : '<span class="badge AE">⏳ Pending Review</span>';
+  const hasSignoffTools = t.canApproveResults || t.canApproveEditRequests || t.canManageEntry;
   return `<div class="card" style="background:#f6f9fc;margin-bottom:10px">
   <h3 style="margin:0 0 6px;font-size:15px;color:var(--navy)">${escapeHtml(e.name)} <span class="small">— ${e.term} ${e.year} — ${cls?escapeHtml(cls.name):'-'}</span></h3>
-  <p class="small" style="margin:0 0 4px"><b>Entry:</b> ${closed?'<span class="badge BE">🔒 Closed</span>':'<span class="badge EE">🔓 Open</span>'} &nbsp; <b>Results:</b> ${approvalBadge}</p>
+  ${hasSignoffTools ? `<p class="small" style="margin:0 0 4px"><b>Entry:</b> ${closed?'<span class="badge BE">🔒 Closed</span>':'<span class="badge EE">🔓 Open</span>'} &nbsp; <b>Results:</b> ${approvalBadge}</p>
   ${e.resultsApproval==='approved' && e.approvedBy ? `<p class="small" style="margin:0 0 4px">Approved by ${escapeHtml(e.approvedBy)}${e.approvalAt?' on '+new Date(e.approvalAt).toLocaleDateString():''}</p>` : ''}
   ${e.resultsApproval==='disapproved' && e.approvalNote ? `<p class="small" style="margin:0 0 4px;color:#9c2c2c"><b>Reason:</b> ${escapeHtml(e.approvalNote)}</p>` : ''}
   ${t.canManageEntry ? `<div class="flexbtns">${closed?`<button class="ghost" onclick="reopenExam('${e.id}')">🔓 Reopen Entry</button>`:`<button class="ghost" onclick="closeExamNow('${e.id}')">🔒 Close Entry Now</button>`}</div>` : ''}
@@ -4085,7 +4732,14 @@ function tplClassTeacherExamCard(school, e, t){
       <td><button onclick="approveEditRequest('${e.id}','${r.id}')">✅</button> <button class="danger" onclick="rejectEditRequest('${e.id}','${r.id}')">✕</button></td></tr>`;
     }).join('')}
     </table>
-  </div>` : ''}
+  </div>` : ''}` : ''}
+  <details style="margin-top:8px">
+    <summary class="small" style="cursor:pointer">📝 Personalize Report Remarks</summary>
+    <p class="small" style="margin-top:6px">By default every report uses the auto remark tied to that learner's grading level. Type
+    something here to override it for just this learner, just this exam — available to you as Class Teacher regardless of the
+    permissions above.</p>
+    ${remarksTableHTML(school, e.id)}
+  </details>
   </div>`;
 }
 function renderTeacher(){
@@ -4105,7 +4759,7 @@ function renderTeacher(){
   const welcome = `<div class="card no-print"><h2>👩‍🏫 Welcome, ${escapeHtml(t.name)}</h2>
   <p class="small">Your assigned Grade / Learning Area combinations:</p>
   ${chips || '<span class="small">No assignments yet — contact your DOS/HOI.</span>'}
-  <p class="small" style="margin-top:8px">Access: ✏️ Enter marks${t.canPrint?' · 📄 Reports':''}${t.canPrintAssess?' · 🖨 Assessment sheets':''}${classTeacherNames.length?` · 📋 Class Teacher — ${classTeacherNames.map(escapeHtml).join(', ')}`:''}</p>
+  <p class="small" style="margin-top:8px">Access: ✏️ Enter marks${t.canPrint?' · 📄 Reports':''}${t.canPrintAssess?' · 🖨 Assessment sheets':''}${t.canPostAssignments?' · 📎 Assignments':''}${classTeacherNames.length?` · 📋 Class Teacher — ${classTeacherNames.map(escapeHtml).join(', ')}`:''}</p>
   </div>`;
   const acct = tplTeacherAccount(t);
   const ctTools = tplClassTeacherExams(school, t);
@@ -4118,8 +4772,8 @@ function renderTeacher(){
   </div>
   <div id="tdashArea"></div></div>`;
   const classOpts = myClasses.map(cid=>{const c=school.classes.find(x=>x.id===cid);return `<option value="${cid}">${escapeHtml(c.name)}</option>`;}).join('');
-  app.innerHTML = welcome + acct + dash + ctTools + `
-  <div class="card"><h2 class="no-print">✏️ Enter Marks</h2>
+  const P = {
+    marks: `  <div class="card"><h2 class="no-print">✏️ Enter Marks</h2>
   <div class="row no-print">
     <div><label>Grade</label><select id="tClass" onchange="renderTeacherAreaOptions()">${classOpts}</select></div>
     <div><label>Learning Area</label><select id="tArea"></select></div>
@@ -4128,15 +4782,18 @@ function renderTeacher(){
   <div class="flexbtns no-print"><button onclick="loadMarksGrid()">Load Marks Sheet</button></div>
   <div id="marksGridArea"></div>
   </div>
-  <div class="card no-print"><h2>⏳ Approval Status</h2>
+`,
+    approvals: `  <div class="card no-print"><h2>⏳ Approval Status</h2>
   <p class="small">Changes made after entry closes need DOS/HOI approval — track them here.</p>
   <div id="teacherApprovals"></div></div>
-  ${t.canPrint ? `<div class="card"><h2 class="no-print">📄 Print Learner Reports</h2>
+`,
+    reports: `  ${t.canPrint ? `<div class="card"><h2 class="no-print">📄 Print Learner Reports</h2>
   <p class="small no-print">Reports show only your assigned learning area(s) — mean, points and position are based on those.</p>
   <div class="row no-print">
     <div><label>Grade</label><select id="trepClass" onchange="fillTeacherRepExams();fillTeacherRepLearners()">${classOpts}</select></div>
     <div><label>Exam</label><select id="trepExam" onchange="fillTeacherRepLearners()">${school.exams.filter(e=>e.classId===myClasses[0] && examReleased(school,e)).map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No approved exams for this grade</option>'}</select></div>
     <div><label>Learner</label><select id="trepLearner"></select></div>
+    ${genderPickerHTML('trepGender')}
   </div>
   <div class="flexbtns no-print">
     <button onclick="generateTeacherReport(qs('#trepLearner').value, qs('#trepExam').value)">Generate Individual Report</button>
@@ -4144,14 +4801,43 @@ function renderTeacher(){
   </div>
   <div id="treportArea"></div>
   </div>` : ''}
-  ${t.canPrintAssess ? tplTeacherAssessPicker(school, myClasses) : ''}
-  ${t.canPrintAssess ? `<div class="card"><h2 class="no-print">🖨 Grade List of Previous Exams</h2><div id="teacherHistory"></div></div>` : ''}`;
-  initTeacherDashboardControls();
-  runTeacherDashboard();
-  renderTeacherAreaOptions();
-  renderTeacherApprovals();
-  if(t.canPrintAssess) renderTeacherHistory();
-  if(t.canPrint){ fillTeacherRepExams(); fillTeacherRepLearners(); }
+`,
+    assess: `  ${t.canPrintAssess ? tplTeacherAssessPicker(school, myClasses) : ''}
+`,
+    history: `  ${t.canPrintAssess ? `<div class="card"><h2 class="no-print">🖨 Grade List of Previous Exams</h2><div id="teacherHistory"></div></div>` : ''}
+`,
+    assignments: `  ${t.canPostAssignments ? tplTeacherAssignments(school, myClasses) : ''}`
+  };
+  const menu = [
+    {group:'Overview', items:[['dashboard','🏠 Dashboard']]},
+    {group:'Marks', items:[['marks','✏️ Enter Marks'],['approvals','⏳ Approval Status']]}
+  ];
+  const res = [];
+  if(t.canPrint) res.push(['reports','📄 Learner Reports']);
+  if(t.canPrintAssess){ res.push(['assess','🖨 Assessment Sheets']); res.push(['history','🗂 Previous Exams']); }
+  if(res.length) menu.push({group:'Results &amp; reports', items:res});
+  const more = [];
+  if(t.canPostAssignments) more.push(['assignments','📎 Assignments']);
+  if(ctTools) more.push(['classteacher','📋 Class Teacher Tools']);
+  if(more.length) menu.push({group:'Class work', items:more});
+  menu.push({group:'My account', items:[['account','🔑 My Account']]});
+  if(!menu.some(g=>g.items.some(i=>i[0]===teacherTab))) teacherTab = 'dashboard';
+  const quick = [['marks','✏️ Enter Marks']];
+  if(t.canPrint) quick.push(['reports','📄 Reports']);
+  if(t.canPostAssignments) quick.push(['assignments','📎 Assignments']);
+  quick.push(['approvals','⏳ Approval Status']);
+  const content = {
+    dashboard: welcome + portalQuick('gotoTeacherTab', quick) + dash,
+    marks: P.marks, approvals: P.approvals, reports: P.reports, assess: P.assess,
+    history: P.history, assignments: P.assignments, classteacher: ctTools, account: acct
+  }[teacherTab] || '';
+  app.innerHTML = portalShell({menu, tab:teacherTab, goto:'gotoTeacherTab', side:t.name, headName:t.name, headSub:school.name}) + `<div id="dosContent">${content}</div>`;
+  dosSyncBarOffset();
+  if(teacherTab==='dashboard'){ initTeacherDashboardControls(); runTeacherDashboard(); }
+  if(teacherTab==='marks') renderTeacherAreaOptions();
+  if(teacherTab==='approvals') renderTeacherApprovals();
+  if(teacherTab==='history') renderTeacherHistory();
+  if(teacherTab==='reports'){ fillTeacherRepExams(); fillTeacherRepLearners(); }
 }
 // Assessment Sheets for a teacher: same View/Print sheets the DOS/HOI has (Class
 // Assessment Sheet, Cumulative End-Term Sheet, Blank Class List), but the Class/Exam
@@ -4164,7 +4850,7 @@ function tplTeacherAssessPicker(school, myClasses){
   <p class="small no-print">Sheets show only your assigned learning area(s) — total, mean and position are based on those.</p>
   <div class="row no-print">
     <div><label>Exam</label><select id="asExam">${examOpts}</select></div>
-    <div style="align-self:flex-end"><button onclick="viewClassAssessment(qs('#asExam').value)">View / Print Sheet</button></div>
+    ${genderPickerHTML('asGender')}<div style="align-self:flex-end"><button onclick="viewClassAssessment(qs('#asExam').value)">View / Print Sheet</button></div>
   </div>
   <div id="assessArea"></div>
   <div class="card" style="margin-top:14px"><h2 class="no-print">📊 Cumulative End-Term Sheet</h2>
@@ -4172,16 +4858,55 @@ function tplTeacherAssessPicker(school, myClasses){
     <div><label>Grade</label><select id="cumClass">${classOpts}</select></div>
     <div><label>Term</label><select id="cumTerm"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>
     <div><label>Year</label><input id="cumYear" type="number" value="${new Date().getFullYear()}"></div>
-    <div style="align-self:flex-end"><button onclick="viewCumulative()">Generate Cumulative Sheet</button></div>
+    ${genderPickerHTML('cumGender')}<div style="align-self:flex-end"><button onclick="viewCumulative()">Generate Cumulative Sheet</button></div>
   </div>
   <div id="cumArea"></div></div>
   <div class="card" style="margin-top:14px"><h2 class="no-print">🧾 Blank Grade List (Manual Marking Sheet)</h2>
   <div class="row no-print">
     <div><label>Grade</label><select id="blankClass">${classOpts}</select></div>
-    <div style="align-self:flex-end"><button onclick="viewBlankClassList(qs('#blankClass').value)">Generate Blank Grade List</button></div>
+    ${genderPickerHTML('blankGender')}<div style="align-self:flex-end"><button onclick="viewBlankClassList(qs('#blankClass').value)">Generate Blank Grade List</button></div>
   </div>
   <div id="blankListArea"></div>
   </div>
+  </div>`;
+}
+// Assignments for a teacher: same underlying school.assignments data and add/toggle/
+// delete/print functions the DOS/HOI uses (see ASSIGNMENTS section below) — only the
+// Grade dropdown and the visible list are scoped to this teacher's own assigned grade(s),
+// gated on the t.canPostAssignments permission a DOS/HOI grants in Teachers & Permissions.
+function tplTeacherAssignments(school, myClasses){
+  const list = school.assignments.filter(a=>myClasses.includes(a.classId)).sort((a,b)=>b.postedAt-a.postedAt);
+  const classOpts = myClasses.map(cid=>{const c=school.classes.find(x=>x.id===cid);return c?`<option value="${cid}">${escapeHtml(c.name)}</option>`:'';}).join('');
+  return `<div class="card"><h2 class="no-print">📎 Assignments</h2>
+  <p class="small no-print">Send a printable assignment/homework sheet to the Parent Portal, for your assigned grade(s).</p>
+  <div class="row no-print">
+    <div><label>Grade</label><select id="asgClass">${classOpts}</select></div>
+    <div><label>Title</label><input id="asgTitle" placeholder="e.g. Week 4 Mathematics Homework"></div>
+    <div><label>Due date (optional)</label><input id="asgDue" type="date"></div>
+  </div>
+  <div class="row no-print">
+    <div style="flex:1"><label>Instructions (this is what gets printed)</label><textarea id="asgBody" rows="5" placeholder="Type the assignment instructions here…"></textarea></div>
+  </div>
+  <div class="row no-print">
+    <div><label>Attach an image (optional — e.g. a photo/scan of a worksheet, under 2MB)</label><input type="file" accept="image/*" id="asgFile"></div>
+    <div style="align-self:flex-end"><label><input type="checkbox" id="asgVisible" checked> Visible to parents immediately</label></div>
+  </div>
+  <div id="asgMsg"></div>
+  <div class="flexbtns no-print"><button onclick="addAssignment()">➕ Send Assignment</button></div>
+  ${list.length? `<table style="margin-top:14px"><tr><th>Title</th><th>Grade</th><th>Due</th><th>Posted</th><th>Visible to Parents</th><th>Actions</th></tr>
+  ${list.map(a=>{
+    const cls = school.classes.find(c=>c.id===a.classId);
+    return `<tr>
+      <td style="text-align:left">${escapeHtml(a.title)}</td>
+      <td>${cls?escapeHtml(cls.name):'—'}</td>
+      <td>${a.dueDate?escapeHtml(a.dueDate):'—'}</td>
+      <td>${new Date(a.postedAt).toLocaleDateString()}</td>
+      <td><label><input type="checkbox" ${a.visible?'checked':''} onchange="toggleAssignmentVisible('${a.id}')"> ${a.visible?'Visible':'Hidden'}</label></td>
+      <td><button class="ghost" onclick="printAssignmentDos('${a.id}')">🖨 Print</button> <button class="danger" onclick="deleteAssignment('${a.id}')">✕ Delete</button></td>
+    </tr>`;
+  }).join('')}
+  </table>` : '<p class="small">No assignments sent yet.</p>'}
+  <div id="asgPrintArea"></div>
   </div>`;
 }
 function fillTeacherRepLearners(){
@@ -4218,7 +4943,7 @@ function generateAllTeacherReports(classId, examId){
   const school = currentSchool();
   const _ex = school.exams.find(x=>x.id===examId);
   if(!_ex || !examReleased(school,_ex)){ toast('Results for this exam have not been approved yet','err'); return; }
-  const learners = studentsForExam(school, _ex);
+  const learners = applyGenderMode(studentsForExam(school, _ex), genderMode('trepGender'));
   const reports = learners.map(s=>buildReportHTML(school,s.id,examId));
   qs('#treportArea').innerHTML = reports.map(r=>r.html).join('') +
    `<div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print All Reports</button></div>`;
@@ -4378,7 +5103,7 @@ function tplAssessPicker(school){
   return `<div class="card"><h2 class="no-print">🖨 Grade Assessment Sheet</h2>
   <div class="row no-print">
     <div><label>Exam</label><select id="asExam">${school.exams.map(e=>{const c=school.classes.find(x=>x.id===e.classId);return `<option value="${e.id}">${escapeHtml(e.name)} - ${c?escapeHtml(c.name):''} (${e.term} ${e.year})</option>`;}).join('') || '<option value="">No exams</option>'}</select></div>
-    <div style="align-self:flex-end"><button onclick="viewClassAssessment(qs('#asExam').value)">View / Print Sheet</button></div>
+    ${genderPickerHTML('asGender')}<div style="align-self:flex-end"><button onclick="viewClassAssessment(qs('#asExam').value)">View / Print Sheet</button></div>
   </div>
   <div id="assessArea"></div>
   <div class="card" style="margin-top:14px"><h2 class="no-print">📊 Cumulative End-Term Sheet</h2>
@@ -4386,14 +5111,14 @@ function tplAssessPicker(school){
     <div><label>Grade</label><select id="cumClass">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
     <div><label>Term</label><select id="cumTerm"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>
     <div><label>Year</label><input id="cumYear" type="number" value="${new Date().getFullYear()}"></div>
-    <div style="align-self:flex-end"><button onclick="viewCumulative()">Generate Cumulative Sheet</button></div>
+    ${genderPickerHTML('cumGender')}<div style="align-self:flex-end"><button onclick="viewCumulative()">Generate Cumulative Sheet</button></div>
   </div>
   <div id="cumArea"></div></div>
   <div class="card" style="margin-top:14px"><h2 class="no-print">🧾 Blank Grade List (Manual Marking Sheet)</h2>
   <p class="small no-print">A blank roster — admission numbers and names in order, with empty columns for each learning area — for teachers to fill in by hand when marking on paper.</p>
   <div class="row no-print">
     <div><label>Grade</label><select id="blankClass">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
-    <div style="align-self:flex-end"><button onclick="viewBlankClassList(qs('#blankClass').value)">Generate Blank Grade List</button></div>
+    ${genderPickerHTML('blankGender')}<div style="align-self:flex-end"><button onclick="viewBlankClassList(qs('#blankClass').value)">Generate Blank Grade List</button></div>
   </div>
   <div id="blankListArea"></div>
   </div>`;
@@ -4403,16 +5128,19 @@ function viewBlankClassList(classId){
   if(teacherDenied('canPrintAssess', classId)) return;
   const school = currentSchool();
   const cls = school.classes.find(c=>c.id===classId);
-  const learners = studentsInClass(school, classId);
+  const gm = genderMode('blankGender');
+  const learners = applyGenderMode(studentsInClass(school, classId), gm);
+  const nB = learners.filter(x=>x.gender==='M').length, nG = learners.filter(x=>x.gender==='F').length;
   const areas = visibleAreas(school, classId);
   const target = qs('#blankListArea');
   if(!target) return;
   target.innerHTML = `
   <div class="print-only-block">
-  <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>${escapeHtml(cls.name)}</p><p class="small">Blank Grade List — for manual marking</p></div>
-  <table><tr><th>S/N</th><th>Adm No.</th><th>Name</th>${areas.map(a=>`<th>${escapeHtml(a.name)}</th>`).join('')}<th>Total</th></tr>
-  ${learners.map((s,i)=>`<tr><td>${i+1}</td><td>${s.adm?escapeHtml(s.adm):'<span style="display:inline-block;height:26px"></span>'}</td><td style="text-align:left">${escapeHtml(s.name)}</td>${areas.map(()=>'<td style="height:26px">&nbsp;</td>').join('')}<td>&nbsp;</td></tr>`).join('') || `<tr><td colspan="${4+areas.length}" class="small">No learners in this grade.</td></tr>`}
+  <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>${escapeHtml(cls.name)}</p><p class="small">Blank Grade List — for manual marking</p>${genderNote(gm).replace(" (positions are class positions)","")}<p class="small">Boys: ${nB} &nbsp;·&nbsp; Girls: ${nG} &nbsp;·&nbsp; Total: ${learners.length}</p></div>
+  <table><tr><th>S/N</th><th>Adm No.</th><th>Name</th><th>Sex</th>${areas.map(a=>`<th>${escapeHtml(a.name)}</th>`).join('')}<th>Total</th></tr>
+  ${groupedRowsHTML(learners, gm, 5+areas.length, x=>x, (s,i)=>`<tr><td>${i+1}</td><td>${s.adm?escapeHtml(s.adm):'<span style="display:inline-block;height:26px"></span>'}</td><td style="text-align:left">${escapeHtml(s.name)}</td><td>${s.gender==='M'?'M':s.gender==='F'?'F':''}</td>${areas.map(()=>'<td style="height:26px">&nbsp;</td>').join('')}<td>&nbsp;</td></tr>`) || `<tr><td colspan="${5+areas.length}" class="small">No learners in this grade.</td></tr>`}
   </table>
+  <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
   <div class="flexbtns no-print"><button class="gold" onclick="printSection('blankListArea')">🖨 Print</button></div>
   </div>`;
 }
@@ -4444,7 +5172,7 @@ function viewClassAssessment(examId, targetId){
   const marksForExam = school.marks[examId] || {};
   const classTeacher = school.classTeachers[exam.classId] || 'Not Set';
   // compute totals & positions
-  const rows = learners.map(s=>{
+  let rows = learners.map(s=>{
     let total=0, totalPts=0, maxTotal=0;
     const cells = areas.map(a=>{
       const max = exam.maxMarksByArea[a.id] ?? 100;
@@ -4458,6 +5186,10 @@ function viewClassAssessment(examId, targetId){
   });
   rows.sort((a,b)=>b.total-a.total);
   rows.forEach((r,i)=>{ r.position = i+1; if(i>0 && rows[i-1].total===r.total) r.position = rows[i-1].position; });
+  // Positions above are class positions; the gender choice below only decides who is printed.
+  const gm = genderMode('asGender');
+  const allRows = rows;
+  rows = applyGenderMode(rows, gm, r=>r.s);
   // Class/subject average row: the average % scored in each learning area, across only the
   // learners who have a score recorded for it — so a subject nobody has marked yet shows '-'
   // instead of a misleading 0.
@@ -4473,23 +5205,25 @@ function viewClassAssessment(examId, targetId){
   const printId = target.id;
   target.innerHTML = `
   <div class="print-only-block">
-  <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>${escapeHtml(exam.name)} — ${exam.term} ${exam.year} — ${escapeHtml(cls.name)}</p><p class="small">Grade Assessment Sheet</p><p class="small">Class Teacher: ${escapeHtml(classTeacher)}</p>${scoped?'<p class="small">Assigned learning area(s) only — total, mean and position are based on these.</p>':''}${school.requireApproval?`<p class="small">Status: ${exam.resultsApproval==='approved'?'✅ Approved by DOS/HOI':'⚠ Provisional — not yet approved'}</p>`:''}</div>
-  <table><tr><th>Pos</th><th>Adm No.</th><th>Name</th>${areas.map(a=>`<th>${escapeHtml(a.name)}</th>`).join('')}<th>Total</th><th>Total Pts</th><th>Mean %</th><th>Level</th></tr>
-  ${rows.map(r=>{
+  <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>${escapeHtml(exam.name)} — ${exam.term} ${exam.year} — ${escapeHtml(cls.name)}</p><p class="small">Grade Assessment Sheet</p>${genderNote(gm)}<p class="small">Class Teacher: ${escapeHtml(classTeacher)}</p>${scoped?'<p class="small">Assigned learning area(s) only — total, mean and position are based on these.</p>':''}${school.requireApproval?`<p class="small">Status: ${exam.resultsApproval==='approved'?'✅ Approved by DOS/HOI':'⚠ Provisional — not yet approved'}</p>`:''}</div>
+  <table><tr><th>Pos</th><th>Adm No.</th><th>Name</th><th>Sex</th>${areas.map(a=>`<th>${escapeHtml(a.name)}</th>`).join('')}<th>Total</th><th>Total Pts</th><th>Mean %</th><th>Level</th></tr>
+  ${groupedRowsHTML(rows, gm, 8+areas.length, r=>r.s, r=>{
     const g = gradeFor(school,r.meanPct,exam.classId);
-    return `<tr><td>${r.position}</td><td>${r.s.adm?escapeHtml(r.s.adm):'—'}</td><td>${escapeHtml(r.s.name)}</td>
+    return `<tr><td>${r.position}</td><td>${r.s.adm?escapeHtml(r.s.adm):'—'}</td><td>${escapeHtml(r.s.name)}</td><td>${r.s.gender==='M'?'M':r.s.gender==='F'?'F':''}</td>
     ${r.cells.map(c=>`<td>${c.score??'-'}</td>`).join('')}
     <td>${r.total}</td><td>${r.totalPts}</td><td>${r.meanPct.toFixed(1)}%</td><td>${raBadge(school,exam.classId,g.level)}</td></tr>`;
-  }).join('')}
-  <tr class="rc-total"><td colspan="3" style="text-align:left">CLASS AVERAGE</td>
+  })}
+  <tr class="rc-total"><td colspan="4" style="text-align:left">${gm==='M'?'BOYS AVERAGE':gm==='F'?'GIRLS AVERAGE':'CLASS AVERAGE'}</td>
   ${subjAvg.map(v=>`<td>${v!=null?v.toFixed(1)+'%':'-'}</td>`).join('')}
   <td>-</td><td>-</td><td>${classMeanPct.toFixed(1)}%</td><td>${raBadge(school,exam.classId,classMeanG.level)}</td></tr>
   </table>
+  ${genderSummaryHTML(school, exam.classId, allRows)}
   ${gradingKey}
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:30px">
-    <div class="sig-line">Class Teacher: ${escapeHtml(classTeacher)}</div>
-    <div class="sig-line">${school.hoiSignature?`<img class="rc-sig-img" src="${school.hoiSignature}" alt="HOI signature">`:''}DOS/HOI: ${escapeHtml(school.hoiName)}</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px">
+    ${sigBox('Class Teacher: '+escapeHtml(classTeacher))}
+    ${sigBox('DOS/HOI: '+escapeHtml(school.hoiName), hoiSigImg(school))}
   </div>
+  <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
   <div class="flexbtns no-print"><button class="gold" onclick="printSection('${printId}')">🖨 Print</button></div>
   </div>`;
 }
@@ -4503,7 +5237,7 @@ function viewCumulative(){
   const areas = visibleAreas(school, classId);
   const cls = school.classes.find(c=>c.id===classId);
   if(exams.length===0){ qs('#cumArea').innerHTML = '<p class="small">No exams recorded for this term/year yet.</p>'; return; }
-  const rows = learners.map(s=>{
+  let rows = learners.map(s=>{
     let grandTotalPct=0, grandTotalPts=0;
     const cells = areas.map(a=>{
       let sumPct=0, n=0;
@@ -4523,6 +5257,10 @@ function viewCumulative(){
   });
   rows.sort((a,b)=>b.meanPct-a.meanPct);
   rows.forEach((r,i)=>{ r.position=i+1; if(i>0 && rows[i-1].meanPct===r.meanPct) r.position=rows[i-1].position; });
+  // Positions above are class positions; the gender choice below only decides who is printed.
+  const gm = genderMode('cumGender');
+  const allRows = rows;
+  rows = applyGenderMode(rows, gm, r=>r.s);
   const classTeacher = school.classTeachers[classId] || 'Not Set';
   const subjAvg = areas.map((a,i)=>{
     const vals = rows.map(r=>r.cells[i]).filter(v=>v!=null);
@@ -4534,20 +5272,22 @@ function viewCumulative(){
   const gradingKey = keyTable.length ? `<div class="rc-key">${keyTable.map(k=>`<span><b>${escapeHtml(k.level)}</b> = ${escapeHtml(k.label)}</span>`).join('')}</div>` : '';
   qs('#cumArea').innerHTML = `
   <div class="print-only-block">
-  <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>Cumulative Assessment — ${term} ${year} — ${escapeHtml(cls.name)}</p><p class="small">Based on ${exams.length} exam(s): ${exams.map(e=>escapeHtml(e.name)).join(', ')}</p><p class="small">Class Teacher: ${escapeHtml(classTeacher)}</p>${scoped?'<p class="small">Assigned learning area(s) only — mean, points and position are based on these.</p>':''}${school.requireApproval && exams.some(e=>e.resultsApproval!=='approved')?'<p class="small">⚠ Provisional — includes exam(s) not yet approved.</p>':''}</div>
-  <table><tr><th>Pos</th><th>Adm No.</th><th>Name</th>${areas.map(a=>`<th>${escapeHtml(a.name)} (avg %)</th>`).join('')}<th>Mean %</th><th>Total Pts</th><th>Level</th></tr>
-  ${rows.map(r=>{const g=gradeFor(school,r.meanPct,classId);return `<tr><td>${r.position}</td><td>${r.s.adm?escapeHtml(r.s.adm):'—'}</td><td>${escapeHtml(r.s.name)}</td>
+  <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>Cumulative Assessment — ${term} ${year} — ${escapeHtml(cls.name)}</p>${genderNote(gm)}<p class="small">Based on ${exams.length} exam(s): ${exams.map(e=>escapeHtml(e.name)).join(', ')}</p><p class="small">Class Teacher: ${escapeHtml(classTeacher)}</p>${scoped?'<p class="small">Assigned learning area(s) only — mean, points and position are based on these.</p>':''}${school.requireApproval && exams.some(e=>e.resultsApproval!=='approved')?'<p class="small">⚠ Provisional — includes exam(s) not yet approved.</p>':''}</div>
+  <table><tr><th>Pos</th><th>Adm No.</th><th>Name</th><th>Sex</th>${areas.map(a=>`<th>${escapeHtml(a.name)} (avg %)</th>`).join('')}<th>Mean %</th><th>Total Pts</th><th>Level</th></tr>
+  ${groupedRowsHTML(rows, gm, 7+areas.length, r=>r.s, r=>{const g=gradeFor(school,r.meanPct,classId);return `<tr><td>${r.position}</td><td>${r.s.adm?escapeHtml(r.s.adm):'—'}</td><td>${escapeHtml(r.s.name)}</td><td>${r.s.gender==='M'?'M':r.s.gender==='F'?'F':''}</td>
     ${r.cells.map(c=>`<td>${c!=null?c.toFixed(1):'-'}</td>`).join('')}
-    <td>${r.meanPct.toFixed(1)}%</td><td>${r.grandTotalPts}</td><td>${raBadge(school,classId,g.level)}</td></tr>`;}).join('')}
-  <tr class="rc-total"><td colspan="3" style="text-align:left">CLASS AVERAGE</td>
+    <td>${r.meanPct.toFixed(1)}%</td><td>${r.grandTotalPts}</td><td>${raBadge(school,classId,g.level)}</td></tr>`;})}
+  <tr class="rc-total"><td colspan="4" style="text-align:left">${gm==='M'?'BOYS AVERAGE':gm==='F'?'GIRLS AVERAGE':'CLASS AVERAGE'}</td>
   ${subjAvg.map(v=>`<td>${v!=null?v.toFixed(1):'-'}</td>`).join('')}
   <td>${classMeanPct.toFixed(1)}%</td><td>-</td><td>${raBadge(school,classId,classMeanG.level)}</td></tr>
   </table>
+  ${genderSummaryHTML(school, classId, allRows)}
   ${gradingKey}
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:30px">
-    <div class="sig-line">Class Teacher: ${escapeHtml(classTeacher)}</div>
-    <div class="sig-line">${school.hoiSignature?`<img class="rc-sig-img" src="${school.hoiSignature}" alt="HOI signature">`:''}DOS/HOI: ${escapeHtml(school.hoiName)}</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px">
+    ${sigBox('Class Teacher: '+escapeHtml(classTeacher))}
+    ${sigBox('DOS/HOI: '+escapeHtml(school.hoiName), hoiSigImg(school))}
   </div>
+  <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
   <div class="flexbtns no-print"><button class="gold" onclick="printSection('cumArea')">🖨 Print</button></div>
   </div>`;
 }
@@ -4674,7 +5414,7 @@ function runResultsAnalysis(){
   <table class="ra-table"><tr><th>Grade</th><th>1st</th><th>2nd</th><th>3rd</th></tr>
   ${ranked.map(r=>{ const t=r.lrn.slice().sort((a,b)=>b.mean-a.mean); return `<tr><td style="text-align:left">${escapeHtml(r.cls.name)}</td>${[0,1,2].map(i=>`<td>${t[i]?escapeHtml(t[i].s.name)+' — '+t[i].mean.toFixed(1)+'%':'—'}</td>`).join('')}</tr>`; }).join('')}
   </table></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:30px"><div class="sig-line">Head of Institution: ${escapeHtml(school.hoiName||'')}</div><div class="sig-line">Signature &amp; Date</div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px">${sigBox('Head of Institution: '+escapeHtml(school.hoiName||''), hoiSigImg(school))}${sigBox('Date', '<span class="sig-date">'+new Date().toLocaleDateString()+'</span>')}</div>
   <div class="flexbtns no-print"><button class="gold" onclick="printSection('raArea')">🖨 Print</button></div>
   </div>`;
 }
@@ -4696,7 +5436,7 @@ function latestDataTermYear(school){
 }
 function tplDashboard(school){
   if(!school.classes.length){
-    return `<div class="card"><h2>🏠 Dashboard</h2><p class="small">Add your grades (🏷 Grades) and enter marks to see a results snapshot here as soon as data comes in.</p></div>`;
+    return `<div class="card"><h2>🏠 Dashboard</h2><p class="small">Open the ☰ Menu, add your grades under 🏷 Grades, then enter marks to see a results snapshot here as soon as data comes in.</p></div>`;
   }
   const latest = latestDataTermYear(school), now = new Date().getFullYear();
   const term = latest ? latest.term : 'Term 1', year = latest ? latest.year : now;
@@ -4829,6 +5569,7 @@ function tplReportsPicker(school){
     <div><label>Grade</label><select id="repClass" onchange="fillRepExams();fillRepLearners()">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
     <div><label>Exam / Term</label><select id="repExam" onchange="fillRepLearners()">${school.exams.filter(e=>e.classId===firstClassId).map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this grade</option>'}</select></div>
     <div><label>Learner</label><select id="repLearner"></select></div>
+    ${genderPickerHTML('repGender')}
   </div>
   <div class="flexbtns no-print">
     <button onclick="generateReport(qs('#repLearner').value, qs('#repExam').value)">Generate Individual Report</button>
@@ -4891,7 +5632,10 @@ function buildReportHTML(school, sid, examId){
     let s=0,mx=0; areas.forEach(a=>{ const sc=mk[a.id]; const mmax=e.maxMarksByArea[a.id]??100; if(sc!=null){s+=sc; mx+=mmax;} });
     return {label:e.name+' ('+e.term.slice(-1)+"/'"+String(e.year).slice(-2)+')', pct: mx? s/mx*100:0};
   });
-  const remark = overallGrade.remark;
+  // A personalized remark for this learner+exam (set under Exams → Personalize Report
+  // Remarks, or by their Class Teacher) always wins; otherwise fall back to the auto
+  // remark tied to whichever grading level their overall mean % falls into.
+  const remark = (school.remarks[examId]||{})[sid] || overallGrade.remark;
   const chartId = 'chart_'+sid.replace(/\W/g,'');
   // Attendance and term dates are purely informational and only shown once a DOS/HOI has
   // actually filled them in (Exams tab) — an unset totalDays or missing days-present record
@@ -4923,6 +5667,7 @@ function buildReportHTML(school, sid, examId){
         <div><b>Name:</b> ${escapeHtml(student.name)}</div>
         <div><b>Adm. No.:</b> ${student.adm ? escapeHtml(student.adm) : 'Not assigned'}</div>
         <div><b>Grade:</b> ${escapeHtml(cls.name)}</div>
+        ${student.gender?`<div><b>Gender:</b> ${genderLabel(student.gender)}</div>`:''}
         <div><b>Position:</b> ${position} of ${learners.length}</div>
       </div>
       <div class="rc-overall-box">
@@ -4943,9 +5688,9 @@ function buildReportHTML(school, sid, examId){
     <div class="rc-remark"><b>Grade Teacher's Remark:</b> ${escapeHtml(remark)}</div>
     ${metaLine}
     <div class="rc-sigrow">
-      <div class="sig-line">Grade Teacher: ${escapeHtml(classTeacher)}</div>
-      <div class="sig-line">${school.hoiSignature?`<img class="rc-sig-img" src="${school.hoiSignature}" alt="HOI signature">`:''}Head of Institution: ${escapeHtml(school.hoiName)}</div>
-      <div class="sig-line">Parent / Guardian Signature</div>
+      ${sigBox('Grade Teacher: '+escapeHtml(classTeacher))}
+      ${sigBox('Head of Institution: '+escapeHtml(school.hoiName), hoiSigImg(school))}
+      ${sigBox('Parent / Guardian Signature')}
     </div>
     ${gradingKey}
     <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
@@ -5024,10 +5769,20 @@ function renderParent(){
   }
   const cls = school.classes.find(c=>c.id===student.classId);
   const exams = school.exams.slice().reverse(); // already limited to this learner's own exams by buildParentSafeSchool
-  app.innerHTML = `
-  <div class="card">
+  const assignments = school.assignments.slice().sort((a,b)=>b.postedAt-a.postedAt); // already limited to this learner's grade + visible ones
+  const menu = [
+    {group:'Overview', items:[['dashboard','🏠 Dashboard']]},
+    {group:'My child', items:[['report','📄 Progress Report'],['assignments','📎 Assignments']]}
+  ];
+  if(!menu.some(g=>g.items.some(i=>i[0]===parentTab))) parentTab = 'dashboard';
+  const latest = exams[0];
+  const head = `<div class="card">
     <h2>👋 ${escapeHtml(student.name)}</h2>
     <p class="small">${cls?escapeHtml(cls.name):'Grade not set'} &nbsp;·&nbsp; ${escapeHtml(school.name)} &nbsp;·&nbsp; Admission No: ${escapeHtml(student.adm||'-')}</p>
+    <p class="small" style="margin-bottom:0">${latest ? `Latest report: <b>${escapeHtml(latest.name)}</b> (${latest.term} ${latest.year})` : 'No reports are available yet.'}</p>
+  </div>`;
+  const reportCard = `<div class="card">
+    <h2>📄 Progress Report</h2>
     <div class="row">
       <div><label>Exam / Term</label>
         <select id="pExam" onchange="viewParentReport()">
@@ -5037,7 +5792,28 @@ function renderParent(){
     </div>
   </div>
   <div id="reportArea"></div>`;
-  if(exams.length) viewParentReport();
+  const asgCard = assignments.length ? `<div class="card">
+    <h2>📎 Assignments</h2>
+    <table><tr><th>Title</th><th>Due</th><th>Posted</th><th></th></tr>
+    ${assignments.map(a=>`<tr><td style="text-align:left">${escapeHtml(a.title)}</td><td>${a.dueDate?escapeHtml(a.dueDate):'—'}</td><td>${new Date(a.postedAt).toLocaleDateString()}</td>
+    <td><button class="ghost" onclick="viewParentAssignment('${a.id}')">👁 View / Print</button></td></tr>`).join('')}
+    </table>
+    <div id="pAssignmentArea"></div>
+  </div>` : `<div class="card"><h2>📎 Assignments</h2><p class="small">No assignments have been posted for your child's grade yet.</p></div>`;
+  const content = {
+    dashboard: head + portalQuick('gotoParentTab', [['report','📄 Progress Report'],['assignments','📎 Assignments'+(assignments.length?' ('+assignments.length+')':'')]]),
+    report: reportCard,
+    assignments: asgCard
+  }[parentTab] || '';
+  app.innerHTML = portalShell({menu, tab:parentTab, goto:'gotoParentTab', side:student.name, headName:student.name, headSub:(cls?cls.name+' · ':'')+'Adm '+(student.adm||'-')}) + `<div id="dosContent">${content}</div>`;
+  dosSyncBarOffset();
+  if(parentTab==='report' && exams.length) viewParentReport();
+}
+function viewParentAssignment(id){
+  const school = parentSchoolData;
+  const a = school.assignments.find(x=>x.id===id);
+  if(!a) return;
+  qs('#pAssignmentArea').innerHTML = assignmentPrintHTML(school, a) + `<div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print This Assignment</button></div>`;
 }
 function viewParentReport(){
   const school = parentSchoolData;
@@ -5065,7 +5841,7 @@ function generateAllReports(classId, examId){
   const school = currentSchool();
   if(!confirmUnapproved(school, examId)) return;
   const _exm = school.exams.find(x=>x.id===examId);
-  const learners = _exm ? studentsForExam(school, _exm) : studentsInClass(school, classId);
+  const learners = applyGenderMode(_exm ? studentsForExam(school, _exm) : studentsInClass(school, classId), genderMode('repGender'));
   const reports = learners.map(s=>buildReportHTML(school,s.id,examId));
   qs('#reportArea').innerHTML = reports.map(r=>r.html).join('') +
    `<div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print All Reports</button></div>`;
@@ -5093,7 +5869,120 @@ function tplHistory(school){
   </table></div>`;
 }
 
-/* ============================= SMS TO PARENTS ============================= */
+/* ============================= ASSIGNMENTS (DOS/HOI → Parent Portal) =============================
+   A DOS/HOI sends a printable assignment/homework sheet to one grade at a time. It's plain text
+   instructions (always renders/prints reliably, unlike an embedded PDF) plus an optional single
+   image attachment (a photo/scan of a worksheet, reusing the same upload pattern as the school
+   logo). Each one has a "visible to parents" toggle, exactly like exam.parentVisible — a DOS/HOI
+   can prepare it first and only publish it to the Parent Portal when ready. A parent only ever
+   sees the assignments for their OWN child's grade (see buildParentSafeSchool). */
+function tplAssignments(school){
+  const list = school.assignments.slice().sort((a,b)=>b.postedAt-a.postedAt);
+  return `<div class="card">
+  <h2>📎 Assignments</h2>
+  <p class="small">Send a printable assignment or homework sheet to a grade's Parent Portal. Parents can view and print it from their own device — nothing to install.</p>
+  <div class="row">
+    <div><label>Grade</label><select id="asgClass">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('') || '<option value="">No grades yet</option>'}</select></div>
+    <div><label>Title</label><input id="asgTitle" placeholder="e.g. Week 4 Mathematics Homework"></div>
+    <div><label>Due date (optional)</label><input id="asgDue" type="date"></div>
+  </div>
+  <div class="row">
+    <div style="flex:1"><label>Instructions (this is what gets printed)</label><textarea id="asgBody" rows="5" placeholder="Type the assignment instructions here…"></textarea></div>
+  </div>
+  <div class="row">
+    <div><label>Attach an image (optional — e.g. a photo/scan of a worksheet, under 2MB)</label><input type="file" accept="image/*" id="asgFile"></div>
+    <div style="align-self:flex-end"><label><input type="checkbox" id="asgVisible" checked> Visible to parents immediately</label></div>
+  </div>
+  <div id="asgMsg"></div>
+  <div class="flexbtns"><button onclick="addAssignment()">➕ Send Assignment</button></div>
+  </div>
+  <div class="card" style="margin-top:14px">
+  <h3 style="margin-top:0">Sent Assignments</h3>
+  ${list.length? `<table><tr><th>Title</th><th>Grade</th><th>Due</th><th>Posted</th><th>Visible to Parents</th><th>Actions</th></tr>
+  ${list.map(a=>{
+    const cls = school.classes.find(c=>c.id===a.classId);
+    return `<tr>
+      <td style="text-align:left">${escapeHtml(a.title)}</td>
+      <td>${cls?escapeHtml(cls.name):'—'}</td>
+      <td>${a.dueDate?escapeHtml(a.dueDate):'—'}</td>
+      <td>${new Date(a.postedAt).toLocaleDateString()}</td>
+      <td><label><input type="checkbox" ${a.visible?'checked':''} onchange="toggleAssignmentVisible('${a.id}')"> ${a.visible?'Visible':'Hidden'}</label></td>
+      <td><button class="ghost" onclick="printAssignmentDos('${a.id}')">🖨 Print</button> <button class="danger" onclick="deleteAssignment('${a.id}')">✕ Delete</button></td>
+    </tr>`;
+  }).join('')}
+  </table>` : '<p class="small">No assignments sent yet.</p>'}
+  <div id="asgPrintArea"></div>
+  </div>`;
+}
+// Re-renders whichever portal (DOS/HOI or teacher) is currently open — the Assignments
+// functions below are shared by both, gated by permission rather than by role. (Reuses
+// the existing renderCurrentPortal() defined above, near the Class Teacher Tools.)
+function addAssignment(){
+  const school = currentSchool();
+  const classId = qs('#asgClass').value;
+  const title = qs('#asgTitle').value.trim();
+  const dueDate = qs('#asgDue').value;
+  const instructions = qs('#asgBody').value.trim();
+  const visible = qs('#asgVisible').checked;
+  const msgEl = qs('#asgMsg');
+  if(!classId){ msgEl.innerHTML = '<div class="msg err">Choose a grade first.</div>'; return; }
+  if(teacherDenied('canPostAssignments', classId)) return;
+  if(!title){ msgEl.innerHTML = '<div class="msg err">Give the assignment a title.</div>'; return; }
+  if(!instructions){ msgEl.innerHTML = '<div class="msg err">Add the assignment instructions — this is what parents will see and print.</div>'; return; }
+  const finish = (attachment)=>{
+    school.assignments.unshift({ id: uid('asg_'), classId, title, instructions, dueDate, attachment: attachment||'', postedAt: Date.now(), visible });
+    saveDB(DB);
+    toast(visible ? 'Assignment sent — visible to parents now.' : 'Assignment saved as hidden — toggle it on when ready.');
+    renderCurrentPortal();
+  };
+  const file = qs('#asgFile').files && qs('#asgFile').files[0];
+  if(file){
+    if(!file.type.startsWith('image/')){ msgEl.innerHTML = '<div class="msg err">Attachment must be an image file.</div>'; return; }
+    if(file.size > 2*1024*1024){ msgEl.innerHTML = '<div class="msg err">Image is too large — please use one under 2MB.</div>'; return; }
+    const reader = new FileReader();
+    reader.onload = ()=>finish(reader.result);
+    reader.onerror = ()=>{ msgEl.innerHTML = '<div class="msg err">Could not read that image — please try another file.</div>'; };
+    reader.readAsDataURL(file);
+  } else finish('');
+}
+function toggleAssignmentVisible(id){
+  const school = currentSchool();
+  const a = school.assignments.find(x=>x.id===id);
+  if(!a) return;
+  if(teacherDenied('canPostAssignments', a.classId)) return;
+  a.visible = !a.visible;
+  saveDB(DB); renderCurrentPortal();
+}
+function deleteAssignment(id){
+  const school = currentSchool();
+  const a = school.assignments.find(x=>x.id===id);
+  if(!a) return;
+  if(teacherDenied('canPostAssignments', a.classId)) return;
+  if(!confirm('Delete this assignment? Parents will no longer be able to see or print it.')) return;
+  school.assignments = school.assignments.filter(x=>x.id!==id);
+  saveDB(DB); renderCurrentPortal();
+}
+// Shared by both the DOS/HOI's own Print button and the Parent Portal (see viewParentAssignment)
+// so a printed assignment always looks identical regardless of who printed it.
+function assignmentPrintHTML(school, a){
+  const cls = school.classes.find(c=>c.id===a.classId);
+  return `<div class="print-only-block">
+  <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>${escapeHtml(a.title)}</p><p class="small">${cls?escapeHtml(cls.name):''}${a.dueDate?' &nbsp;·&nbsp; Due: '+escapeHtml(a.dueDate):''}</p></div>
+  <div style="white-space:pre-wrap;line-height:1.6;margin-top:14px;font-size:15px">${escapeHtml(a.instructions)}</div>
+  ${a.attachment?`<img src="${a.attachment}" alt="Assignment attachment" style="max-width:100%;margin-top:18px;border:1px solid var(--border);border-radius:8px">`:''}
+  <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
+  </div>`;
+}
+function printAssignmentDos(id){
+  const school = currentSchool();
+  const a = school.assignments.find(x=>x.id===id);
+  if(!a) return;
+  if(teacherDenied('canPostAssignments', a.classId)) return;
+  qs('#asgPrintArea').innerHTML = assignmentPrintHTML(school, a);
+  printSection('asgPrintArea');
+}
+
+
 // Sends real SMS via a Cloud Function (see SMS_SETUP.md) that holds the Africa's Talking
 // API key server-side. Each school pays for its own messages out of a prepaid credit
 // wallet (1 credit = 1 SMS segment) topped up by the platform admin — see Admin → 💬 SMS
