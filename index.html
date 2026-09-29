@@ -214,7 +214,7 @@ canvas{max-width:100%;}
      A report with too much content still shrinks to fit via fitReportCardsToPage(); this
      flex layout only ever adds space, it never causes overflow. */
   .report-card{page-break-inside:avoid;break-inside:avoid;border-width:1px;transform-origin:top left;
-    height:281mm;display:flex;flex-direction:column;box-sizing:border-box;margin:0;box-shadow:none;}
+    height:259mm;display:flex;flex-direction:column;box-sizing:border-box;margin:0;box-shadow:none;}
   .report-card .rc-body{flex:1;display:flex;flex-direction:column;box-sizing:border-box;}
   .rc-body{padding:11px 14px 10px;}
   .report-card table{font-size:11px;}
@@ -317,7 +317,7 @@ tr.gender-head td{background:#eef2f7 !important;font-weight:700;text-align:left 
 <script src="firebase-config.js"></script>
 <!-- SMS-to-parents (results & announcements). Sets window.PLATFORM_SMS_ENDPOINT, the URL
      of a small Cloud Function that holds the real Africa's Talking API key server-side
-     and does the actual sending — never put that key in this file. See SMS_SETUP.md. -->
+     and does the actual sending — never put that key in this file. See GO_LIVE.md. -->
 <script src="sms-config.js"></script>
 <!-- Email delivery for staff "Forgot password?" codes, via EmailJS — no server or Cloud
      Function needed. Sets window.PLATFORM_EMAILJS_* from email-config.js. See EMAIL_SETUP.md.
@@ -325,7 +325,7 @@ tr.gender-head td{background:#eef2f7 !important;font-weight:700;text-align:left 
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="email-config.js"></script>
 <script>
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 // The Admin/Owner tab is completely hidden from the login screen and unreachable
 // (even by URL) unless the page is opened with ?key=<this value> in the address bar.
 // This is what stops a random visitor from ever seeing "Admin/Owner" or being able to
@@ -548,7 +548,7 @@ function migrateDB(db){
     // both credits the wallet and records it in smsTopups. No payment gateway needed.
     if(!Array.isArray(s.smsTopups)) s.smsTopups = [];
     if(!Array.isArray(s.smsTopupRequests)) s.smsTopupRequests = [];
-    s.students.forEach(st=>{ if(st.parentPhone==null) st.parentPhone = ''; });
+    s.students.forEach(st=>{ if(st.parentPhone==null) st.parentPhone = ''; if(st.assessNo==null) st.assessNo = ''; });
     // Registered contact details for staff (DOS/HOI + teachers) — used only for the
     // "Forgot password?" OTP flow on the login screen (see sendStaffOtp/verifyStaffOtp).
     // Older accounts created before this feature simply have no contact on file yet, so
@@ -846,7 +846,7 @@ async function parentCloudLookup(code, config){
   ]);
   const remote = dataSnap.val();
   if(!remote) return null;
-  return ensureSchoolShape(Object.assign({}, remote, {marks: marksSnap.val()||{}}));
+  return ensureSchoolShape(Object.assign({}, remote, {marks: marksSnap.val()||{}, smsCredits:0}));
 }
 function buildParentSafeSchool(fullSchool, student){
   const cls = fullSchool.classes.find(c=>c.id===student.classId);
@@ -863,7 +863,7 @@ function buildParentSafeSchool(fullSchool, student){
   // Classmates' marks are needed (unnamed, via id) to compute this learner's position — but nothing
   // beyond id/name/adm/classId about them leaves the school.
   const students = fullSchool.students.filter(s=>s.id===student.id || s.classId===student.classId || [...examIds].some(id=>(fullSchool.marks[id]||{})[s.id]))
-    .map(s=>({id:s.id, name:s.name, adm:s.adm, classId:s.classId, gender:s.gender||''}));
+    .map(s=>({id:s.id, name:s.name, adm:s.adm, classId:s.classId, gender:s.gender||'', assessNo: s.id===student.id ? (s.assessNo||'') : ''}));
   const teachers = fullSchool.teachers
     .filter(t=>t.assignments.some(a=>gradeIds.has(a.classId)))
     .map(t=>({id:t.id, name:t.name, assignments:t.assignments.filter(a=>gradeIds.has(a.classId))}));
@@ -910,6 +910,7 @@ function nonMarksSnapshot(school){
   if(!school._updatedAt) school._updatedAt = Date.now();
   const clone = JSON.parse(JSON.stringify(school));
   delete clone.marks;
+  delete clone.smsCredits;   // the balance lives in a server-only node; a browser must never write it
   return clone;
 }
 function scheduleCloudPush(){
@@ -953,13 +954,29 @@ function pushMarkToCloud(code, examId, sid, areaId, val){
 function hasPlatformConfig(){ return !!(window.PLATFORM_FIREBASE_CONFIG && window.PLATFORM_FIREBASE_CONFIG.apiKey && window.PLATFORM_FIREBASE_CONFIG.databaseURL); }
 // Whether SMS-sending is wired up for this deployment. Actually sending an SMS needs a
 // secret Africa's Talking API key, which must never sit in this client-side file — so
-// sending goes through a small Cloud Function instead (see sms-config.js / SMS_SETUP.md).
+// sending goes through a small Cloud Function instead (see sms-config.js / GO_LIVE.md).
 // This just checks whether that function's URL has been configured yet.
 function hasSmsConfig(){ return !!(window.PLATFORM_SMS_ENDPOINT && window.PLATFORM_SMS_ENDPOINT.trim()); }
 function hasEmailConfig(){ return !!(window.PLATFORM_EMAILJS_PUBLIC_KEY && window.PLATFORM_EMAILJS_SERVICE_ID && window.PLATFORM_EMAILJS_TEMPLATE_ID); }
 // 1 credit = 1 SMS segment (≤153 GSM characters). Longer messages consume more credits
 // per recipient, same as real carrier billing, so the cost shown before sending is accurate.
-function smsSegments(text){ const len=(text||'').length; return Math.max(1, Math.ceil(len/153)); }
+// GSM-7 messages: 160 chars single / 153 per part when concatenated (chars like { } [ ] ^ ~ | \\ € count double).
+// Any character outside GSM-7 (curly quotes ’ “ ”, emoji, some accents) forces Unicode (UCS-2):
+// 70 chars single / 67 per part. Under-counting here would let the server bill more than the
+// preview showed, so this mirrors how the network really splits messages.
+const GSM7_BASIC = "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
+const GSM7_EXT = "^{}\\[~]|€";
+function smsSegments(text){
+  text = text||'';
+  let units = 0, unicode = false;
+  for(const ch of text){
+    if(GSM7_BASIC.includes(ch)) units += 1;
+    else if(GSM7_EXT.includes(ch)) units += 2;
+    else { unicode = true; break; }
+  }
+  if(unicode){ units = Array.from(text).reduce((n,ch)=>n+(ch.codePointAt(0)>0xFFFF?2:1),0); return units<=70 ? 1 : Math.ceil(units/67); }
+  return units<=160 ? Math.max(1,1) : Math.ceil(units/153);
+}
 function smsCreditsNeeded(recipientCount, text){ return recipientCount * smsSegments(text); }
 // Fire-and-forget: pushes one school's current (non-marks) data to the shared project.
 // Used by admin actions (create/suspend/activate/delete/reset password/etc.) which don't
@@ -1065,7 +1082,7 @@ async function refreshSchoolFromCloud(code){
   if(local && (local._updatedAt||0) >= (remote._updatedAt||0)) return false; // local already at least as fresh
   const marks = local ? local.marks : {};
   const syncConfig = local ? local.syncConfig : null;
-  DB.schools[code] = ensureSchoolShape(Object.assign({}, remote, {marks: marks||{}, syncConfig}));
+  DB.schools[code] = ensureSchoolShape(Object.assign({}, remote, {marks: marks||{}, syncConfig, smsCredits: local ? (local.smsCredits||0) : 0}));
   saveDB(DB, {skipCloud:true});
   return true;
 }
@@ -1237,7 +1254,7 @@ function deepEqual(a,b){
    records (grades, learners, teachers, exams…) merge record-by-record by id; fields merge
    field-by-field; an edit beats a delete; only when two people change the very same field
    to different values does the newer save win. */
-const MERGE_SKIP = ['marks','syncConfig','_updatedAt'];
+const MERGE_SKIP = ['marks','syncConfig','_updatedAt','smsCredits'];  // smsCredits: server-owned (schools/{code}/sms/credits), never merged or pushed from a browser
 function stripForMerge(o){ const c = Object.assign({}, o||{}); MERGE_SKIP.forEach(k=>delete c[k]); return c; }
 function isPlainObj(v){ return v!==null && typeof v==='object' && !Array.isArray(v); }
 function isEmptyVal(v){ return v==null || (Array.isArray(v) && !v.length) || (isPlainObj(v) && !Object.keys(v).length); }
@@ -1354,7 +1371,7 @@ function mergeDataFromCloud(code, remote){
   if(!remote){ syncState.dataReady = true; return; }
   const local = DB.schools[code];
   if(!local){
-    DB.schools[code] = ensureSchoolShape(Object.assign({}, remote, {marks:{}}));
+    DB.schools[code] = ensureSchoolShape(Object.assign({}, remote, {marks:{}, smsCredits:0}));
     syncBase[code] = JSON.parse(JSON.stringify(stripForMerge(remote)));
     saveDB(DB, {skipCloud:true});
     syncState.dataReady = true; enforceAccessForActiveSession(code); return;
@@ -1363,7 +1380,7 @@ function mergeDataFromCloud(code, remote){
   // No earlier cloud copy in memory (just logged in): if the cloud is newer, trust it as before;
   // otherwise merge without assuming anything was deleted.
   const base = syncBase[code] || (rt>lt ? stripForMerge(local) : undefined);
-  const next = Object.assign(mergeSchoolData(base, local, remote, rt>lt), {marks: local.marks||{}, syncConfig: local.syncConfig || remote.syncConfig});
+  const next = Object.assign(mergeSchoolData(base, local, remote, rt>lt), {marks: local.marks||{}, syncConfig: local.syncConfig || remote.syncConfig, smsCredits: local.smsCredits||0});
   mergeExamStates(next, remote); mergeExamStates(next, local);   // approval / edit-request state, as before
   ensureSchoolShape(next);
   const nx = stripForMerge(next), lo = stripForMerge(local);
@@ -1414,7 +1431,7 @@ async function bootstrapFromCloudIfNeeded(code, config){
       const local = DB.schools[code];
       const localTime = local ? (local._updatedAt||0) : -1;
       if(!local || (remote._updatedAt||0) >= localTime){
-        DB.schools[code] = ensureSchoolShape(Object.assign({}, remote, {marks: remoteMarks||{}, syncConfig:{enabled:true, config}}));
+        DB.schools[code] = ensureSchoolShape(Object.assign({}, remote, {marks: remoteMarks||{}, syncConfig:{enabled:true, config}, smsCredits: local ? (local.smsCredits||0) : 0}));
       } else {
         local.marks = remoteMarks || local.marks;
         ensureSchoolShape(local);
@@ -1689,7 +1706,7 @@ let session = JSON.parse(sessionStorage.getItem('cbc_session')||'null');
 // parent actively re-identifies their child.
 let parentSchoolData = null;
 function setSession(s){ session = s; sessionStorage.setItem('cbc_session', JSON.stringify(s)); resetInactivityTimer(); }
-function logout(){ teacherTab='dashboard'; parentTab='dashboard'; adminTab='dashboard'; session=null; parentSchoolData=null; sessionStorage.removeItem('cbc_session'); syncState.enabled=false; syncState.connectedCode=null; detachLiveListeners(); detachAdminLiveListener(); clearTimeout(inactivityTimer); route(); }
+function logout(){ Object.keys(smsPinMem).forEach(k=>delete smsPinMem[k]); teacherTab='dashboard'; parentTab='dashboard'; adminTab='dashboard'; session=null; parentSchoolData=null; sessionStorage.removeItem('cbc_session'); syncState.enabled=false; syncState.connectedCode=null; detachLiveListeners(); detachAdminLiveListener(); clearTimeout(inactivityTimer); route(); }
 
 function currentSchool(){ return session && session.schoolCode ? DB.schools[session.schoolCode] : null; }
 
@@ -1830,6 +1847,15 @@ function admOrName(a,b){
   if(aHas !== bHas) return aHas ? -1 : 1;
   return (a.name||'').localeCompare(b.name||'', undefined, {sensitivity:'base'});
 }
+// KNEC Assessment Number helpers. The number is optional, so every sheet/roster/list only shows
+// an "Assess. No." column when at least one learner in THAT list actually has one recorded —
+// schools that don't use it see no empty column. getS lets it work on rows shaped {s:learner}.
+function hasAssessNo(list, getS){
+  getS = getS || (x=>x);
+  return (list||[]).some(x=>{ const st = getS(x); return st && st.assessNo && String(st.assessNo).trim()!==''; });
+}
+function assessTh(on){ return on ? '<th>Assess. No.</th>' : ''; }
+function assessTd(st, on){ return on ? `<td>${st && st.assessNo ? escapeHtml(st.assessNo) : '—'}</td>` : ''; }
 // Returns the grading/performance-level table that applies to a class: that class's own
 // custom grading if it has been set up, otherwise the school-wide default. This is what
 // keeps a grading change made for one class from ever affecting any other class.
@@ -2245,6 +2271,7 @@ function findStaffRecord(role, code, username){
   const rec = (list||[]).find(x=>x.username===username);
   return rec ? {school, rec} : null;
 }
+let otpSendTimes = [];
 async function sendStaffOtp(role){
   const scodeEl = qs('#scode');
   const code = scodeEl ? scodeEl.value.trim() : '';
@@ -2269,10 +2296,19 @@ async function sendStaffOtp(role){
     return;
   }
   if(channel==='phone' && !hasSmsConfig()){
-    msgEl.innerHTML = `<div class="msg err">⚠ SMS codes aren't set up for this deployment yet (see SMS_SETUP.md).${rec.email?' Try your registered email instead.':''}</div>`;
+    msgEl.innerHTML = `<div class="msg err">⚠ SMS codes aren't set up for this deployment yet (see GO_LIVE.md).${rec.email?' Try your registered email instead.':''}</div>`;
     return;
   }
-  const otp = String(Math.floor(100000 + Math.random()*900000));
+  // Throttle: 60s between codes and max 5/hour per device, so the recovery form can't be used
+  // to spam someone's phone (each phone code is a real SMS paid by the platform).
+  const nowTs = Date.now();
+  otpSendTimes = otpSendTimes.filter(t=>nowTs-t < 3600000);
+  if(otpSendTimes.length && nowTs-otpSendTimes[otpSendTimes.length-1] < 60000){
+    msgEl.innerHTML = `<div class="msg err">Please wait ${Math.ceil((60000-(nowTs-otpSendTimes[otpSendTimes.length-1]))/1000)}s before requesting another code.</div>`; return;
+  }
+  if(otpSendTimes.length >= 5){ msgEl.innerHTML = '<div class="msg err">Too many code requests. Try again in an hour.</div>'; return; }
+  const otp = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
+  otpSendTimes.push(nowTs);
   const dest = channel==='email' ? rec.email : rec.phone;
   msgEl.innerHTML = '<p class="small">Sending code…</p>';
   try{
@@ -2281,7 +2317,7 @@ async function sendStaffOtp(role){
       // is a platform cost, not something that should eat into a school's parent-SMS credit.
       const res = await fetch(window.PLATFORM_SMS_ENDPOINT, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({test:true, recipients:[{phone: normalizePhone(rec.phone), message: `Your EduTrack CBC verification code is ${otp}. It expires in 10 minutes. Didn't request this? Ignore this message.`}]})
+        body: JSON.stringify({purpose:'otp', schoolCode: code, role, username, recipients:[{phone: normalizePhone(rec.phone), message: `Your EduTrack CBC verification code is ${otp}. It expires in 10 minutes. Didn't request this? Ignore this message.`}]})
       });
       const data = await res.json();
       if(!res.ok || !data.ok) throw new Error(data.error || ('HTTP '+res.status));
@@ -2818,8 +2854,16 @@ function showCredentials(code){
     <p class="small">Share the Parent Portal Link with parents (school notice board, WhatsApp group, etc.) — it opens straight to a lookup form where a parent enters their own child's name and admission number. It shows nothing else: no DOS/HOI or Teacher option is visible from this link, so a parent never learns any other login exists.</p>
   </div>`;
 }
-function deleteSchool(code){
-  if(!confirm('Delete this school and ALL its data permanently?')) return;
+async function deleteSchool(code){
+  const unused = (DB.schools[code] && DB.schools[code].smsCredits) || 0;
+  if(!confirm('Delete this school and ALL its data permanently?' + (unused>0 ? `\n\nIt still has ${unused} unused SMS credit(s); they will be discarded.` : ''))) return;
+  // Clear the server-side SMS wallet + PIN first, so a school created later with the same code can't inherit them.
+  if(hasSmsConfig()){
+    try{ await adminSmsCall({purpose:'deleteschool', schoolCode: code}); }
+    catch(err){
+      if(!confirm(`The school's SMS wallet and PIN could not be cleared on the server:\n${String(err.message||err)}\n\nDelete the school anyway? (If you ever re-use this code, first remove schools/${code}/sms in the Firebase console.)`)) return;
+    }
+  }
   const ownConfig = DB.schools[code] && DB.schools[code].syncConfig && DB.schools[code].syncConfig.config;
   delete DB.schools[code]; saveDB(DB); removeSchoolFromPlatform(code, ownConfig); renderAdmin();
 }
@@ -2840,6 +2884,13 @@ async function editSchoolCode(oldCode){
   if(newCode===oldCode) return;
   if(DB.schools[newCode]){ toast('That school code is already in use by another school','err'); return; }
   if(!confirm(`Change school code from ${oldCode} to ${newCode}? Existing login links using ${oldCode} will stop working.`)) return;
+  // The SMS wallet and PIN are keyed by school code on the server, so they must move with the school.
+  if(hasSmsConfig()){
+    try{ await adminSmsCall({purpose:'movecode', oldCode, newCode}); }
+    catch(err){
+      if(!confirm(`The school's SMS balance and PIN could not be moved to the new code:\n${String(err.message||err)}\n\nChange the code anyway? (Its SMS balance and PIN would stay behind on ${oldCode} and the school would need a new PIN and top-up.)`)) return;
+    }
+  }
   await refreshSchoolFromCloud(oldCode); // pull the school's latest data before moving it to the new code
   const fresh = DB.schools[oldCode];
   const ownConfig = fresh.syncConfig && fresh.syncConfig.config;
@@ -3859,7 +3910,7 @@ function filteredStudents(school){
   return [...school.students].filter(s=>{
     if(g && s.classId!==g) return false;
     if(stuFilterGender){ if(stuFilterGender==='none'){ if(s.gender==='M'||s.gender==='F') return false; } else if(s.gender!==stuFilterGender) return false; }
-    if(q && !(String(s.name||'').toLowerCase().includes(q) || String(s.adm||'').toLowerCase().includes(q))) return false;
+    if(q && !(String(s.name||'').toLowerCase().includes(q) || String(s.adm||'').toLowerCase().includes(q) || String(s.assessNo||'').toLowerCase().includes(q))) return false;
     return true;
   }).sort((a,b)=>{
     const ca = school.classes.find(c=>c.id===a.classId), cb = school.classes.find(c=>c.id===b.classId);
@@ -3873,13 +3924,14 @@ function studentRowsHTML(school){
   return list.map(s=>{
     const cls = school.classes.find(c=>c.id===s.classId);
     return `<tr><td><input value="${escapeHtml(s.adm||'')}" placeholder="— none —" style="min-width:90px" onchange="updStudentAdm('${s.id}', this.value, this)"></td>
+    <td><input value="${escapeHtml(s.assessNo||'')}" placeholder="— none —" style="min-width:110px" onchange="updStudentAssessNo('${s.id}', this.value, this)"></td>
     <td><input value="${escapeHtml(s.name)}" style="min-width:170px" onchange="updStudentName('${s.id}', this.value, this)"></td>
     <td><select onchange="updStudentGender('${s.id}', this.value)"><option value="" ${!s.gender?'selected':''}>— Not set —</option><option value="M" ${s.gender==='M'?'selected':''}>Boy</option><option value="F" ${s.gender==='F'?'selected':''}>Girl</option></select></td>
     <td><select onchange="updStudentClass('${s.id}', this.value, this)">${cls?'':'<option value="" selected>— Unassigned —</option>'}${school.classes.map(c=>`<option value="${c.id}" ${c.id===s.classId?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></td>
     <td><input value="${escapeHtml(s.parentPin||'')}" placeholder="— not set —" style="min-width:90px" inputmode="numeric" onchange="updStudentPin('${s.id}', this.value, this)"> <button class="ghost" title="Generate a new PIN" onclick="regenStudentPin('${s.id}')">🔁</button></td>
     <td><input value="${escapeHtml(s.parentPhone||'')}" placeholder="e.g. 0712345678" style="min-width:120px" inputmode="tel" onchange="updStudentPhone('${s.id}', this.value, this)"></td>
     <td><button class="danger" onclick="delStudent('${s.id}')">✕</button></td></tr>`;
-  }).join('') || `<tr><td colspan="7" class="small">${school.students.length?'No learners match your filter.':'No learners yet.'}</td></tr>`;
+  }).join('') || `<tr><td colspan="8" class="small">${school.students.length?'No learners match your filter.':'No learners yet.'}</td></tr>`;
 }
 function stuCountText(school){
   const l = filteredStudents(school), b = l.filter(s=>s.gender==='M').length, g = l.filter(s=>s.gender==='F').length, u = l.length-b-g;
@@ -3894,6 +3946,7 @@ function tplStudents(school){
   return `<div class="card"><h2>🧑‍🎓 Learners</h2>
   <div class="row">
     <div><label>Admission No. <span class="small">(optional)</span></label><input id="stuAdm" placeholder="Leave blank if not assigned yet"></div>
+    <div><label>KNEC Assessment No. <span class="small">(optional)</span></label><input id="stuAssessNo" placeholder="e.g. for KPSEA/KJSEA"></div>
     <div><label>Learner Name</label><input id="stuName"></div>
     <div><label>Gender</label><select id="stuGender"><option value="">— Select —</option><option value="M">Boy</option><option value="F">Girl</option></select></div>
     <div><label>Grade</label><select id="stuClass">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
@@ -3904,16 +3957,17 @@ function tplStudents(school){
   <textarea id="bulkStu" rows="3" placeholder="1001,John Mwangi,Boy,0712345678
 ,Faith Wanjiru,Girl,
 Amina Hassan"></textarea>
+  <label class="small" style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="checkbox" id="bulkHasAssess" style="width:auto;margin:0"> My lines have a <b>KNEC Assessment No.</b> as the 2nd column — "Admission,AssessmentNo,Name,Gender,ParentPhone"</label>
   <div class="flexbtns"><button class="ghost" onclick="bulkAddStudents()">Add Bulk to Selected Grade</button></div>
   <p class="small" style="margin-top:12px">Edit a learner directly in the table below, including their <b>Parent PIN</b> — the fourth Parent Portal login factor. Hand each learner's PIN to that learner's parent directly (not on a public notice); it's never shown anywhere else in the app. Moving grades keeps their past results filed under the old one.</p>
   <div class="flexbtns"><button class="ghost" onclick="fillMissingParentPins()">🔑 Generate PINs for learners without one</button></div>
   <div class="row">
     <div><label>Filter by Grade</label><select id="stuFilter" onchange="stuFilterGrade=this.value;renderStudentRows()"><option value="">All grades</option>${school.classes.map(c=>`<option value="${c.id}" ${c.id===stuFilterGrade?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
     <div><label>Filter by Gender</label><select id="stuFilterG" onchange="stuFilterGender=this.value;renderStudentRows()"><option value="">All</option><option value="M" ${stuFilterGender==='M'?'selected':''}>Boys</option><option value="F" ${stuFilterGender==='F'?'selected':''}>Girls</option><option value="none" ${stuFilterGender==='none'?'selected':''}>Gender not set</option></select></div>
-    <div><label>Search name / admission no.</label><input id="stuSearch" value="${escapeHtml(stuSearch)}" oninput="stuSearch=this.value;renderStudentRows()" placeholder="Type to search…"></div>
+    <div><label>Search name / admission / assessment no.</label><input id="stuSearch" value="${escapeHtml(stuSearch)}" oninput="stuSearch=this.value;renderStudentRows()" placeholder="Type to search…"></div>
   </div>
   <p class="small" id="stuCount">${stuCountText(school)}</p>
-  <table style="margin-top:6px"><tr><th>Adm No.</th><th>Name</th><th>Gender</th><th>Grade</th><th>Parent PIN</th><th>Parent Phone</th><th>Actions</th></tr><tbody id="stuRows">${studentRowsHTML(school)}</tbody></table></div>`;
+  <table style="margin-top:6px"><tr><th>Adm No.</th><th>Assess. No.</th><th>Name</th><th>Gender</th><th>Grade</th><th>Parent PIN</th><th>Parent Phone</th><th>Actions</th></tr><tbody id="stuRows">${studentRowsHTML(school)}</tbody></table></div>`;
 }
 // Saves the phone number results/announcements SMS are sent to for this learner's parent.
 // Accepts any format the school types (spaces, +254, leading 0, etc.) — normalized to
@@ -3954,6 +4008,7 @@ function updStudentClass(id, newClassId, selectEl){
 }
 function addStudent(){
   const adm = qs('#stuAdm').value.trim(), name = qs('#stuName').value.trim(), classId = qs('#stuClass').value;
+  const assessNo = qs('#stuAssessNo') ? qs('#stuAssessNo').value.trim() : '';
   const parentPhone = qs('#stuPhone') ? qs('#stuPhone').value.trim() : '';
   const gender = normGender(qs('#stuGender') ? qs('#stuGender').value : '');
   if(!name||!classId){ toast('Enter at least the learner name and grade','err'); return; }
@@ -3961,7 +4016,8 @@ function addStudent(){
   // Uniqueness only matters when an admission number was actually given — multiple
   // learners are allowed to have no admission number at the same time.
   if(adm && school.students.some(s=>s.adm===adm)){ toast('Admission number already exists','err'); return; }
-  school.students.push({id:uid('stu_'), adm, name: name.replace(/\s+/g,' '), classId, gender, parentPhone, parentPin: genParentPin()}); saveDB(DB); renderDOS();
+  if(assessNo && school.students.some(s=>s.assessNo===assessNo)){ toast('Assessment number already exists','err'); return; }
+  school.students.push({id:uid('stu_'), adm, assessNo, name: name.replace(/\s+/g,' '), classId, gender, parentPhone, parentPin: genParentPin()}); saveDB(DB); renderDOS();
 }
 // Lets HOI/DOS correct a learner's admission number directly from the Learners table
 // (e.g. it was mistyped or a number gets assigned later) without removing and re-adding
@@ -3978,6 +4034,20 @@ function updStudentAdm(id, val, inputEl){
     return;
   }
   s.adm = adm; saveDB(DB); toast('Admission number updated');
+}
+// Same idea for the KNEC Assessment Number (used for KPSEA/KJSEA etc.): editable in place, and
+// safe to change later because marks are keyed on the learner's internal id.
+function updStudentAssessNo(id, val, inputEl){
+  const an = val.trim();
+  const school = currentSchool();
+  const s = school.students.find(x=>x.id===id);
+  if(!s) return;
+  if(an && school.students.some(x=>x.id!==id && x.assessNo===an)){
+    toast('Assessment number already exists','err');
+    if(inputEl) inputEl.value = s.assessNo||'';
+    return;
+  }
+  s.assessNo = an; saveDB(DB); toast(an ? 'Assessment number updated' : 'Assessment number cleared');
 }
 // Lets HOI/DOS set a specific Parent PIN by hand (e.g. the school wants something the
 // parent will find memorable) instead of the random one generated at creation.
@@ -4017,11 +4087,14 @@ function fillMissingParentPins(){
 function bulkAddStudents(){
   const classId = qs('#stuClass').value; const school = currentSchool();
   const lines = qs('#bulkStu').value.split('\n').map(l=>l.trim()).filter(Boolean);
+  const hasAssessCol = !!(qs('#bulkHasAssess') && qs('#bulkHasAssess').checked);
   let added=0;
   lines.forEach(l=>{
-    let adm='', name='', parentPhone='', gender='';
+    let adm='', name='', parentPhone='', gender='', assessNo='';
     if(l.includes(',')){
       const parts = l.split(',').map(x=>x.trim());
+      // Optional 2nd column: KNEC Assessment No. (only when the tick-box is on, so existing formats are unaffected).
+      if(hasAssessCol && parts.length>=3){ assessNo = parts[1]; parts.splice(1,1); }
       // A Boy/Girl (or M/F) cell anywhere after the first column is read as the gender.
       for(let k=1;k<parts.length;k++){ const gg = normGender(parts[k]); if(gg){ gender = gg; parts.splice(k,1); break; } }
       if(parts.length===1){ name = parts[0]; }
@@ -4038,7 +4111,8 @@ function bulkAddStudents(){
     }
     if(!name) return;
     if(adm && school.students.some(s=>s.adm===adm)) return; // skip duplicate admission numbers
-    school.students.push({id:uid('stu_'), adm, name, classId, gender, parentPhone, parentPin: genParentPin()}); added++;
+    if(assessNo && school.students.some(s=>s.assessNo===assessNo)) assessNo = ''; // duplicate assessment no.: still add the learner, just without it
+    school.students.push({id:uid('stu_'), adm, assessNo, name, classId, gender, parentPhone, parentPin: genParentPin()}); added++;
   });
   saveDB(DB); toast(added+' learners added'); renderDOS();
 }
@@ -4620,16 +4694,17 @@ function loadDosMarksGrid(){
   const max = exam.maxMarksByArea[areaId] ?? 100;
   const learners = studentsInClass(school, classId);
   school.marks[examId] = school.marks[examId] || {};
+  const an = hasAssessNo(learners);
   qs('#dosMarksGridArea').innerHTML = `
   <p class="small">Max marks for this learning area in this exam: <b>${max}</b> (editable by DOS/HOI in the Exams tab)</p>
-  <table><tr><th>Adm No.</th><th>Name</th><th>Score (out of ${max})</th><th>%</th><th>Level</th></tr>
+  <table><tr><th>Adm No.</th>${assessTh(an)}<th>Name</th><th>Score (out of ${max})</th><th>%</th><th>Level</th></tr>
   ${learners.map(s=>{
     const score = (school.marks[examId][s.id]||{})[areaId];
-    return `<tr><td>${s.adm?escapeHtml(s.adm):'<span class="small">—</span>'}</td><td>${escapeHtml(s.name)}</td>
+    return `<tr><td>${s.adm?escapeHtml(s.adm):'<span class="small">—</span>'}</td>${assessTd(s,an)}<td>${escapeHtml(s.name)}</td>
     <td><input type="number" min="0" max="${max}" value="${score??''}" data-sid="${s.id}" class="markInput" onchange="saveMark('${examId}','${areaId}',this)"></td>
     <td class="pctCell-${s.id}">${score!=null?pctOf(score,max).toFixed(1)+'%':'-'}</td>
     <td class="lvlCell-${s.id}">${score!=null?levelBadge(school,pctOf(score,max),classId):'-'}</td></tr>`;
-  }).join('') || '<tr><td colspan="5" class="small">No learners in this grade.</td></tr>'}
+  }).join('') || `<tr><td colspan="${5+(an?1:0)}" class="small">No learners in this grade.</td></tr>`}
   </table>`;
 }
 
@@ -4975,14 +5050,14 @@ function loadMarksGrid(){
   <p class="small no-print">Max marks for this learning area in this exam: <b>${max}</b> (editable by DOS/HOI in Exams tab)</p>
   ${closed ? `<div class="msg err no-print">🔒 Entry is closed for this exam. Any change you make below is sent to the DOS/HOI as a request and only applies once approved.${myPending?` You have ${myPending} request(s) awaiting approval for this learning area.`:''}</div>` : ''}
   <div class="print-only-block">
-  <table><tr><th>Adm No.</th><th>Name</th><th>Score (out of ${max})</th><th>%</th><th>Level</th></tr>
+  <table><tr><th>Adm No.</th>${assessTh(hasAssessNo(learners))}<th>Name</th><th>Score (out of ${max})</th><th>%</th><th>Level</th></tr>
   ${learners.map(s=>{
     const score = (school.marks[examId][s.id]||{})[areaId];
-    return `<tr><td>${s.adm?escapeHtml(s.adm):'<span class="small">—</span>'}</td><td>${escapeHtml(s.name)}</td>
+    return `<tr><td>${s.adm?escapeHtml(s.adm):'<span class="small">—</span>'}</td>${assessTd(s,hasAssessNo(learners))}<td>${escapeHtml(s.name)}</td>
     <td><input type="number" min="0" max="${max}" value="${score??''}" data-sid="${s.id}" class="markInput" onchange="saveMark('${examId}','${areaId}',this)">${myPend[s.id]!=null?`<div class="reqTag small">⏳ ${myPend[s.id]} awaiting approval</div>`:''}</td>
     <td class="pctCell-${s.id}">${score!=null?pctOf(score,max).toFixed(1)+'%':'-'}</td>
     <td class="lvlCell-${s.id}">${score!=null?levelBadge(school,pctOf(score,max),classId):'-'}</td></tr>`;
-  }).join('') || '<tr><td colspan="5" class="small">No learners in this grade.</td></tr>'}
+  }).join('') || `<tr><td colspan="${5+(hasAssessNo(learners)?1:0)}" class="small">No learners in this grade.</td></tr>`}
   </table>
   </div>
   <div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print This Sheet</button></div>`;
@@ -5137,8 +5212,8 @@ function viewBlankClassList(classId){
   target.innerHTML = `
   <div class="print-only-block">
   <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>${escapeHtml(cls.name)}</p><p class="small">Blank Grade List — for manual marking</p>${genderNote(gm).replace(" (positions are class positions)","")}<p class="small">Boys: ${nB} &nbsp;·&nbsp; Girls: ${nG} &nbsp;·&nbsp; Total: ${learners.length}</p></div>
-  <table><tr><th>S/N</th><th>Adm No.</th><th>Name</th><th>Sex</th>${areas.map(a=>`<th>${escapeHtml(a.name)}</th>`).join('')}<th>Total</th></tr>
-  ${groupedRowsHTML(learners, gm, 5+areas.length, x=>x, (s,i)=>`<tr><td>${i+1}</td><td>${s.adm?escapeHtml(s.adm):'<span style="display:inline-block;height:26px"></span>'}</td><td style="text-align:left">${escapeHtml(s.name)}</td><td>${s.gender==='M'?'M':s.gender==='F'?'F':''}</td>${areas.map(()=>'<td style="height:26px">&nbsp;</td>').join('')}<td>&nbsp;</td></tr>`) || `<tr><td colspan="${5+areas.length}" class="small">No learners in this grade.</td></tr>`}
+  <table><tr><th>S/N</th><th>Adm No.</th>${assessTh(hasAssessNo(learners))}<th>Name</th><th>Sex</th>${areas.map(a=>`<th>${escapeHtml(a.name)}</th>`).join('')}<th>Total</th></tr>
+  ${groupedRowsHTML(learners, gm, 5+areas.length+(hasAssessNo(learners)?1:0), x=>x, (s,i)=>`<tr><td>${i+1}</td><td>${s.adm?escapeHtml(s.adm):'<span style="display:inline-block;height:26px"></span>'}</td>${hasAssessNo(learners)?`<td>${s.assessNo?escapeHtml(s.assessNo):''}</td>`:''}<td style="text-align:left">${escapeHtml(s.name)}</td><td>${s.gender==='M'?'M':s.gender==='F'?'F':''}</td>${areas.map(()=>'<td style="height:26px">&nbsp;</td>').join('')}<td>&nbsp;</td></tr>`) || `<tr><td colspan="${5+areas.length+(hasAssessNo(learners)?1:0)}" class="small">No learners in this grade.</td></tr>`}
   </table>
   <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
   <div class="flexbtns no-print"><button class="gold" onclick="printSection('blankListArea')">🖨 Print</button></div>
@@ -5203,17 +5278,18 @@ function viewClassAssessment(examId, targetId){
   const gradingKey = keyTable.length ? `<div class="rc-key">${keyTable.map(k=>`<span><b>${escapeHtml(k.level)}</b> = ${escapeHtml(k.label)}</span>`).join('')}</div>` : '';
   const target = (targetId && qs('#'+targetId)) || qs('#assessArea') || qs('#histViewArea');
   const printId = target.id;
+  const an = hasAssessNo(rows, r=>r.s);
   target.innerHTML = `
   <div class="print-only-block">
   <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>${escapeHtml(exam.name)} — ${exam.term} ${exam.year} — ${escapeHtml(cls.name)}</p><p class="small">Grade Assessment Sheet</p>${genderNote(gm)}<p class="small">Class Teacher: ${escapeHtml(classTeacher)}</p>${scoped?'<p class="small">Assigned learning area(s) only — total, mean and position are based on these.</p>':''}${school.requireApproval?`<p class="small">Status: ${exam.resultsApproval==='approved'?'✅ Approved by DOS/HOI':'⚠ Provisional — not yet approved'}</p>`:''}</div>
-  <table><tr><th>Pos</th><th>Adm No.</th><th>Name</th><th>Sex</th>${areas.map(a=>`<th>${escapeHtml(a.name)}</th>`).join('')}<th>Total</th><th>Total Pts</th><th>Mean %</th><th>Level</th></tr>
-  ${groupedRowsHTML(rows, gm, 8+areas.length, r=>r.s, r=>{
+  <table><tr><th>Pos</th><th>Adm No.</th>${assessTh(an)}<th>Name</th><th>Sex</th>${areas.map(a=>`<th>${escapeHtml(a.name)}</th>`).join('')}<th>Total</th><th>Total Pts</th><th>Mean %</th><th>Level</th></tr>
+  ${groupedRowsHTML(rows, gm, 8+areas.length+(an?1:0), r=>r.s, r=>{
     const g = gradeFor(school,r.meanPct,exam.classId);
-    return `<tr><td>${r.position}</td><td>${r.s.adm?escapeHtml(r.s.adm):'—'}</td><td>${escapeHtml(r.s.name)}</td><td>${r.s.gender==='M'?'M':r.s.gender==='F'?'F':''}</td>
+    return `<tr><td>${r.position}</td><td>${r.s.adm?escapeHtml(r.s.adm):'—'}</td>${assessTd(r.s,an)}<td>${escapeHtml(r.s.name)}</td><td>${r.s.gender==='M'?'M':r.s.gender==='F'?'F':''}</td>
     ${r.cells.map(c=>`<td>${c.score??'-'}</td>`).join('')}
     <td>${r.total}</td><td>${r.totalPts}</td><td>${r.meanPct.toFixed(1)}%</td><td>${raBadge(school,exam.classId,g.level)}</td></tr>`;
   })}
-  <tr class="rc-total"><td colspan="4" style="text-align:left">${gm==='M'?'BOYS AVERAGE':gm==='F'?'GIRLS AVERAGE':'CLASS AVERAGE'}</td>
+  <tr class="rc-total"><td colspan="${4+(an?1:0)}" style="text-align:left">${gm==='M'?'BOYS AVERAGE':gm==='F'?'GIRLS AVERAGE':'CLASS AVERAGE'}</td>
   ${subjAvg.map(v=>`<td>${v!=null?v.toFixed(1)+'%':'-'}</td>`).join('')}
   <td>-</td><td>-</td><td>${classMeanPct.toFixed(1)}%</td><td>${raBadge(school,exam.classId,classMeanG.level)}</td></tr>
   </table>
@@ -5270,16 +5346,17 @@ function viewCumulative(){
   const classMeanG = gradeFor(school,classMeanPct,classId);
   const keyTable = gradingFor(school, classId);
   const gradingKey = keyTable.length ? `<div class="rc-key">${keyTable.map(k=>`<span><b>${escapeHtml(k.level)}</b> = ${escapeHtml(k.label)}</span>`).join('')}</div>` : '';
+  const an = hasAssessNo(rows, r=>r.s);
   qs('#cumArea').innerHTML = `
   <div class="print-only-block">
   <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>Cumulative Assessment — ${term} ${year} — ${escapeHtml(cls.name)}</p>${genderNote(gm)}<p class="small">Based on ${exams.length} exam(s): ${exams.map(e=>escapeHtml(e.name)).join(', ')}</p><p class="small">Class Teacher: ${escapeHtml(classTeacher)}</p>${scoped?'<p class="small">Assigned learning area(s) only — mean, points and position are based on these.</p>':''}${school.requireApproval && exams.some(e=>e.resultsApproval!=='approved')?'<p class="small">⚠ Provisional — includes exam(s) not yet approved.</p>':''}</div>
-  <table><tr><th>Pos</th><th>Adm No.</th><th>Name</th><th>Sex</th>${areas.map(a=>`<th>${escapeHtml(a.name)} (avg %)</th>`).join('')}<th>Mean %</th><th>Total Pts</th><th>Level</th></tr>
-  ${groupedRowsHTML(rows, gm, 7+areas.length, r=>r.s, r=>{const g=gradeFor(school,r.meanPct,classId);return `<tr><td>${r.position}</td><td>${r.s.adm?escapeHtml(r.s.adm):'—'}</td><td>${escapeHtml(r.s.name)}</td><td>${r.s.gender==='M'?'M':r.s.gender==='F'?'F':''}</td>
-    ${r.cells.map(c=>`<td>${c!=null?c.toFixed(1):'-'}</td>`).join('')}
-    <td>${r.meanPct.toFixed(1)}%</td><td>${r.grandTotalPts}</td><td>${raBadge(school,classId,g.level)}</td></tr>`;})}
-  <tr class="rc-total"><td colspan="4" style="text-align:left">${gm==='M'?'BOYS AVERAGE':gm==='F'?'GIRLS AVERAGE':'CLASS AVERAGE'}</td>
-  ${subjAvg.map(v=>`<td>${v!=null?v.toFixed(1):'-'}</td>`).join('')}
-  <td>${classMeanPct.toFixed(1)}%</td><td>-</td><td>${raBadge(school,classId,classMeanG.level)}</td></tr>
+  <table><tr><th>Pos</th><th>Adm No.</th>${assessTh(an)}<th>Name</th><th>Sex</th>${areas.map(a=>`<th>${escapeHtml(a.name)} (avg %)</th>`).join('')}<th>Mean %</th><th>Total Pts</th><th>Level</th></tr>
+  ${groupedRowsHTML(rows, gm, 7+areas.length+(an?1:0), r=>r.s, r=>{const g=gradeFor(school,r.meanPct,classId);return `<tr><td>${r.position}</td><td>${r.s.adm?escapeHtml(r.s.adm):'—'}</td>${assessTd(r.s,an)}<td>${escapeHtml(r.s.name)}</td><td>${r.s.gender==='M'?'M':r.s.gender==='F'?'F':''}</td>
+    ${r.cells.map(c=>`<td>${c!=null?Math.round(c):'-'}</td>`).join('')}
+    <td>${Math.round(r.meanPct)}%</td><td>${r.grandTotalPts}</td><td>${raBadge(school,classId,g.level)}</td></tr>`;})}
+  <tr class="rc-total"><td colspan="${4+(an?1:0)}" style="text-align:left">${gm==='M'?'BOYS AVERAGE':gm==='F'?'GIRLS AVERAGE':'CLASS AVERAGE'}</td>
+  ${subjAvg.map(v=>`<td>${v!=null?Math.round(v):'-'}</td>`).join('')}
+  <td>${Math.round(classMeanPct)}%</td><td>-</td><td>${raBadge(school,classId,classMeanG.level)}</td></tr>
   </table>
   ${genderSummaryHTML(school, classId, allRows)}
   ${gradingKey}
@@ -5407,8 +5484,8 @@ function runResultsAnalysis(){
   ${subjects.map((x,i)=>`<tr><td>${i+1}</td><td style="text-align:left">${escapeHtml(x.name)}</td><td><b>${x.mean.toFixed(1)}%</b></td><td>${escapeHtml(x.best.c)} (${x.best.v.toFixed(1)}%)</td><td>${x.one?'—':escapeHtml(x.low.c)+' ('+x.low.v.toFixed(1)+'%)'}</td></tr>`).join('')}
   </table></div>
   <div class="ra-sec" style="margin-top:14px">${H('Top 10 Learners (whole school)')}
-  <table class="ra-table"><tr><th>Rank</th><th>Adm No.</th><th>Name</th><th>Grade</th><th>Mean %</th><th>Level</th></tr>
-  ${all.slice(0,10).map(l=>`<tr><td>${l.rank}</td><td>${l.s.adm?escapeHtml(l.s.adm):'—'}</td><td style="text-align:left">${escapeHtml(l.s.name)}</td><td>${escapeHtml(l.c)}</td><td><b>${l.mean.toFixed(1)}%</b></td><td>${raBadge(school,l.cid,l.lv)}</td></tr>`).join('')}
+  <table class="ra-table"><tr><th>Rank</th><th>Adm No.</th>${assessTh(hasAssessNo(all.slice(0,10), l=>l.s))}<th>Name</th><th>Grade</th><th>Mean %</th><th>Level</th></tr>
+  ${all.slice(0,10).map(l=>`<tr><td>${l.rank}</td><td>${l.s.adm?escapeHtml(l.s.adm):'—'}</td>${assessTd(l.s,hasAssessNo(all.slice(0,10), x=>x.s))}<td style="text-align:left">${escapeHtml(l.s.name)}</td><td>${escapeHtml(l.c)}</td><td><b>${l.mean.toFixed(1)}%</b></td><td>${raBadge(school,l.cid,l.lv)}</td></tr>`).join('')}
   </table></div>
   <div class="ra-sec" style="margin-top:14px">${H('Top 3 Learners per Grade')}
   <table class="ra-table"><tr><th>Grade</th><th>1st</th><th>2nd</th><th>3rd</th></tr>
@@ -5666,6 +5743,7 @@ function buildReportHTML(school, sid, examId){
       <div class="rc-info-grid">
         <div><b>Name:</b> ${escapeHtml(student.name)}</div>
         <div><b>Adm. No.:</b> ${student.adm ? escapeHtml(student.adm) : 'Not assigned'}</div>
+        ${student.assessNo ? `<div><b>Assessment No.:</b> ${escapeHtml(student.assessNo)}</div>` : ''}
         <div><b>Grade:</b> ${escapeHtml(cls.name)}</div>
         ${student.gender?`<div><b>Gender:</b> ${genderLabel(student.gender)}</div>`:''}
         <div><b>Position:</b> ${position} of ${learners.length}</div>
@@ -5740,7 +5818,7 @@ function fitReportCardsToPage(){
   // A small safety buffer (2mm) below the true printable height, so a report that lands
   // right on the edge (rounding, font metrics, etc.) still shrinks a hair rather than
   // spilling onto a second, otherwise-empty page.
-  const pageHeightPx = mmToPx(297) - mmToPx(8)*2 - mmToPx(2);
+  const pageHeightPx = mmToPx(279.4) - mmToPx(8)*2 - mmToPx(2);
   document.querySelectorAll('.report-card').forEach(el=>{
     el.style.zoom = 1;
     const h = el.scrollHeight;
@@ -5778,7 +5856,7 @@ function renderParent(){
   const latest = exams[0];
   const head = `<div class="card">
     <h2>👋 ${escapeHtml(student.name)}</h2>
-    <p class="small">${cls?escapeHtml(cls.name):'Grade not set'} &nbsp;·&nbsp; ${escapeHtml(school.name)} &nbsp;·&nbsp; Admission No: ${escapeHtml(student.adm||'-')}</p>
+    <p class="small">${cls?escapeHtml(cls.name):'Grade not set'} &nbsp;·&nbsp; ${escapeHtml(school.name)} &nbsp;·&nbsp; Admission No: ${escapeHtml(student.adm||'-')}${student.assessNo?` &nbsp;·&nbsp; Assessment No: ${escapeHtml(student.assessNo)}`:''}</p>
     <p class="small" style="margin-bottom:0">${latest ? `Latest report: <b>${escapeHtml(latest.name)}</b> (${latest.term} ${latest.year})` : 'No reports are available yet.'}</p>
   </div>`;
   const reportCard = `<div class="card">
@@ -5983,10 +6061,82 @@ function printAssignmentDos(id){
 }
 
 
-// Sends real SMS via a Cloud Function (see SMS_SETUP.md) that holds the Africa's Talking
+// Sends real SMS via a Cloud Function (see GO_LIVE.md) that holds the Africa's Talking
 // API key server-side. Each school pays for its own messages out of a prepaid credit
 // wallet (1 credit = 1 SMS segment) topped up by the platform admin — see Admin → 💬 SMS
 // Credits. Nothing here ever sees or stores the real API key.
+
+
+/* ---------- SMS balance: server-owned, read-only in the browser ----------
+   The wallet lives at schools/{code}/sms/credits in the shared platform database. Database
+   rules let any signed-in client READ it but nobody WRITE it; only the Vercel function
+   (Admin SDK) changes it — on send, refund, and admin top-up. school.smsCredits is just a
+   display cache of that node. It is never pushed to or merged from the cloud school blob. */
+let _smsDbPromise = null;
+function platformSmsDb(){
+  if(!hasPlatformConfig()) return Promise.reject(new Error('No shared database configured'));
+  if(_smsDbPromise) return _smsDbPromise;
+  _smsDbPromise = new Promise((resolve, reject)=>{
+    loadFirebaseAuthSdk(()=>{
+      try{
+        const app = firebase.apps.find(a=>a.name==='cbcPlatformSms') || firebase.initializeApp(window.PLATFORM_FIREBASE_CONFIG, 'cbcPlatformSms');
+        const auth = app.auth(), db = app.database();
+        if(auth.currentUser){ resolve(db); return; }
+        auth.signInAnonymously().then(()=>resolve(db)).catch(reject);
+      }catch(e){ reject(e); }
+    });
+  }).catch(e=>{ _smsDbPromise = null; throw e; });
+  return _smsDbPromise;
+}
+const smsBalWatch = {};   // schoolCode -> firebase ref being watched
+const smsPinSet = {};     // schoolCode -> true/false, whether the admin has issued an SMS PIN (the PIN itself is never readable)
+const smsPinMem = {};     // schoolCode -> PIN typed this session. Memory only: never saved, never synced; cleared on logout.
+function paintSmsBalance(code, v){
+  document.querySelectorAll('[data-smsbal="'+code+'"]').forEach(el=>{ el.textContent = v; });
+  const price = DB.settings.smsPricePerCredit||0;
+  document.querySelectorAll('[data-smskes="'+code+'"]').forEach(el=>{ el.textContent = price ? ' (≈ KES '+(v*price).toFixed(0)+')' : ''; });
+  document.querySelectorAll('[data-smslow="'+code+'"]').forEach(el=>{ el.style.display = v < 20 ? '' : 'none'; });
+}
+function paintSmsPinStatus(code){
+  const on = smsPinSet[code]===true;
+  document.querySelectorAll('[data-smspin="'+code+'"]').forEach(el=>{ el.textContent = on ? '✅ Issued' : '⚠ Not issued'; });
+  document.querySelectorAll('[data-smspinwarn="'+code+'"]').forEach(el=>{ el.style.display = on ? 'none' : ''; });
+}
+async function watchSmsBalances(codes){
+  if(!hasSmsConfig()) return;
+  let db;
+  try{ db = await platformSmsDb(); }catch(e){ console.warn('SMS balance unavailable', e); return; }
+  codes.forEach(code=>{
+    if(smsBalWatch[code]) return;
+    const ref = db.ref('schools/'+code+'/sms');
+    smsBalWatch[code] = ref;
+    ref.on('value', snap=>{
+      const node = snap.val() || {};
+      const v = Number(node.credits)||0;
+      const sc = DB.schools[code];
+      if(sc) sc.smsCredits = v;             // in-memory display cache only; deliberately not saved/pushed
+      smsPinSet[code] = !!node.pinSet;
+      paintSmsBalance(code, v); paintSmsPinStatus(code);
+    }, err=>{ console.warn('SMS balance listener failed', err); delete smsBalWatch[code]; });
+  });
+}
+// Admin-only: asks the server to add credit. Needs the cloud admin sign-in (same as Send Test SMS).
+// topupId makes the call idempotent — approving the same request twice can never credit twice.
+async function adminSmsCall(payload){
+  const fbUser = (typeof fbAdminAuth!=='undefined' && fbAdminAuth && fbAdminAuth.currentUser) || null;
+  if(!fbUser) throw new Error('Sign in with your synced cloud admin account first (Admin → ☁️ Cloud Admin Account). This can only be done through the server.');
+  const idToken = await fbUser.getIdToken();
+  const res = await fetch(window.PLATFORM_SMS_ENDPOINT, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(Object.assign({idToken}, payload))
+  });
+  let data = null; try{ data = await res.json(); }catch(_){}
+  if(!res.ok || !data || !data.ok) throw new Error((data && data.error) || ('HTTP '+res.status));
+  return data;
+}
+async function serverTopUp(code, credits, note, topupId){
+  return adminSmsCall({purpose:'topup', schoolCode: code, credits, topupId, note: note||''});
+}
 
 /* ---------- Admin: pricing, payment instructions, top-ups, test SMS ---------- */
 // The simplest possible payment method for schools in this context: no card/payment-
@@ -5997,6 +6147,7 @@ function printAssignmentDos(id){
 // below is scoped to the platform admin dashboard.
 function tplSmsAdmin(){
   const schools = Object.values(DB.schools);
+  setTimeout(()=>watchSmsBalances(schools.map(x=>x.code)), 0);   // live server-side balances
   const price = DB.settings.smsPricePerCredit||0;
   const pending = [];
   schools.forEach(s=>{ (s.smsTopupRequests||[]).forEach(r=>{ if(r.status==='pending') pending.push({school:s, req:r}); }); });
@@ -6011,7 +6162,7 @@ function tplSmsAdmin(){
     <textarea id="smsPayInstructions" rows="3" placeholder="e.g. Pay via M-Pesa Paybill 400200, Account Number = your School Code. Then submit a Top-up Request from your SMS tab with the M-Pesa code.">${escapeHtml(DB.settings.smsPaymentInstructions||'')}</textarea>
     <div class="flexbtns">
       <button onclick="saveSmsAdminSettings()">💾 Save Pricing &amp; Instructions</button>
-      ${hasSmsConfig()?`<button class="ghost" onclick="sendTestSmsPrompt()">📱 Send Test SMS</button>`:`<span class="small" style="align-self:center">⚠ Cloud Function not configured yet — see SMS_SETUP.md, then this tab (and Test SMS) unlocks.</span>`}
+      ${hasSmsConfig()?`<button class="ghost" onclick="sendTestSmsPrompt()">📱 Send Test SMS</button>`:`<span class="small" style="align-self:center">⚠ Cloud Function not configured yet — see GO_LIVE.md, then this tab (and Test SMS) unlocks.</span>`}
     </div>
     <div id="smsAdminMsg"></div>
     ${pending.length?`
@@ -6028,10 +6179,11 @@ function tplSmsAdmin(){
     </tr>`).join('')}
     </table>`:''}
     <h3 style="margin-top:18px;color:var(--navy)">🏫 School Balances</h3>
-    <table><tr><th>School</th><th>Balance</th><th>Top Up</th><th>History</th></tr>
+    <table><tr><th>School</th><th>Balance</th><th>SMS PIN</th><th>Top Up</th><th>History</th></tr>
     ${schools.map(s=>`<tr>
       <td>${escapeHtml(s.name)}<br><span class="small">${s.code}</span></td>
-      <td style="font-weight:700">${s.smsCredits||0}</td>
+      <td style="font-weight:700" data-smsbal="${s.code}">${s.smsCredits||0}</td>
+      <td><span class="small" data-smspin="${s.code}">${smsPinSet[s.code]===true?'✅ Issued':smsPinSet[s.code]===false?'⚠ Not issued':'…'}</span><br><button class="ghost" onclick="issueSmsPin('${s.code}')">🔐 Issue / Reset PIN</button></td>
       <td>
         <button class="ghost" onclick="quickTopUpSms('${s.code}',50)">+50</button>
         <button class="ghost" onclick="quickTopUpSms('${s.code}',100)">+100</button>
@@ -6039,7 +6191,7 @@ function tplSmsAdmin(){
         <button class="ghost" onclick="customTopUpSms('${s.code}')">Custom…</button>
       </td>
       <td><button class="ghost" onclick="showSmsTopupHistory('${s.code}')">📜 View</button></td>
-    </tr>`).join('') || '<tr><td colspan="4" class="small">No schools yet.</td></tr>'}
+    </tr>`).join('') || '<tr><td colspan="5" class="small">No schools yet.</td></tr>'}
     </table>
     <div id="smsHistoryArea"></div>`;
 }
@@ -6051,27 +6203,53 @@ function saveSmsAdminSettings(){
   saveDB(DB);
   qs('#smsAdminMsg').innerHTML = '<div class="msg ok">SMS pricing &amp; payment instructions saved.</div>';
 }
+// Credit is changed ONLY by the server (purpose:'topup'); adminEditAndPush afterwards just
+// records the human-readable history line on the school. topupId = idempotency key.
+// The SMS PIN is what authorises a school to spend its credit. The server generates it, keeps only a
+// scrambled (scrypt) copy where no browser can read it, and returns the real PIN exactly once — here.
+async function issueSmsPin(code){
+  const sc = DB.schools[code]; if(!sc) return;
+  const had = smsPinSet[code]===true;
+  if(!confirm(had ? `Issue a NEW SMS PIN for ${sc.name}? The current PIN stops working immediately.` : `Issue an SMS PIN for ${sc.name}?`)) return;
+  try{
+    const r = await adminSmsCall({purpose:'setpin', schoolCode: code});
+    smsPinSet[code] = true; paintSmsPinStatus(code);
+    const box = qs('#smsAdminMsg');
+    if(box){
+      box.innerHTML = `<div class="msg ok"><b>SMS PIN for ${escapeHtml(sc.name)} (${escapeHtml(code)}):</b> <span style="font-size:24px;letter-spacing:5px;font-weight:700;margin-left:8px">${escapeHtml(r.pin)}</span><br><span class="small">Shown only this once — the server keeps just a scrambled copy, so it can't be looked up later. Give it to the school's DOS/HOI only (not teachers or parents). If it's lost, issue a new one.</span></div>`;
+      box.scrollIntoView({behavior:'smooth', block:'center'});
+    }
+  }catch(err){ toast('Could not issue PIN: '+String(err.message||err),'err'); }
+}
+async function applySmsTopup(code, credits, note, topupId, historyNote){
+  try{
+    await serverTopUp(code, credits, note, topupId);
+  }catch(err){
+    toast('Top-up failed: '+String(err.message||err),'err'); return false;
+  }
+  try{
+    await adminEditAndPush(code, s=>{
+      s.smsTopups = s.smsTopups||[];
+      if(!s.smsTopups.some(t=>t.id===topupId)) s.smsTopups.push({id:topupId, ts:Date.now(), credits, note: historyNote});
+    });
+  }catch(e){ console.warn('Credit was added, but the history line could not be saved', e); }
+  return true;
+}
 async function quickTopUpSms(code, credits){
   if(!confirm(`Add ${credits} credit(s) to this school's SMS balance?`)) return;
-  await adminEditAndPush(code, s=>{
-    s.smsCredits = (s.smsCredits||0) + credits;
-    s.smsTopups = s.smsTopups||[];
-    s.smsTopups.push({id:uid('top_'), ts:Date.now(), credits, note:'Manual top-up by admin'});
-  });
-  toast(`+${credits} credit(s) added`); renderAdmin();
+  if(await applySmsTopup(code, credits, 'Manual top-up by admin', uid('top_')+Date.now().toString(36), 'Manual top-up by admin')){
+    toast(`+${credits} credit(s) added`); renderAdmin();
+  }
 }
 async function customTopUpSms(code){
   const input = prompt('How many credits to add?');
   if(input==null) return;
   const credits = Number(input);
-  if(isNaN(credits)||credits<=0){ toast('Enter a valid number','err'); return; }
+  if(!Number.isInteger(credits)||credits<=0){ toast('Enter a whole number greater than 0','err'); return; }
   const note = prompt('Optional note (e.g. M-Pesa code, amount paid):','') || '';
-  await adminEditAndPush(code, s=>{
-    s.smsCredits = (s.smsCredits||0) + credits;
-    s.smsTopups = s.smsTopups||[];
-    s.smsTopups.push({id:uid('top_'), ts:Date.now(), credits, note});
-  });
-  toast(`+${credits} credit(s) added`); renderAdmin();
+  if(await applySmsTopup(code, credits, note, uid('top_')+Date.now().toString(36), note)){
+    toast(`+${credits} credit(s) added`); renderAdmin();
+  }
 }
 function showSmsTopupHistory(code){
   const s = DB.schools[code]; if(!s) return;
@@ -6087,14 +6265,20 @@ async function approveSmsTopupRequest(code, reqId){
   const school = DB.schools[code];
   const preview = school && (school.smsTopupRequests||[]).find(r=>r.id===reqId);
   if(!preview){ toast('Request not found','err'); return; }
+  if(preview.status!=='pending'){ toast('That request was already handled','err'); return; }
+  if(!Number.isInteger(preview.credits) || preview.credits<=0){ toast('This request has no valid credit amount — set a price per credit first, or top up manually.','err'); return; }
   if(!confirm(`Approve and add ${preview.credits} credit(s) to ${school.name}?`)) return;
+  const note = `Approved request — M-Pesa ${preview.mpesaCode||'-'}, paid KES ${preview.amountPaid}`;
+  // The request id is the idempotency key: if the credit lands but the status update below fails,
+  // approving again will NOT credit twice — the server recognises the id and just returns ok.
+  try{ await serverTopUp(code, preview.credits, note, reqId); }
+  catch(err){ toast('Approval failed: '+String(err.message||err),'err'); return; }
   await adminEditAndPush(code, s=>{
     const r = (s.smsTopupRequests||[]).find(x=>x.id===reqId);
     if(!r || r.status!=='pending') return;
     r.status = 'approved'; r.resolvedTs = Date.now();
-    s.smsCredits = (s.smsCredits||0) + r.credits;
     s.smsTopups = s.smsTopups||[];
-    s.smsTopups.push({id:uid('top_'), ts:Date.now(), credits:r.credits, note:`Approved request — M-Pesa ${r.mpesaCode||'-'}, paid KES ${r.amountPaid}`});
+    if(!s.smsTopups.some(t=>t.id===reqId)) s.smsTopups.push({id:reqId, ts:Date.now(), credits:r.credits, note});
   });
   toast('Top-up approved'); renderAdmin();
 }
@@ -6107,20 +6291,23 @@ async function rejectSmsTopupRequest(code, reqId){
   });
   toast('Request rejected'); renderAdmin();
 }
-// Sends one real SMS through the same Cloud Function, flagged test:true so it never
-// touches any school's credit balance (the Cloud Function should bill this — if at all —
+// Sends one real SMS through the same Cloud Function with purpose:'admintest', so it never
+// touches any school's credit balance (the server bills it as 0 credits, if at all —
 // to the platform's own account). Lets the admin confirm the Africa's Talking wiring
-// actually works before any school relies on it. See the `test` flag in SMS_SETUP.md.
+// actually works before any school relies on it. See GO_LIVE.md.
 async function sendTestSmsPrompt(){
   const phone = prompt("Send a test SMS to which number? (e.g. 0712345678)");
   if(!phone) return;
   const norm = normalizePhone(phone);
   if(!norm){ toast('Enter a valid phone number','err'); return; }
+  const fbUser = (typeof fbAdminAuth!=='undefined' && fbAdminAuth && fbAdminAuth.currentUser) || null;
+  if(!fbUser){ qs('#smsAdminMsg').innerHTML = '<div class="msg err">To send a test SMS, sign in with your synced cloud admin account (Admin → ☁️ Cloud Admin Account).</div>'; return; }
   qs('#smsAdminMsg').innerHTML = '<p class="small">Sending test SMS…</p>';
   try{
+    const idToken = await fbUser.getIdToken();
     const res = await fetch(window.PLATFORM_SMS_ENDPOINT, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({test:true, recipients:[{phone:norm, message:'This is a test message from EduTrack CBC. If you received this, SMS sending is working correctly.'}]})
+      body: JSON.stringify({purpose:'admintest', idToken, recipients:[{phone:norm}]})
     });
     const data = await res.json();
     if(!res.ok || !data.ok){ qs('#smsAdminMsg').innerHTML = `<div class="msg err">Test failed: ${escapeHtml(data.error||('HTTP '+res.status))}</div>`; return; }
@@ -6134,10 +6321,33 @@ async function sendTestSmsPrompt(){
 function normalizePhone(raw){
   let p = (raw||'').replace(/[^\d+]/g,'');
   if(!p) return '';
+  if(p.startsWith('00')) p = '+'+p.slice(2);                       // 00254… → +254…
   if(p.startsWith('+')) return p;
-  if(p.startsWith('0')) return '254'+p.slice(1); // Kenyan local format → international
+  if(p.startsWith('0')) return '+254'+p.slice(1);                  // Kenyan local format → international
   if(p.startsWith('254')) return '+'+p;
+  if(/^[71]\d{8}$/.test(p)) return '+254'+p;                       // 712345678 (leading 0 dropped)
   return p;
+}
+// Kenyan numbers must be +254 followed by 7xx/1xx and 8 more digits; other countries just
+// need a plausible E.164 length. Stops typos ("0712 34567") from burning credits on dead numbers.
+function isValidSmsPhone(n){
+  if(!n || !n.startsWith('+')) return false;
+  if(n.startsWith('+254')) return /^\+254[71]\d{8}$/.test(n);
+  return /^\+\d{8,15}$/.test(n);
+}
+// Builds the send list: normalises + validates numbers, drops duplicates (same number AND same
+// text — e.g. two siblings sharing one parent phone get one announcement, not two charges),
+// and reports how many were skipped and why so the school isn't surprised.
+function buildSmsRecipients(items){
+  const seen = new Set(), out = []; let invalid = 0, dup = 0;
+  items.forEach(it=>{
+    const phone = normalizePhone(it.phone);
+    if(!isValidSmsPhone(phone)){ invalid++; return; }
+    const key = phone+'|'+it.message;
+    if(seen.has(key)){ dup++; return; }
+    seen.add(key); out.push({phone, message: it.message});
+  });
+  return {recipients: out, invalid, dup};
 }
 function tplSms(school){
   const bal = school.smsCredits||0;
@@ -6148,19 +6358,25 @@ function tplSms(school){
   if(!hasSmsConfig()){
     return `<div class="card">
       <h2>💬 SMS to Parents</h2>
-      <p class="msg err">⚠ SMS sending isn't set up for this deployment yet. This needs a one-time, free-tier Cloud Function setup by whoever manages this app (see <b>SMS_SETUP.md</b> in this project) — until then this tab stays disabled so nothing here can be mistaken for working.</p>
+      <p class="msg err">⚠ SMS sending isn't set up for this deployment yet. This needs a one-time, free-tier Cloud Function setup by whoever manages this app (see <b>GO_LIVE.md</b> in this project) — until then this tab stays disabled so nothing here can be mistaken for working.</p>
     </div>`;
   }
   const withPhone = school.students.filter(s=>s.parentPhone && s.parentPhone.trim()).length;
   const LOW_BALANCE = 20; // below this, warn before a big send rather than let it fail mid-batch
+  setTimeout(()=>watchSmsBalances([school.code]), 0);   // live server-side balance
   const myRequests = (school.smsTopupRequests||[]).slice().reverse();
   return `<div class="card">
     <h2>💬 SMS to Parents</h2>
     <div class="row">
-      <div><label>SMS Credit Balance</label><div class="linkbox" style="text-align:center;font-size:20px;font-weight:700">${bal}${price?` <span class="small" style="font-weight:400">(≈ KES ${(bal*price).toFixed(0)})</span>`:''}</div></div>
+      <div><label>SMS Credit Balance</label><div class="linkbox" style="text-align:center;font-size:20px;font-weight:700"><span data-smsbal="${school.code}">${bal}</span><span class="small" style="font-weight:400" data-smskes="${school.code}">${price?` (≈ KES ${(bal*price).toFixed(0)})`:''}</span></div></div>
       <div><label>Learners with a parent phone on file</label><div class="linkbox" style="text-align:center">${withPhone} of ${school.students.length}</div></div>
     </div>
-    ${bal < LOW_BALANCE ? `<p class="msg err" style="margin-top:8px">⚠ Low balance — top up below before sending to a large grade or the whole school.</p>` : ''}
+    <p class="msg err" data-smslow="${school.code}" style="margin-top:8px;${bal < LOW_BALANCE ? '' : 'display:none'}">⚠ Low balance — top up below before sending to a large grade or the whole school.</p>
+    <div class="row" style="margin-top:8px">
+      <div><label>🔐 School SMS PIN (6 digits, issued by the platform administrator)</label>
+        <input id="smsPin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="Enter once — kept only until you log out" value="${escapeHtml(smsPinMem[school.code]||'')}" oninput="smsPinMem['${school.code}']=this.value.trim()"></div>
+    </div>
+    <p class="msg err" data-smspinwarn="${school.code}" style="${smsPinSet[school.code]===false?'':'display:none'}">🔒 Sending is locked until the platform administrator issues your school an SMS PIN. Ask them for it — only the DOS/HOI should hold it.</p>
     <p class="small">Add parent phone numbers on the <b>🧑‍🎓 Learners</b> tab — a learner with no number is skipped and shown as "missing" below. 1 credit = 1 SMS (up to 153 characters); longer messages use more credits per recipient.</p>
   </div>
 
@@ -6185,7 +6401,7 @@ function tplSms(school){
   <div class="card">
     <h2>📊 Send Exam Results by SMS</h2>
     <div class="row">
-      <div><label>Grade</label><select id="smsClass" onchange="smsPreviewResults()">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
+      <div><label>Grade</label><select id="smsClass" onchange="smsFillExamOptions()">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
       <div><label>Exam</label><select id="smsExam" onchange="smsPreviewResults()"></select></div>
     </div>
     <div id="smsResultsPreview" class="small"></div>
@@ -6239,22 +6455,29 @@ function submitSmsTopupRequest(){
 // same per-recipient message text as the original batch (stored in recipientsSnapshot),
 // so a retry never has to guess what a learner's result message said.
 function retryFailedSms(logId){
+  if(smsSending){ toast('A send is already in progress — please wait','err'); return; }
   const school = currentSchool();
   const log = (school.smsLog||[]).find(l=>l.id===logId);
   if(!log || !log.failedNumbers || !log.failedNumbers.length){ toast('Nothing to retry','err'); return; }
-  const snap = log.recipientsSnapshot||[];
-  const retry = snap.filter(r=>log.failedNumbers.includes(r.phone));
+  if(!smsPinGate(/Results/.test(log.type)?'smsResultsMsg':'smsAnnounceMsg')) return;
+  const failedSet = log.failedNumbers.map(normalizePhone);
+  const retry = (log.recipientsSnapshot||[]).filter(r=>failedSet.includes(normalizePhone(r.phone)));
   if(!retry.length){ toast('Could not match the failed numbers to the original message list','err'); return; }
   const credits = retry.reduce((n,r)=>n+smsSegments(r.message),0);
   if(credits > (school.smsCredits||0)){ toast(`Not enough credit: need ${credits}, have ${school.smsCredits||0}`,'err'); return; }
   if(!confirm(`Retry sending to ${retry.length} failed recipient(s) for ${credits} credit(s)?`)) return;
-  sendSmsBatch(school, retry, {type:'Retry: '+log.type, audience: log.audience}, log.type==='Results'?'smsResultsMsg':'smsAnnounceMsg');
+  sendSmsBatch(school, retry, {type:'Retry: '+log.type.replace(/^Retry: /,''), audience: log.audience}, /Results/.test(log.type)?'smsResultsMsg':'smsAnnounceMsg');
 }
 function smsFillExamOptions(){
   const school = currentSchool(); if(!school || !qs('#smsClass')) return;
   const classId = qs('#smsClass').value;
   const exams = school.exams.filter(e=>e.classId===classId).slice().reverse();
-  qs('#smsExam').innerHTML = exams.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} — ${e.term} ${e.year}</option>`).join('') || '<option value="">No exams for this grade yet</option>';
+  qs('#smsExam').innerHTML = exams.map(e=>{
+    const hasMarks = Object.keys(school.marks[e.id]||{}).length>0;
+    const tag = !hasMarks ? ' — no marks yet'
+      : (school.requireApproval ? (e.resultsApproval==='approved' ? ' — ✅ approved' : e.resultsApproval==='disapproved' ? ' — ❌ disapproved' : ' — ⏳ pending approval') : '');
+    return `<option value="${e.id}">${escapeHtml(e.name)} — ${e.term} ${e.year}${tag}</option>`;
+  }).join('') || '<option value="">No exams for this grade yet</option>';
   smsPreviewResults();
 }
 // Builds one short results text for a single learner — same underlying numbers as the
@@ -6279,49 +6502,63 @@ function smsPreviewResults(){
   const classId = qs('#smsClass').value, examId = qs('#smsExam').value;
   if(!examId){ el.innerHTML = ''; return; }
   const exam = school.exams.find(e=>e.id===examId);
+  if(!exam || exam.classId!==classId){ el.innerHTML = '<p class="msg err">⚠ That exam is not for the selected grade.</p>'; return; }
   if(exam && school.requireApproval && exam.resultsApproval!=='approved'){
     el.innerHTML = '<p class="msg err">⚠ This exam has not been approved yet — approve it under Exams before sending results to parents.</p>'; return;
   }
   const learners = studentsInClass(school, classId);
-  const withPhone = learners.filter(s=>s.parentPhone && s.parentPhone.trim());
+  const withPhone = learners.filter(s=>isValidSmsPhone(normalizePhone(s.parentPhone)) && learnerHasMarks(school, s.id, examId));
   const sample = withPhone[0] ? learnerResultSummary(school, withPhone[0].id, examId) : null;
   const credits = sample ? smsCreditsNeeded(withPhone.length, sample) : 0;
-  el.innerHTML = `<p>${withPhone.length} of ${learners.length} learner(s) have a parent phone on file — ${learners.length-withPhone.length} will be skipped.</p>
+  el.innerHTML = `<p>${withPhone.length} of ${learners.length} learner(s) have a valid parent phone AND marks for this exam — ${learners.length-withPhone.length} will be skipped.</p>
   ${sample?`<p><b>Sample message</b> (${sample.length} chars, ${smsSegments(sample)} credit(s) each): <i>"${escapeHtml(sample)}"</i></p><p>Estimated cost: <b>${credits} credit(s)</b> · Balance: ${school.smsCredits||0}</p>`:'<p class="small">No learner with a phone number has marks for this exam yet.</p>'}`;
 }
+function learnerHasMarks(school, sid, examId){ return Object.keys((school.marks[examId]||{})[sid]||{}).length>0; }
 function sendResultsSms(){
+  if(smsSending){ toast('A send is already in progress — please wait','err'); return; }
+  if(!smsPinGate('smsResultsMsg')) return;
   const school = currentSchool();
   const classId = qs('#smsClass').value, examId = qs('#smsExam').value;
   if(!examId){ toast('Choose a grade and exam first','err'); return; }
   const exam = school.exams.find(e=>e.id===examId);
+  if(!exam || exam.classId!==classId){ toast('That exam is not for the selected grade — pick the grade again','err'); return; }
   if(exam && school.requireApproval && exam.resultsApproval!=='approved'){ toast('Approve this exam\'s results before sending to parents','err'); return; }
-  const learners = studentsInClass(school, classId).filter(s=>s.parentPhone && s.parentPhone.trim());
-  if(!learners.length){ toast('No learner in this grade has a parent phone number on file','err'); return; }
-  const recipients = learners.map(s=>({phone: normalizePhone(s.parentPhone), message: learnerResultSummary(school, s.id, examId)})).filter(r=>r.phone);
+  const learners = studentsInClass(school, classId).filter(s=>s.parentPhone && s.parentPhone.trim() && learnerHasMarks(school, s.id, examId));
+  if(!learners.length){ toast('No learner in this grade has both a parent phone number and marks for this exam','err'); return; }
+  const built = buildSmsRecipients(learners.map(s=>({phone:s.parentPhone, message: learnerResultSummary(school, s.id, examId)})));
+  const recipients = built.recipients;
+  if(!recipients.length){ toast('None of the parent phone numbers are valid — check them on the Learners tab','err'); return; }
   const credits = recipients.reduce((n,r)=>n+smsSegments(r.message),0);
   if(credits > (school.smsCredits||0)){ qs('#smsResultsMsg').innerHTML = `<div class="msg err">Not enough credit: need ${credits}, have ${school.smsCredits||0}.</div>`; return; }
-  if(!confirm(`Send exam results to ${recipients.length} parent(s) for ${credits} credit(s)?`)) return;
+  const skipNote = built.invalid ? `\n\n${built.invalid} learner(s) will be skipped because their parent phone number is invalid.` : '';
+  if(!confirm(`Send exam results to ${recipients.length} parent(s) for ${credits} credit(s)?${skipNote}`)) return;
   sendSmsBatch(school, recipients, {type:'Results', audience: (school.classes.find(c=>c.id===classId)||{}).name || classId}, 'smsResultsMsg');
+}
+function announcementRecipients(school, classId, text){
+  const pool = classId ? studentsInClass(school, classId) : school.students;
+  const built = buildSmsRecipients(pool.filter(s=>s.parentPhone && s.parentPhone.trim()).map(s=>({phone:s.parentPhone, message:text})));
+  return {pool, ...built};
 }
 function smsPreviewAnnouncement(){
   const el = qs('#smsAnnouncePreview'); if(!el) return;
   const school = currentSchool();
   const classId = qs('#smsAudience').value;
   const text = qs('#smsAnnounceText').value.trim();
-  const learners = (classId ? studentsInClass(school, classId) : school.students).filter(s=>s.parentPhone && s.parentPhone.trim());
-  const totalInAudience = (classId ? studentsInClass(school, classId) : school.students).length;
-  if(!text){ el.innerHTML = `<p>${learners.length} of ${totalInAudience} learner(s) in this audience have a parent phone on file.</p>`; return; }
-  const credits = smsCreditsNeeded(learners.length, text);
-  el.innerHTML = `<p>${text.length} character(s), ${smsSegments(text)} credit(s) per recipient · ${learners.length} of ${totalInAudience} recipient(s) reachable.</p><p>Estimated cost: <b>${credits} credit(s)</b> · Balance: ${school.smsCredits||0}</p>`;
+  const r = announcementRecipients(school, classId, text||'x');
+  if(!text){ el.innerHTML = `<p>${r.recipients.length} unique parent number(s) reachable out of ${r.pool.length} learner(s) in this audience.</p>`; return; }
+  const credits = smsCreditsNeeded(r.recipients.length, text);
+  el.innerHTML = `<p>${text.length} character(s), ${smsSegments(text)} credit(s) per recipient · ${r.recipients.length} unique parent number(s) reachable out of ${r.pool.length} learner(s)${r.dup?` (${r.dup} duplicate number(s) — e.g. siblings — will only receive it once)`:''}${r.invalid?` · ${r.invalid} invalid number(s) skipped`:''}.</p><p>Estimated cost: <b>${credits} credit(s)</b> · Balance: ${school.smsCredits||0}</p>`;
 }
 function sendAnnouncementSms(){
+  if(smsSending){ toast('A send is already in progress — please wait','err'); return; }
+  if(!smsPinGate('smsAnnounceMsg')) return;
   const school = currentSchool();
   const classId = qs('#smsAudience').value;
   const text = qs('#smsAnnounceText').value.trim();
   if(!text){ toast('Write a message first','err'); return; }
-  const learners = (classId ? studentsInClass(school, classId) : school.students).filter(s=>s.parentPhone && s.parentPhone.trim());
-  if(!learners.length){ toast('No learner in this audience has a parent phone number on file','err'); return; }
-  const recipients = learners.map(s=>({phone: normalizePhone(s.parentPhone), message: text})).filter(r=>r.phone);
+  const r = announcementRecipients(school, classId, text);
+  const recipients = r.recipients;
+  if(!recipients.length){ toast('No valid parent phone number in this audience','err'); return; }
   const credits = smsCreditsNeeded(recipients.length, text);
   if(credits > (school.smsCredits||0)){ qs('#smsAnnounceMsg').innerHTML = `<div class="msg err">Not enough credit: need ${credits}, have ${school.smsCredits||0}.</div>`; return; }
   if(!confirm(`Send this announcement to ${recipients.length} parent(s) for ${credits} credit(s)?`)) return;
@@ -6331,33 +6568,73 @@ function sendAnnouncementSms(){
 // Posts to the Cloud Function, which checks/deducts the school's real credit balance
 // server-side (so a tampered client value can't be used to send SMS for free) and
 // returns the authoritative new balance, which we then store locally.
+// Safeguards: one send at a time (no double-tap double-billing), a 65s timeout, non-JSON
+// error pages handled, a timeout is logged as "unknown outcome" (NOT as a clean failure) so the
+// school checks before resending, and the log keeps only the failed recipients (not every
+// message) so the synced school record doesn't balloon.
+let smsSending = false;
+const SMS_LOG_MAX = 100;
+function pushSmsLog(school, entry){
+  school.smsLog.push(entry);
+  if(school.smsLog.length > SMS_LOG_MAX) school.smsLog = school.smsLog.slice(-SMS_LOG_MAX);
+}
+// Returns the 6-digit PIN typed in the SMS tab (or remembered this session), or shows a message and returns null.
+function smsPinGate(msgElId){
+  const school = currentSchool();
+  const typed = qs('#smsPin') ? qs('#smsPin').value.trim() : '';
+  const pin = typed || (school && smsPinMem[school.code]) || '';
+  if(!/^\d{6}$/.test(pin)){
+    const el = qs('#'+msgElId);
+    if(el) el.innerHTML = '<div class="msg err">Enter your 6-digit School SMS PIN in the box at the top of this tab first. Ask the platform administrator if your school has not been given one.</div>';
+    else toast('Enter your 6-digit School SMS PIN first','err');
+    return null;
+  }
+  if(school) smsPinMem[school.code] = pin;
+  return pin;
+}
 async function sendSmsBatch(school, recipients, meta, msgElId){
+  if(smsSending) return;
+  const smsPin = smsPinGate(msgElId); if(!smsPin) return;
+  smsSending = true;
   const msgEl = qs('#'+msgElId);
-  if(msgEl) msgEl.innerHTML = '<p class="small">Sending…</p>';
+  document.querySelectorAll('button[onclick^="sendResultsSms"],button[onclick^="sendAnnouncementSms"],button[onclick^="retryFailedSms"]').forEach(b=>b.disabled=true);
+  if(msgEl) msgEl.innerHTML = '<p class="small">Sending… please don\'t close this page.</p>';
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), 65000);
   try{
     const res = await fetch(window.PLATFORM_SMS_ENDPOINT, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({schoolCode: school.code, recipients})
+      method:'POST', headers:{'Content-Type':'application/json'}, signal: ctrl.signal,
+      body: JSON.stringify({schoolCode: school.code, smsPin, recipients})
     });
-    const data = await res.json();
-    if(!res.ok || !data.ok){
-      school.smsLog.push({id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, recipients:recipients.length, credits:0, ok:false, error:data.error||('HTTP '+res.status), recipientsSnapshot:recipients});
+    let data = null;
+    try{ data = await res.json(); }catch(_){ data = null; }
+    if(!data || !res.ok || !data.ok){
+      const errText = (data && data.error) || ('Server error (HTTP '+res.status+')');
+      if(/PIN/i.test(errText)) delete smsPinMem[school.code];   // don't keep a PIN the server rejected
+      pushSmsLog(school, {id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, recipients:recipients.length, credits:0, ok:false, error:errText});
       saveDB(DB);
-      if(msgEl) msgEl.innerHTML = `<div class="msg err">Send failed: ${escapeHtml(data.error||'server error')}</div>`;
+      if(msgEl) msgEl.innerHTML = `<div class="msg err">Send failed: ${escapeHtml(errText)}</div>`;
       return;
     }
     if(typeof data.newBalance==='number') school.smsCredits = data.newBalance;
-    // recipientsSnapshot (phone+message actually sent) + failedNumbers (from the server)
-    // together let "Retry Failed" re-target exactly the numbers that didn't go through,
-    // with the exact same message text, without the school retyping or re-picking anything.
-    school.smsLog.push({id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, recipients:recipients.length, credits:data.creditsUsed||0, ok:true, sent:data.sent, failed:data.failed, failedNumbers:data.failedNumbers||[], recipientsSnapshot:recipients});
+    const failedNumbers = (data.failedNumbers||[]).map(normalizePhone);
+    const failedRecipients = recipients.filter(r=>failedNumbers.includes(normalizePhone(r.phone)));
+    pushSmsLog(school, {id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, recipients:recipients.length, credits:data.creditsUsed||0, ok:true, sent:data.sent, failed:data.failed, failedNumbers, recipientsSnapshot:failedRecipients});
     saveDB(DB);
-    toast(`Sent to ${data.sent||recipients.length} parent(s)${data.failed?`, ${data.failed} failed`:''}`);
+    toast(`Sent to ${data.sent==null?recipients.length:data.sent} parent(s)${data.failed?`, ${data.failed} failed`:''}`);
     renderDOS();
   }catch(err){
-    school.smsLog.push({id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, recipients:recipients.length, credits:0, ok:false, error:String(err.message||err), recipientsSnapshot:recipients});
+    const timedOut = err && err.name==='AbortError';
+    const errText = timedOut
+      ? 'No reply from the SMS service after 65s — some messages MAY have been sent. Check the balance and your log before resending.'
+      : 'Could not reach the SMS service: '+String(err.message||err);
+    pushSmsLog(school, {id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, recipients:recipients.length, credits:0, ok:false, error:errText});
     saveDB(DB);
-    if(msgEl) msgEl.innerHTML = `<div class="msg err">Could not reach the SMS service: ${escapeHtml(String(err.message||err))}</div>`;
+    if(msgEl) msgEl.innerHTML = `<div class="msg err">${escapeHtml(errText)}</div>`;
+  }finally{
+    clearTimeout(timer);
+    smsSending = false;
+    document.querySelectorAll('button[onclick^="sendResultsSms"],button[onclick^="sendAnnouncementSms"],button[onclick^="retryFailedSms"]').forEach(b=>b.disabled=false);
   }
 }
 
