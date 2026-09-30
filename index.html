@@ -423,6 +423,10 @@ function ensureSchoolShape(s){
   if(!Array.isArray(s.dos)) s.dos = [];
   if(!Array.isArray(s.finance)) s.finance = [];
   if(!Array.isArray(s.payments)) s.payments = [];
+  if(!Array.isArray(s.expenses)) s.expenses = [];
+  if(!Array.isArray(s.feeAdjust)) s.feeAdjust = [];
+  if(typeof s.payInstructions!=='string') s.payInstructions = '';
+  if(!s.feeStructure || typeof s.feeStructure!=='object') s.feeStructure = {};
   if(!Array.isArray(s.sadmins)) s.sadmins = (s.dos&&s.dos[0]) ? [{id:'sa_'+s.dos[0].id, name:s.dos[0].name||'School Admin', username:s.dos[0].username, password:s.dos[0].password, email:'', phone:''}] : [];
   // Fees: s.fees[examId][studentId] = {balance, nextTermFee, updatedAt, updatedBy}. Keyed
   // the same way as attendance/remarks — one record per learner per exam/term — set either
@@ -4798,7 +4802,9 @@ function tplFinanceCredits(school){
 /* ============================= SCHOOL ADMIN PORTAL =============================
    Top-level school account: creates the DOS/HOI and Finance accounts and hands out the
    portal links. DOS creates teachers; Finance handles fees + SMS credit. */
-function rerenderRole(){ if(session && session.role==='sadmin') renderSadmin(); else renderDOS(); }
+let sadminTab = 'dashboard';
+function gotoSadminTab(k){ sadminTab = k; document.body.classList.remove('dos-menu-open'); renderSadmin(); window.scrollTo(0,0); }
+function rerenderRole(){ if(session && session.role==='sadmin') renderSadmin(); else if(session && session.role==='finance') renderFinance(); else renderDOS(); }
 function portalUrl(code, key, extra){ return location.origin + location.pathname + `?school=${code}` + (key?`&p=${key}`:'') + (extra||''); }
 function renderSadmin(){
   const school = currentSchool(); const me = school.sadmins.find(x=>x.id===session.userId);
@@ -4808,16 +4814,24 @@ function renderSadmin(){
     ['👨‍👩‍👧 Parent Portal', portalUrl(school.code,null,'&role=parent'),'Parents view their child\'s reports with name + admission no. + PIN.']];
   const stat=(v,t)=>`<div style="flex:1;min-width:120px;background:#f7f9fc;border:1px solid var(--border);border-radius:9px;padding:9px 11px"><div class="small">${t}</div><div style="font-size:18px;font-weight:800;color:var(--navy)">${v}</div></div>`;
   const nStu = school.students.length, nTea = school.teachers.length;
-  app.innerHTML = `<div class="card"><h2>🏫 ${escapeHtml(school.name)} — School Administration</h2>
+  const P = {
+    dashboard: `<div class="card"><h2>🏫 ${escapeHtml(school.name)} — School Administration</h2>
   <p class="small">School code: <b>${school.code}</b>. Create the DOS/HOI and Finance accounts here, then share the matching link + login with each person.</p>
   <div class="row">${stat(nStu,'Learners')}${stat(nTea,'Teachers')}${stat(school.dos.length,'DOS/HOI accounts')}${stat(school.finance.length,'Finance accounts')}${stat(school.smsCredits||0,'SMS credits')}</div></div>
-  <div class="card"><h2>🔗 Portal Links</h2>${links.map(l=>`<div style="margin-bottom:10px"><b>${l[0]}</b> <span class="small">— ${l[2]}</span><div class="linkbox" style="margin-top:4px">${l[1]}</div><button class="ghost" style="margin-top:4px" onclick="copyLinkBox(this)">📋 Copy link</button></div>`).join('')}</div>
-  <div class="card"><h2>🎓 DOS / HOI Accounts</h2>
+  `,
+    links: `<div class="card"><h2>🔗 Portal Links</h2>${links.map(l=>`<div style="margin-bottom:10px"><b>${l[0]}</b> <span class="small">— ${l[2]}</span><div class="linkbox" style="margin-top:4px">${l[1]}</div><button class="ghost" style="margin-top:4px" onclick="copyLinkBox(this)">📋 Copy link</button></div>`).join('')}</div>
+  `,
+    dos: `<div class="card"><h2>🎓 DOS / HOI Accounts</h2>
   <div class="row"><div><label>Name</label><input id="dsName"></div><div><label>Username</label><input id="dsUser"></div><div><label>Password</label><input id="dsPass" placeholder="blank = auto-generate"></div><div style="align-self:flex-end"><button onclick="addDosAcct()">➕ Add DOS/HOI</button></div></div>
   <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Actions</th></tr>${school.dos.map(d=>`<tr><td>${escapeHtml(d.name||'-')}</td><td>${escapeHtml(d.username)}</td><td><button class="ghost" onclick="resetDosAcct('${d.id}')">🔑 Reset Password</button> <button class="danger" onclick="delDosAcct('${d.id}')">✕</button></td></tr>`).join('')}</table></div>
-  ${tplFinanceAccounts(school)}
-  <div class="card"><h2>🏫 School Admin Accounts</h2><div class="row"><div><label>Name</label><input id="saName"></div><div><label>Username</label><input id="saUser"></div><div><label>Password</label><input id="saPass" placeholder="blank = auto-generate"></div><div style="align-self:flex-end"><button onclick="addSadminAcct()">➕ Add</button></div></div>
-  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Actions</th></tr>${school.sadmins.map(a=>`<tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.username)}${a.id===me.id?' <span class="small">(you)</span>':''}</td><td><button class="ghost" onclick="resetSadminAcct('${a.id}')">🔑 Reset Password</button> ${a.id===me.id?'':`<button class="danger" onclick="delSadminAcct('${a.id}')">✕</button>`}</td></tr>`).join('')}</table></div>`;
+  `,
+    finance: `${tplFinanceAccounts(school)}
+  `,
+    admins: `<div class="card"><h2>🏫 School Admin Accounts</h2><div class="row"><div><label>Name</label><input id="saName"></div><div><label>Username</label><input id="saUser"></div><div><label>Password</label><input id="saPass" placeholder="blank = auto-generate"></div><div style="align-self:flex-end"><button onclick="addSadminAcct()">➕ Add</button></div></div>
+  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Actions</th></tr>${school.sadmins.map(a=>`<tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.username)}${a.id===me.id?' <span class="small">(you)</span>':''}</td><td><button class="ghost" onclick="resetSadminAcct('${a.id}')">🔑 Reset Password</button> ${a.id===me.id?'':`<button class="danger" onclick="delSadminAcct('${a.id}')">✕</button>`}</td></tr>`).join('')}</table></div>`};
+  const menu = [{group:'Overview', items:[['dashboard','🏠 Dashboard'],['links','🔗 Portal Links']]},{group:'Accounts', items:[['dos','🎓 DOS / HOI Accounts'],['finance','💰 Finance Accounts'],['admins','🏫 School Admins']]}];
+  const quick = portalQuick('gotoSadminTab',[['links','🔗 Portal Links'],['dos','🎓 DOS/HOI'],['finance','💰 Finance'],['admins','🏫 Admins']]);
+  app.innerHTML = portalShell({menu, tab:sadminTab, goto:'gotoSadminTab', side:school.name, headName:me.name, headSub:'School Admin · '+school.name}) + (sadminTab==='dashboard' ? P.dashboard + quick : (P[sadminTab]||P.dashboard));
 }
 function acctPw(v){ return v || Math.random().toString(36).slice(2,10); }
 function addAcct(list, prefix, nameId, userId, passId, label){
@@ -4849,11 +4863,13 @@ function tplFinanceAccounts(school){
     <div><label>Password</label><input id="fiPass" placeholder="leave blank to default to fin123"></div>
     <div><label>Email <span class="small">(optional)</span></label><input id="fiEmail" type="email"></div>
     <div><label>Phone <span class="small">(optional)</span></label><input id="fiPhone"></div>
+    <div><label>Access</label><select id="fiLevel"><option value="full">Full (can edit)</option><option value="view">View-only</option></select></div>
   </div>
   <div class="flexbtns"><button onclick="addFinance()">➕ Add Finance Account</button></div>
-  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Actions</th></tr>
+  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Access</th><th>Email</th><th>Phone</th><th>Actions</th></tr>
   ${school.finance.map(fi=>`<tr>
     <td>${escapeHtml(fi.name)}</td><td>${escapeHtml(fi.username)}</td>
+    <td><select onchange="setFinanceContact('${fi.id}','level',this.value)"><option value="full" ${fi.level==='view'?'':'selected'}>Full</option><option value="view" ${fi.level==='view'?'selected':''}>View-only</option></select></td>
     <td><input value="${escapeHtml(fi.email||'')}" placeholder="email" onchange="setFinanceContact('${fi.id}','email',this.value)"></td>
     <td><input value="${escapeHtml(fi.phone||'')}" placeholder="phone" onchange="setFinanceContact('${fi.id}','phone',this.value)"></td>
     <td><button class="ghost" onclick="resetFinancePassword('${fi.id}')">🔑 Reset Password</button> <button class="danger" onclick="delFinance('${fi.id}')">✕</button></td>
@@ -4876,7 +4892,7 @@ function addFinance(){
   if(!password) password = 'fin123';
   const school = currentSchool();
   if(school.finance.some(f=>f.username===username)){ toast('That username is already taken','err'); return; }
-  school.finance.push({id:uid('fi_'), name, username, password, email, phone});
+  school.finance.push({id:uid('fi_'), name, username, password, email, phone, level:(qs('#fiLevel')||{}).value||'full'});
   saveDB(DB); toast(`Finance account added. Password: ${password}`); rerenderRole();
 }
 function delFinance(fid){
@@ -4988,6 +5004,8 @@ function currentTeacher(){
   const sc = currentSchool();
   return sc ? (sc.teachers.find(x=>x.id===session.userId)||null) : null;
 }
+function canEdit(){ if(!session||session.role!=='finance') return true; const fi=currentFinance(); return !(fi&&fi.level==='view'); }
+function noEdit(){ toast('View-only account — you can view and print, but not change records','err'); }
 function currentFinance(){
   if(!session || session.role!=='finance') return null;
   const sc = currentSchool();
@@ -5916,15 +5934,25 @@ function runTeacherDashboard(){
    the result, full read access to report forms (reusing tplReportsPicker, same as DOS/HOI —
    not scoped down the way a teacher's view is), and a My Account card. It never touches
    marks entry, grading, or anything else a DOS/HOI or Teacher can do. */
+let finTab = 'dashboard';
+const finState = {classId:null, examId:null};
+function gotoFinTab(k){ finTab = k; document.body.classList.remove('dos-menu-open'); renderFinance(); window.scrollTo(0,0); }
+function financeCtxRow(school){
+  const cid = (school.classes.find(c=>c.id===finState.classId)||school.classes[0]).id;
+  const exams = school.exams.filter(e=>e.classId===cid);
+  const eid = exams.some(e=>e.id===finState.examId) ? finState.examId : (exams[0]||{}).id;
+  finState.classId = cid; finState.examId = eid;
+  return `<div class="row"><div><label>Grade</label><select id="ffClass" onchange="fillFinanceExams()">${school.classes.map(c=>`<option value="${c.id}" ${c.id===cid?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
+  <div><label>Exam / Term</label><select id="ffExam" onchange="loadFinanceFeesSummary()">${exams.map(e=>`<option value="${e.id}" ${e.id===eid?'selected':''}>${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this grade</option>'}</select></div></div>`;
+}
+function financeCtxBar(school){ return `<div class="card no-print" style="padding:10px 14px"><b class="small">Working on:</b>${financeCtxRow(school)}</div>`; }
+function finRefreshAll(){ refreshPayCard(); previewFeeReminders(); refreshStructure(); renderCollections(); renderOverview(); }
 function financeFeesTabHTML(school){
   if(!school.classes.length) return `<div class="card"><h2>💵 Fee Balances</h2><p class="small">No grades set up yet — ask your DOS/HOI.</p></div>`;
   const firstClassId = school.classes[0].id;
   return `<div class="card"><h2>💵 Fee Balances — Import &amp; Summary</h2>
   <p class="small">Pick a Grade and Exam/Term, then upload a CSV to set each learner's fees balance (arrears) and next term's expected fee for that term. Matching is by <b>Admission Number</b> — a row whose admission number doesn't match any learner in this grade is skipped and listed below, not guessed.</p>
-  <div class="row">
-    <div><label>Grade</label><select id="ffClass" onchange="fillFinanceExams()">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
-    <div><label>Exam / Term</label><select id="ffExam" onchange="loadFinanceFeesSummary()">${school.exams.filter(e=>e.classId===firstClassId).map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this grade</option>'}</select></div>
-  </div>
+  ${financeCtxRow(school)}
   <div class="row">
     <div><label>CSV file <span class="small">(columns: Admission No, Fees Balance, Next Term Fee — header row required)</span></label><input type="file" id="ffCsvFile" accept=".csv,text/csv"></div>
     <div style="align-self:flex-end"><div class="flexbtns"><button onclick="applyFeesCsv()">⬆ Upload &amp; Apply</button><button class="ghost" onclick="feesTemplateCsv()">⬇ CSV Template</button></div></div>
@@ -5941,11 +5969,12 @@ function fillFinanceExams(){
 }
 function loadFinanceFeesSummary(){
   const school = currentSchool();
-  const examId = qs('#ffExam') && qs('#ffExam').value;
+  if(qs('#ffClass')) finState.classId = qs('#ffClass').value;
+  const examId = qs('#ffExam') && qs('#ffExam').value; finState.examId = examId;
   const area = qs('#ffSummaryArea');
-  if(!area) return;
+  if(!area){ finRefreshAll(); return; }
   const exam = school.exams.find(e=>e.id===examId);
-  if(!exam){ area.innerHTML = '<p class="small">No exam selected for this grade yet.</p>'; return; }
+  if(!exam){ area.innerHTML = '<p class="small">No exam selected for this grade yet.</p>'; finRefreshAll(); return; }
   const learners = studentsForExam(school, exam);
   const recs = school.fees[examId] || {};
   const bal = l => { const v=(recs[l.id]||{}).balance; return (v==null||v==='')?null:Number(v); };
@@ -5976,7 +6005,7 @@ function loadFinanceFeesSummary(){
     <td>${badge}</td></tr>`;
   }).join('') || `<tr><td colspan="5" class="small">No learners in this grade.</td></tr>`}
   </table><p class="small">Tip: a negative balance means the learner has paid ahead (credit).</p>`;
-  refreshPayCard();
+  finRefreshAll();
 }
 function filterFeeRows(){
   const q = (qs('#ffSearch').value||'').trim().toLowerCase(), f = qs('#ffFilter').value;
@@ -6020,6 +6049,7 @@ function printDefaulters(){
   w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
 }
 function saveFeeCell(examId, sid, field, val){
+  if(!canEdit()){ noEdit(); return; }
   const school = currentSchool();
   if(!school.fees[examId]) school.fees[examId] = {};
   if(!school.fees[examId][sid]) school.fees[examId][sid] = {};
@@ -6052,6 +6082,7 @@ function parseSimpleCSV(text){
   return rows.filter(r=>r.some(c=>String(c).trim()!==''));
 }
 function applyFeesCsv(){
+  if(!canEdit()){ noEdit(); return; }
   const school = currentSchool();
   const examId = qs('#ffExam') && qs('#ffExam').value;
   const exam = school.exams.find(e=>e.id===examId);
@@ -6110,8 +6141,9 @@ function financePayTabHTML(school){
     <div><label>Method</label><select id="payMethod"><option>M-Pesa</option><option>Cash</option><option>Bank</option><option>Cheque</option></select></div>
     <div><label>Reference / Code</label><input id="payRef" placeholder="e.g. QAB1C2D3E4"></div>
     <div><label>Date</label><input id="payDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
-    <div style="align-self:flex-end"><button onclick="recordPayment()">💾 Save &amp; Receipt</button></div>
+    <div style="align-self:flex-end"><div class="flexbtns"><button onclick="recordPayment()">💾 Save &amp; Receipt</button><button class="ghost" onclick="printStatement()">📄 Statement</button><button class="ghost" onclick="printInvoices(qs('#payLearner').value)">🧾 Invoice</button></div></div>
   </div>
+  <label style="display:block;margin-top:8px"><input type="checkbox" id="paySms" style="width:auto"> 📱 Also SMS the parent a payment confirmation (uses SMS credit; needs the SMS PIN in the reminders card below)</label>
   <div id="payMsg"></div><div id="payHistory" style="margin-top:12px"></div></div>
   <div class="card no-print"><h2>💬 Fee Reminder SMS</h2>
   <p class="small">Sends a personalised SMS to the parents of learners who still owe fees in the selected grade/term. Uses your school's SMS credits.</p>
@@ -6121,6 +6153,380 @@ function financePayTabHTML(school){
   <textarea id="remText" rows="3" oninput="previewFeeReminders()">Dear Parent, {name}'s fee balance is KES {balance}. Next term fee: KES {next}. Kindly clear at your earliest convenience. - ${escapeHtml(school.name)}</textarea>
   <div id="remPreview" class="small" style="margin:6px 0"></div>
   <div class="flexbtns"><button class="gold" onclick="sendFeeReminders()">📤 Send Reminders</button></div><div id="remMsg"></div></div>`;
+}
+
+/* ---------- Finance: collections report, expenses, learner statements ---------- */
+const EXP_CATS = ['Salaries','Utilities','Supplies','Repairs','Transport','Food','Other'];
+const today10 = ()=>new Date().toISOString().slice(0,10);
+function financeBooksHTML(school){
+  const m1 = today10().slice(0,8)+'01';
+  return `<div class="card"><h2>📈 Collections &amp; Cash Book</h2>
+  <div class="row"><div><label>From</label><input id="colFrom" type="date" value="${m1}" onchange="renderCollections()"></div><div><label>To</label><input id="colTo" type="date" value="${today10()}" onchange="renderCollections()"></div>
+  <div class="flexbtns" style="align-self:flex-end"><button class="ghost" onclick="exportCollections()">⬇ Export CSV</button><button class="gold" onclick="printCollections()">🖨 Print</button></div></div>
+  <div id="colReport" style="margin-top:10px"></div></div>
+  <div class="card"><h2>🧮 Expenses</h2>
+  <div class="row"><div><label>Date</label><input id="expDate" type="date" value="${today10()}"></div><div><label>Category</label><select id="expCat">${EXP_CATS.map(c=>`<option>${c}</option>`).join('')}</select></div>
+  <div><label>Amount (KES)</label><input id="expAmt" type="number" min="1"></div><div style="flex:2"><label>Description</label><input id="expDesc" placeholder="e.g. Electricity bill"></div>
+  <div style="align-self:flex-end"><button onclick="addExpense()">➕ Add Expense</button></div></div><div id="expList" style="margin-top:10px"></div></div>`;
+}
+function inRange(d,f,t){ return d>=f && d<=t; }
+function collectionsData(){
+  const school = currentSchool(); const f = qs('#colFrom').value, t = qs('#colTo').value;
+  const pays = school.payments.filter(p=>!p.void && inRange(p.date,f,t)).sort((a,b)=>a.date<b.date?-1:1);
+  const exps = school.expenses.filter(e=>!e.void && inRange(e.date,f,t));
+  const byMethod = {}; pays.forEach(p=>byMethod[p.method]=(byMethod[p.method]||0)+p.amount);
+  const income = pays.reduce((a,p)=>a+p.amount,0), spent = exps.reduce((a,e)=>a+e.amount,0);
+  return {school,f,t,pays,exps,byMethod,income,spent};
+}
+function renderCollections(){
+  const el = qs('#colReport'); if(!el) return;
+  const d = collectionsData(); const nm = id=>(d.school.students.find(x=>x.id===id)||{}).name||'—';
+  const box=(t,v,c)=>`<div style="flex:1;min-width:130px;background:#f7f9fc;border:1px solid var(--border);border-radius:9px;padding:9px 11px;border-top:3px solid ${c}"><div class="small">${t}</div><div style="font-size:17px;font-weight:800;color:var(--navy)">KES ${v.toLocaleString()}</div></div>`;
+  el.innerHTML = `<div class="row">${box('Fees collected',d.income,'var(--ee)')}${box('Expenses',d.spent,'var(--be)')}${box('Net (collected − spent)',d.income-d.spent,'var(--me)')}</div>
+  <p class="small" style="margin-top:8px">By method: ${Object.keys(d.byMethod).map(k=>`<b>${escapeHtml(k)}</b> KES ${d.byMethod[k].toLocaleString()}`).join(' · ')||'no payments in this period'}</p>
+  ${d.pays.length?`<table><tr><th>Date</th><th>Receipt</th><th>Learner</th><th>Method</th><th>Ref</th><th>Amount</th></tr>${d.pays.map(p=>`<tr><td>${escapeHtml(p.date)}</td><td>${escapeHtml(p.receiptNo)}</td><td style="text-align:left">${escapeHtml(nm(p.studentId))}</td><td>${escapeHtml(p.method)}</td><td>${escapeHtml(p.ref||'-')}</td><td>${p.amount.toLocaleString()}</td></tr>`).join('')}</table>`:''}`;
+  renderExpenses();
+}
+function exportCollections(){
+  const d = collectionsData(); const nm = id=>(d.school.students.find(x=>x.id===id)||{}).name||'';
+  feesDownload(`collections-${d.f}_to_${d.t}.csv`, [['Date','Receipt','Learner','Method','Reference','Amount','Received By']].concat(d.pays.map(p=>[p.date,p.receiptNo,nm(p.studentId),p.method,p.ref||'',p.amount,p.by])));
+}
+function printCollections(){
+  const d = collectionsData(); const nm = id=>(d.school.students.find(x=>x.id===id)||{}).name||'—';
+  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  w.document.write(`<html><head><title>Cash Book</title><style>body{font-family:Arial;padding:20px;font-size:12px}h2{margin:0;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #999;padding:4px 6px;text-align:left}th{background:#123a63;color:#fff}.r{text-align:right}</style></head><body>
+  <h2>${escapeHtml(d.school.name)} — Cash Book</h2><div>${d.f} to ${d.t} · Printed ${new Date().toLocaleDateString()}</div>
+  <p><b>Collected:</b> KES ${d.income.toLocaleString()} &nbsp; <b>Expenses:</b> KES ${d.spent.toLocaleString()} &nbsp; <b>Net:</b> KES ${(d.income-d.spent).toLocaleString()}</p>
+  <p>${Object.keys(d.byMethod).map(k=>`${escapeHtml(k)}: KES ${d.byMethod[k].toLocaleString()}`).join(' · ')}</p>
+  <table><tr><th>Date</th><th>Receipt</th><th>Learner</th><th>Method</th><th>Ref</th><th>Amount</th></tr>${d.pays.map(p=>`<tr><td>${escapeHtml(p.date)}</td><td>${escapeHtml(p.receiptNo)}</td><td>${escapeHtml(nm(p.studentId))}</td><td>${escapeHtml(p.method)}</td><td>${escapeHtml(p.ref||'')}</td><td class="r">${p.amount.toLocaleString()}</td></tr>`).join('')}</table>
+  <h3>Expenses</h3><table><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th></tr>${d.exps.map(e=>`<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.category)}</td><td>${escapeHtml(e.desc||'')}</td><td class="r">${e.amount.toLocaleString()}</td></tr>`).join('')||'<tr><td colspan="4">None</td></tr>'}</table></body></html>`);
+  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+}
+function addExpense(){
+  if(!canEdit()){ noEdit(); return; }
+  const school = currentSchool(); const amount = Number(qs('#expAmt').value), desc = qs('#expDesc').value.trim();
+  if(!(amount>0)){ toast('Enter a valid amount','err'); return; }
+  const fi = currentFinance();
+  school.expenses.push({id:uid('exp_'), date:qs('#expDate').value||today10(), category:qs('#expCat').value, amount, desc, by:fi?fi.name:'School Admin', ts:Date.now()});
+  saveDB(DB); qs('#expAmt').value=''; qs('#expDesc').value=''; toast('Expense recorded'); renderCollections();
+}
+function voidExpense(id){
+  if(!canEdit()){ noEdit(); return; }
+  const e = currentSchool().expenses.find(x=>x.id===id); if(!e||!confirm('Void this expense?')) return;
+  e.void = true; saveDB(DB); renderCollections();
+}
+function renderExpenses(){
+  const el = qs('#expList'); if(!el) return;
+  const school = currentSchool(); const list = school.expenses.slice().sort((a,b)=>b.ts-a.ts).slice(0,40);
+  const byCat = {}; school.expenses.filter(e=>!e.void && e.date.slice(0,7)===today10().slice(0,7)).forEach(e=>byCat[e.category]=(byCat[e.category]||0)+e.amount);
+  el.innerHTML = `<p class="small">This month: ${Object.keys(byCat).map(k=>`<b>${k}</b> KES ${byCat[k].toLocaleString()}`).join(' · ')||'no expenses yet'}</p>`+(list.length?`<table><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th></th></tr>${list.map(e=>`<tr style="${e.void?'opacity:.5;text-decoration:line-through':''}"><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.category)}</td><td style="text-align:left">${escapeHtml(e.desc||'')}</td><td>${e.amount.toLocaleString()}</td><td>${e.void?'Voided':`<button class="danger" onclick="voidExpense('${e.id}')">Void</button>`}</td></tr>`).join('')}</table>`:'');
+}
+function printStatement(){
+  const {school, exam, recs} = feeCtx(); const sid = (qs('#payLearner')||{}).value;
+  const st = school.students.find(x=>x.id===sid); if(!st){ toast('Pick a learner first','err'); return; }
+  const pays = school.payments.filter(p=>p.studentId===sid && !p.void).sort((a,b)=>a.date<b.date?-1:1);
+  const paid = pays.reduce((t,p)=>t+p.amount,0), r = exam ? (recs[sid]||{}) : {};
+  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  w.document.write(`<html><head><title>Fee Statement</title><style>body{font-family:Arial;padding:24px;font-size:13px}h2{margin:0;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:10px}th,td{border:1px solid #999;padding:5px 7px;text-align:left}th{background:#123a63;color:#fff}.r{text-align:right}</style></head><body>
+  <h2>${escapeHtml(school.name)}</h2><p><b>FEE STATEMENT</b> · Printed ${new Date().toLocaleDateString()}</p>
+  <p>Learner: <b>${escapeHtml(st.name)}</b> · Adm No: <b>${escapeHtml(st.adm||'-')}</b></p>
+  <table><tr><th>Date</th><th>Receipt</th><th>Method</th><th>Reference</th><th>Amount (KES)</th></tr>${pays.map(p=>`<tr><td>${escapeHtml(p.date)}</td><td>${escapeHtml(p.receiptNo)}</td><td>${escapeHtml(p.method)}</td><td>${escapeHtml(p.ref||'-')}</td><td class="r">${p.amount.toLocaleString()}</td></tr>`).join('')||'<tr><td colspan="5">No payments recorded.</td></tr>'}
+  <tr><th colspan="4">Total paid</th><th class="r">${paid.toLocaleString()}</th></tr></table>
+  ${r.billed!=null?`<p>Term fee invoiced: KES ${Number(r.billed).toLocaleString()}${r.openingBalance?` · Balance brought forward: KES ${Number(r.openingBalance).toLocaleString()}`:''}${r.discount?` · Discounts/bursary: KES ${Number(r.discount).toLocaleString()}`:''}</p>`:''}<p><b>Current fee balance${exam?' ('+escapeHtml(exam.name)+')':''}:</b> KES ${r.balance!=null&&r.balance!==''?Number(r.balance).toLocaleString():'not set'}${r.nextTermFee!=null&&r.nextTermFee!==''?' · Next term fee: KES '+Number(r.nextTermFee).toLocaleString():''}</p></body></html>`);
+  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+}
+
+/* ---------- Finance: fee structure, invoicing, bursaries/discounts ---------- */
+function financeStructureHTML(school){
+  if(!school.classes.length) return '';
+  return `<div class="card"><h2>🏷 Fee Structure &amp; Invoicing</h2>
+  <p class="small">Set the fee for the selected grade/term, then generate invoices: the term fee is <b>added to each learner's existing balance</b> (so old arrears carry forward). Learners already invoiced for this term are skipped, so nothing is charged twice.</p>
+  <div class="row"><div><label>Tuition / base fee per learner (KES)</label><input id="fsAmt" type="number" min="1"></div>
+  <div class="flexbtns" style="align-self:flex-end"><button class="ghost" onclick="saveFeeStructure()">💾 Save Fee</button><button class="gold" onclick="generateInvoices()">🧾 Generate Invoices</button></div></div>
+  <div id="fsInfo" class="small" style="margin:6px 0"></div><div id="fsMsg"></div>
+  <div class="flexbtns no-print"><button class="ghost" onclick="printInvoices()">🖨 Print All Invoices (this grade)</button><button class="ghost" onclick="printFeeSheet()">📋 Print Fee Structure Sheet</button><button class="danger" onclick="reverseInvoices()">↩ Reverse Invoices (this grade)</button></div>
+  <label style="margin-top:10px">How parents should pay <span class="small">— printed on invoices &amp; the fee sheet (e.g. Paybill 123456, Acc: Adm No; bank details)</span></label>
+  <textarea id="payInstr" rows="2" onchange="savePayInstr()">${escapeHtml(school.payInstructions||'')}</textarea>
+  <h3 style="margin:14px 0 6px">📚 Extra Fee Items</h3>
+  <p class="small"><b>Compulsory</b> items (e.g. Activity, Exam fee) are charged to every learner on top of tuition. <b>Optional</b> items (Transport, Boarding, Lunch) are charged only to learners you assign below.</p>
+  <div class="row"><div><label>Item</label><input id="fiName" placeholder="e.g. Transport"></div><div><label>Amount (KES)</label><input id="fiAmt" type="number" min="1"></div><div><label>Type</label><select id="fiType"><option value="0">Compulsory</option><option value="1">Optional</option></select></div><div style="align-self:flex-end"><button onclick="addFeeItem()">➕ Add Item</button></div></div>
+  <div id="fiList" style="margin-top:8px"></div>
+  <div class="row" style="margin-top:8px"><div style="flex:2"><label>Learner</label><select id="optLearner"></select></div><div><label>Optional item</label><select id="optItem"></select></div>
+  <div class="flexbtns" style="align-self:flex-end"><button onclick="assignExtra(true)">➕ Assign</button><button class="ghost" onclick="assignExtra(false)">➖ Remove</button></div></div>
+  <div id="optList" style="margin-top:8px"></div>
+  <h3 style="margin:14px 0 6px">🎗 Bursary / Discount</h3>
+  <div class="row"><div style="flex:2"><label>Learner</label><select id="discLearner"></select></div><div><label>Amount (KES)</label><input id="discAmt" type="number" min="1"></div>
+  <div style="flex:2"><label>Reason</label><input id="discReason" placeholder="e.g. CDF bursary, sibling discount"></div><div style="align-self:flex-end"><button onclick="applyDiscount()">➕ Apply</button></div></div>
+  <div id="discList" style="margin-top:8px"></div></div>`;
+}
+function refreshStructure(){
+  const inp = qs('#fsAmt'); if(!inp) return;
+  const {school, exam, recs, learners} = feeCtx();
+  const fee = exam ? (school.feeStructure[exam.id]||{}).amount : null;
+  if(document.activeElement!==inp) inp.value = fee||'';
+  const billed = learners.filter(l=>(recs[l.id]||{}).billed!=null).length;
+  qs('#fsInfo').innerHTML = exam ? `${learners.length} learner(s) · <b>${billed}</b> invoiced · <b>${learners.length-billed}</b> not yet invoiced${fee?` · Expected (tuition + compulsory items): KES ${((fee+compTotal(school.feeStructure[exam.id]))*learners.length).toLocaleString()}`:''}` : 'Select a grade and exam above.';
+  qs('#discLearner').innerHTML = learners.map(l=>`<option value="${l.id}">${escapeHtml((l.adm?l.adm+' · ':'')+l.name)}</option>`).join('');
+  refreshItems();
+  const nm = id=>(school.students.find(x=>x.id===id)||{}).name||'—';
+  const list = exam ? school.feeAdjust.filter(a=>a.examId===exam.id).sort((a,b)=>b.ts-a.ts) : [];
+  const tot = list.filter(a=>!a.void).reduce((t,a)=>t+a.amount,0);
+  qs('#discList').innerHTML = list.length ? `<p class="small">Total discounts this term: <b>KES ${tot.toLocaleString()}</b></p><table><tr><th>Date</th><th>Learner</th><th>Amount</th><th>Reason</th><th></th></tr>${list.map(a=>`<tr style="${a.void?'opacity:.5;text-decoration:line-through':''}"><td>${escapeHtml(a.date)}</td><td style="text-align:left">${escapeHtml(nm(a.studentId))}</td><td>${a.amount.toLocaleString()}</td><td>${escapeHtml(a.reason)}</td><td>${a.void?'Voided':`<button class="danger" onclick="voidAdjust('${a.id}')">Void</button>`}</td></tr>`).join('')}</table>` : '';
+}
+function saveFeeStructure(quiet){
+  if(!canEdit()){ noEdit(); return; }
+  const {school, exam} = feeCtx(); const amt = Number(qs('#fsAmt').value);
+  if(!exam){ toast('Pick a grade and exam first','err'); return false; }
+  if(!(amt>0)){ toast('Enter the term fee','err'); return false; }
+  school.feeStructure[exam.id] = Object.assign({items:[]}, school.feeStructure[exam.id], {amount:amt, updatedAt:Date.now()}); saveDB(DB);
+  if(!quiet) toast('Fee saved'); refreshStructure(); return true;
+}
+function compTotal(st){ return ((st&&st.items)||[]).filter(i=>!i.optional).reduce((t,i)=>t+i.amount,0); }
+function invoiceLines(st, r){
+  const lines = [{name:'Tuition', amount:st.amount}];
+  (st.items||[]).filter(i=>!i.optional).forEach(i=>lines.push({name:i.name, amount:i.amount}));
+  (r.extras||[]).forEach(n=>{ const it=(st.items||[]).find(i=>i.optional && i.name===n); if(it) lines.push({name:it.name, amount:it.amount}); });
+  return lines;
+}
+function generateInvoices(){
+  if(!canEdit()){ noEdit(); return; }
+  if(!saveFeeStructure(true)) return;
+  const {school, exam, recs, learners} = feeCtx(); const st = school.feeStructure[exam.id];
+  const todo = learners.filter(l=>(recs[l.id]||{}).billed==null);
+  if(!todo.length){ qs('#fsMsg').innerHTML='<div class="msg">Every learner in this grade is already invoiced for this term.</div>'; return; }
+  const total = todo.reduce((t,l)=>t+invoiceLines(st, recs[l.id]||{}).reduce((a,x)=>a+x.amount,0),0);
+  if(!confirm(`Invoice ${todo.length} learner(s) for ${exam.name}, total KES ${total.toLocaleString()}? Existing balances are kept and the fees are added on top.`)) return;
+  const fi = currentFinance(); if(!school.fees[exam.id]) school.fees[exam.id] = {};
+  todo.forEach(l=>{ const r = school.fees[exam.id][l.id] || (school.fees[exam.id][l.id] = {}); r.openingBalance = Number(r.balance)||0; r.lines = invoiceLines(st, r); r.billed = r.lines.reduce((a,x)=>a+x.amount,0); r.balance = r.openingBalance + r.billed; r.updatedAt = Date.now(); r.updatedBy = fi?fi.name:'School Admin'; });
+  saveDB(DB); toast(`${todo.length} invoice(s) generated`); loadFinanceFeesSummary();
+  qs('#fsMsg').innerHTML=`<div class="msg ok">Invoiced ${todo.length} learner(s), total KES ${total.toLocaleString()}. Use <b>Print All Invoices</b> to hand them out.</div>`;
+}
+function addFeeItem(){
+  if(!canEdit()){ noEdit(); return; }
+  const {school, exam} = feeCtx(); const name = qs('#fiName').value.trim(), amt = Number(qs('#fiAmt').value);
+  if(!exam){ toast('Pick a grade and exam first','err'); return; }
+  if(!name||!(amt>0)){ toast('Enter an item name and amount','err'); return; }
+  const st = school.feeStructure[exam.id] || (school.feeStructure[exam.id] = {amount:0, items:[]}); st.items = st.items||[];
+  if(st.items.some(i=>i.name.toLowerCase()===name.toLowerCase())){ toast('That item already exists','err'); return; }
+  st.items.push({name, amount:amt, optional: qs('#fiType').value==='1'}); saveDB(DB);
+  qs('#fiName').value=''; qs('#fiAmt').value=''; toast('Item added'); refreshStructure();
+}
+function removeFeeItem(i){
+  if(!canEdit()){ noEdit(); return; }
+  const {school, exam} = feeCtx(); const st = school.feeStructure[exam.id]; if(!st||!st.items[i]) return;
+  if(!confirm('Remove this item? Invoices already generated are NOT changed.')) return;
+  const n = st.items[i].name; st.items.splice(i,1);
+  Object.values(school.fees[exam.id]||{}).forEach(r=>{ if(r.extras) r.extras = r.extras.filter(x=>x!==n); });
+  saveDB(DB); refreshStructure();
+}
+function refreshItems(){
+  if(!qs('#fiList')) return;
+  const {school, exam, recs, learners} = feeCtx(); const st = exam ? school.feeStructure[exam.id] : null; const items = (st&&st.items)||[];
+  qs('#fiList').innerHTML = items.length ? `<table><tr><th>Item</th><th>Amount</th><th>Type</th><th></th></tr>${items.map((i,k)=>`<tr><td style="text-align:left">${escapeHtml(i.name)}</td><td>${i.amount.toLocaleString()}</td><td>${i.optional?'Optional':'Compulsory'}</td><td><button class="danger" onclick="removeFeeItem(${k})">✕</button></td></tr>`).join('')}</table>` : '<p class="small">No extra items yet — only the tuition fee is charged.</p>';
+  qs('#optLearner').innerHTML = learners.map(l=>`<option value="${l.id}">${escapeHtml((l.adm?l.adm+' · ':'')+l.name)}</option>`).join('');
+  qs('#optItem').innerHTML = items.filter(i=>i.optional).map(i=>`<option>${escapeHtml(i.name)}</option>`).join('') || '<option value="">No optional items</option>';
+  const withX = learners.filter(l=>((recs[l.id]||{}).extras||[]).length);
+  qs('#optList').innerHTML = withX.length ? `<table><tr><th>Learner</th><th>Optional items</th></tr>${withX.map(l=>`<tr><td style="text-align:left">${escapeHtml(l.name)}</td><td>${escapeHtml(recs[l.id].extras.join(', '))}</td></tr>`).join('')}</table>` : '';
+}
+function assignExtra(add){
+  if(!canEdit()){ noEdit(); return; }
+  const {school, exam} = feeCtx(); const sid = qs('#optLearner').value, name = qs('#optItem').value;
+  const st = exam && school.feeStructure[exam.id]; const it = st && (st.items||[]).find(i=>i.optional && i.name===name);
+  if(!sid||!it){ toast('Pick a learner and an optional item','err'); return; }
+  if(!school.fees[exam.id]) school.fees[exam.id] = {};
+  const r = school.fees[exam.id][sid] || (school.fees[exam.id][sid] = {}); r.extras = r.extras||[];
+  const has = r.extras.includes(name);
+  if(add && has){ toast('Already assigned','err'); return; }
+  if(!add && !has){ toast('Not assigned to this learner','err'); return; }
+  const billed = r.billed!=null; r.lines = r.lines||[];
+  if(add){ r.extras.push(name); if(billed){ r.lines.push({name, amount:it.amount}); r.billed += it.amount; r.balance = (Number(r.balance)||0) + it.amount; } }
+  else { r.extras = r.extras.filter(x=>x!==name); if(billed){ const k = r.lines.findIndex(x=>x.name===name); if(k>-1) r.lines.splice(k,1); r.billed -= it.amount; r.balance = (Number(r.balance)||0) - it.amount; } }
+  r.updatedAt = Date.now(); saveDB(DB);
+  toast(billed ? (add?'Assigned and charged to balance':'Removed and credited back') : (add?'Assigned — charged when invoiced':'Removed')); loadFinanceFeesSummary();
+}
+function savePayInstr(){
+  if(!canEdit()){ noEdit(); return; } currentSchool().payInstructions = qs('#payInstr').value.trim(); saveDB(DB); toast('Payment instructions saved'); }
+function reverseInvoices(){
+  if(!canEdit()){ noEdit(); return; }
+  const {school, exam, recs, learners} = feeCtx(); if(!exam){ toast('Pick a grade and exam first','err'); return; }
+  const list = learners.filter(l=>(recs[l.id]||{}).billed!=null);
+  if(!list.length){ toast('No invoices to reverse for this grade','err'); return; }
+  if(!confirm(`Reverse invoices for ${list.length} learner(s)? Each learner's balance goes down by what was billed (payments and discounts stay). You can then fix the fee and generate again.`)) return;
+  list.forEach(l=>{ const r = recs[l.id]; r.balance = (Number(r.balance)||0) - r.billed; delete r.billed; delete r.lines; delete r.openingBalance; r.updatedAt = Date.now(); });
+  saveDB(DB); toast('Invoices reversed'); loadFinanceFeesSummary();
+}
+function printFeeSheet(){
+  const {school, exam} = feeCtx(); const st = exam && school.feeStructure[exam.id];
+  if(!st || !(st.amount>0)){ toast('Save the tuition fee for this grade first','err'); return; }
+  const cls = (school.classes.find(c=>c.id===exam.classId)||{}).name || '';
+  const comp = (st.items||[]).filter(i=>!i.optional), opt = (st.items||[]).filter(i=>i.optional), fm = n=>Number(n).toLocaleString();
+  const total = st.amount + comp.reduce((t,i)=>t+i.amount,0);
+  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  w.document.write(`<html><head><title>Fee Structure</title><style>body{font-family:Arial;padding:30px;font-size:14px;max-width:640px;margin:auto}h2{margin:0;color:#123a63}.c{color:#555;margin:2px 0}table{border-collapse:collapse;width:100%;margin:8px 0 14px}th,td{border:1px solid #999;padding:7px 9px;text-align:left}th{background:#e8eef5}.r{text-align:right}</style></head><body>
+  <h2>${escapeHtml(school.name)}</h2><p class="c">${escapeHtml([school.address,school.phone].filter(Boolean).join(' · '))}</p>
+  <p><b>FEE STRUCTURE</b> — ${escapeHtml(cls)} · ${escapeHtml(String(exam.term))} ${escapeHtml(String(exam.year))}</p>
+  <table><tr><th>Compulsory fees</th><th class="r">KES</th></tr><tr><td>Tuition</td><td class="r">${fm(st.amount)}</td></tr>${comp.map(i=>`<tr><td>${escapeHtml(i.name)}</td><td class="r">${fm(i.amount)}</td></tr>`).join('')}<tr><th>Total per term</th><th class="r">${fm(total)}</th></tr></table>
+  ${opt.length?`<table><tr><th>Optional services (charged only if requested)</th><th class="r">KES</th></tr>${opt.map(i=>`<tr><td>${escapeHtml(i.name)}</td><td class="r">${fm(i.amount)}</td></tr>`).join('')}</table>`:''}
+  ${school.payInstructions?`<p><b>How to pay:</b><br>${escapeHtml(school.payInstructions).replace(/\n/g,'<br>')}</p>`:''}
+  <p class="c">Please keep your payment receipt. Thank you.</p></body></html>`);
+  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+}
+function printInvoices(onlySid){
+  const {school, exam, recs, learners} = feeCtx(); if(!exam){ toast('Pick a grade and exam first','err'); return; }
+  const list = learners.filter(l=>(!onlySid||l.id===onlySid) && (recs[l.id]||{}).billed!=null);
+  if(!list.length){ toast(onlySid?'This learner has no invoice yet — generate invoices first':'No invoices yet — click Generate Invoices first','err'); return; }
+  const fm = n=>Number(n).toLocaleString();
+  const pages = list.map(l=>{
+    const r = recs[l.id]; const paid = school.payments.filter(p=>!p.void && p.examId===exam.id && p.studentId===l.id).reduce((t,p)=>t+p.amount,0);
+    return `<div class="pg"><h2>${escapeHtml(school.name)}</h2><p class="c">${escapeHtml([school.address,school.phone].filter(Boolean).join(' · '))}</p><p><b>FEE INVOICE</b> — ${escapeHtml(exam.name)} (${escapeHtml(String(exam.term))} ${escapeHtml(String(exam.year))})</p>
+    <p>Learner: <b>${escapeHtml(l.name)}</b> · Adm No: <b>${escapeHtml(l.adm||'-')}</b> · Date: ${new Date().toLocaleDateString()}</p>
+    <table><tr><th>Item</th><th class="r">Amount (KES)</th></tr>${(r.lines||[]).map(x=>`<tr><td>${escapeHtml(x.name)}</td><td class="r">${fm(x.amount)}</td></tr>`).join('')}
+    <tr><th>Total this term</th><th class="r">${fm(r.billed)}</th></tr>
+    ${r.openingBalance?`<tr><td>Balance brought forward</td><td class="r">${fm(r.openingBalance)}</td></tr>`:''}
+    ${r.discount?`<tr><td>Bursary / discount</td><td class="r">-${fm(r.discount)}</td></tr>`:''}
+    ${paid?`<tr><td>Payments received</td><td class="r">-${fm(paid)}</td></tr>`:''}
+    <tr><th>BALANCE DUE</th><th class="r">${fm(Number(r.balance)||0)}</th></tr></table>
+    ${school.payInstructions?`<p style="margin-top:12px"><b>How to pay:</b><br>${escapeHtml(school.payInstructions).replace(/\n/g,'<br>')}</p>`:''}<p class="c" style="margin-top:14px">Please pay before the term opens and keep your receipt. Thank you.</p></div>`;
+  }).join('');
+  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  w.document.write(`<html><head><title>Invoices</title><style>body{font-family:Arial;font-size:13px}.pg{padding:26px;page-break-after:always;max-width:640px;margin:auto}h2{margin:0;color:#123a63}.c{color:#555;margin:2px 0}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #999;padding:6px 8px;text-align:left}th{background:#e8eef5}.r{text-align:right}</style></head><body>${pages}</body></html>`);
+  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+}
+function applyDiscount(){
+  if(!canEdit()){ noEdit(); return; }
+  const {school, exam} = feeCtx(); const sid = qs('#discLearner').value, amt = Number(qs('#discAmt').value), reason = qs('#discReason').value.trim();
+  if(!exam||!sid){ toast('Pick a learner','err'); return; }
+  if(!(amt>0)||!reason){ toast('Enter an amount and a reason','err'); return; }
+  if(!school.fees[exam.id]) school.fees[exam.id] = {};
+  const r = school.fees[exam.id][sid] || (school.fees[exam.id][sid] = {});
+  r.balance = (Number(r.balance)||0) - amt; r.discount = (Number(r.discount)||0) + amt; r.updatedAt = Date.now();
+  const fi = currentFinance();
+  school.feeAdjust.push({id:uid('adj_'), examId:exam.id, studentId:sid, amount:amt, reason, date:today10(), by:fi?fi.name:'School Admin', ts:Date.now()});
+  saveDB(DB); qs('#discAmt').value=''; qs('#discReason').value=''; toast('Discount applied'); loadFinanceFeesSummary();
+}
+function voidAdjust(id){
+  if(!canEdit()){ noEdit(); return; }
+  const school = currentSchool(); const a = school.feeAdjust.find(x=>x.id===id); if(!a||a.void||!confirm('Void this discount? The amount is added back to the learner\'s balance.')) return;
+  const r = (school.fees[a.examId]||{})[a.studentId]; if(r){ r.balance = (Number(r.balance)||0) + a.amount; r.discount = Math.max(0,(Number(r.discount)||0) - a.amount); }
+  a.void = true; saveDB(DB); toast('Discount voided'); loadFinanceFeesSummary();
+}
+function smsPayConfirm(pay){
+  const school = currentSchool(), st = school.students.find(x=>x.id===pay.studentId)||{}, el = qs('#payMsg');
+  const msg = `Received KES ${pay.amount.toLocaleString()} for ${st.name} on ${pay.date}. Receipt ${pay.receiptNo}. Balance: KES ${pay.balanceAfter.toLocaleString()}. - ${school.name}`;
+  const built = buildSmsRecipients([{phone:st.parentPhone, message:msg}]);
+  const note = t=>{ el.innerHTML = `<div class="msg err">Payment saved. ${t}</div>`; };
+  if(!built.recipients.length){ note('SMS not sent: this learner has no valid parent phone number.'); return; }
+  if(!hasSmsConfig()){ note('SMS is not set up on this deployment.'); return; }
+  if(!smsPinGate('payMsg')) return;
+  if(smsSegments(msg) > (school.smsCredits||0)){ note('SMS not sent: not enough SMS credit.'); return; }
+  sendSmsBatch(school, built.recipients, {type:'Payment Confirmation', audience: st.name||'Parent'}, 'payMsg');
+}
+/* ---------- Finance: fees overview by grade ---------- */
+function financeOverviewHTML(){ return `<div class="card"><h2>📊 Fees Overview by Grade</h2><p class="small">Uses the latest exam/term of each grade.</p><div id="ovArea"></div></div>`; }
+function renderOverview(){
+  const el = qs('#ovArea'); if(!el) return; const school = currentSchool();
+  const rows = school.classes.map(c=>{
+    const exs = school.exams.filter(e=>e.classId===c.id); const e = exs[exs.length-1]; if(!e) return null;
+    const recs = school.fees[e.id]||{}, learners = studentsForExam(school, e);
+    const billed = learners.reduce((t,l)=>t+(Number((recs[l.id]||{}).billed)||0),0);
+    const owing = learners.filter(l=>Number((recs[l.id]||{}).balance)>0);
+    const out = owing.reduce((t,l)=>t+Number(recs[l.id].balance),0);
+    const paid = school.payments.filter(p=>!p.void && p.examId===e.id).reduce((t,p)=>t+p.amount,0);
+    return {name:c.name, exam:e.name, n:learners.length, billed, paid, out, owing:owing.length, rate: (paid+out)>0 ? Math.round(paid/(paid+out)*100) : null};
+  }).filter(Boolean);
+  if(!rows.length){ el.innerHTML='<p class="small">No exams yet.</p>'; return; }
+  const T = rows.reduce((a,r)=>({n:a.n+r.n,billed:a.billed+r.billed,paid:a.paid+r.paid,out:a.out+r.out,owing:a.owing+r.owing}),{n:0,billed:0,paid:0,out:0,owing:0});
+  const f = n=>n.toLocaleString();
+  el.innerHTML = `<table><tr><th>Grade</th><th>Term/Exam</th><th>Learners</th><th>Billed</th><th>Collected</th><th>Outstanding</th><th>Owing</th><th>Collected %</th></tr>
+  ${rows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td class="small">${escapeHtml(r.exam)}</td><td>${r.n}</td><td>${f(r.billed)}</td><td>${f(r.paid)}</td><td>${f(r.out)}</td><td>${r.owing}</td><td>${r.rate==null?'—':`<div style="background:#e6ecf3;border-radius:6px;overflow:hidden;min-width:70px"><div style="background:var(--ee);color:#fff;font-size:11px;padding:1px 5px;width:${r.rate}%;min-width:32px">${r.rate}%</div></div>`}</td></tr>`).join('')}
+  <tr><th colspan="2">Whole school</th><th>${T.n}</th><th>${f(T.billed)}</th><th>${f(T.paid)}</th><th>${f(T.out)}</th><th>${T.owing}</th><th>${(T.paid+T.out)>0?Math.round(T.paid/(T.paid+T.out)*100)+'%':'—'}</th></tr></table>
+  <p class="small">Amounts in KES. "Collected" counts payments recorded in this portal.</p>`;
+}
+
+/* ---------- Finance: backup/restore, ledger export, end-of-term closing report ---------- */
+function financeArchiveHTML(school){
+  const terms = [...new Set(school.exams.map(e=>String(e.term)+' '+String(e.year)))];
+  const d0 = new Date(); d0.setMonth(d0.getMonth()-3); const from = d0.toISOString().slice(0,8)+'01';
+  return `<div class="card"><h2>🧾 End-of-Term Closing Report</h2>
+  <p class="small">A whole-school summary for one term: fees per grade, collections by method, expenses by category, and the biggest outstanding balances. Choose the term, and the date range for expenses.</p>
+  <div class="row"><div><label>Term</label><select id="clTerm">${terms.map(t=>`<option>${escapeHtml(t)}</option>`).join('')||'<option value="">No exams yet</option>'}</select></div>
+  <div><label>Expenses from</label><input id="clFrom" type="date" value="${from}"></div><div><label>to</label><input id="clTo" type="date" value="${today10()}"></div>
+  <div class="flexbtns" style="align-self:flex-end"><button onclick="renderClosing()">👁 Preview</button><button class="gold" onclick="printClosing()">🖨 Print</button></div></div>
+  <div id="clArea" style="margin-top:10px"></div></div>
+  <div class="card"><h2>💾 Backup &amp; Export</h2>
+  <p class="small">Keep a copy of all finance records (fees, payments, expenses, discounts, fee structures) in one file. Restore it later or on another device.</p>
+  <div class="flexbtns"><button onclick="backupFinance()">⬇ Download Backup (.json)</button><button class="ghost" onclick="exportLedger()">⬇ All Transactions (CSV)</button></div>
+  <label style="margin-top:10px">Restore from a backup file <span class="small">— replaces the current finance records</span></label>
+  <input type="file" id="restoreFile" accept=".json,application/json" onchange="restoreFinance(this)"><div id="archMsg"></div></div>`;
+}
+function dlBlob(name, text, type){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type})); a.download=name; document.body.appendChild(a); a.click(); a.remove(); }
+function backupFinance(){
+  const sc = currentSchool();
+  dlBlob(`finance-backup-${sc.code}-${today10()}.json`, JSON.stringify({app:'EduTrack finance backup', version:1, school:sc.code, name:sc.name, exportedAt:new Date().toISOString(), fees:sc.fees, payments:sc.payments, expenses:sc.expenses, feeAdjust:sc.feeAdjust, feeStructure:sc.feeStructure, payInstructions:sc.payInstructions}), 'application/json');
+  toast('Backup downloaded');
+}
+function restoreFinance(input){
+  if(!canEdit()){ noEdit(); input.value=''; return; }
+  const f = input.files && input.files[0]; if(!f) return; const sc = currentSchool(), out = qs('#archMsg');
+  const r = new FileReader();
+  r.onload = ()=>{
+    try{
+      const d = JSON.parse(r.result);
+      if(d.app!=='EduTrack finance backup') throw new Error('This is not a finance backup file.');
+      if(d.school!==sc.code) throw new Error('This backup belongs to a different school ('+(d.name||d.school)+').');
+      if(!confirm(`Restore backup from ${new Date(d.exportedAt).toLocaleString()}?\n\nThis REPLACES all current fee balances, payments, expenses, discounts and fee structures.`)) { input.value=''; return; }
+      sc.fees = d.fees||{}; sc.payments = d.payments||[]; sc.expenses = d.expenses||[]; sc.feeAdjust = d.feeAdjust||[]; sc.feeStructure = d.feeStructure||{}; sc.payInstructions = d.payInstructions||'';
+      saveDB(DB); toast('Backup restored'); renderFinance();
+    }catch(e){ out.innerHTML = `<div class="msg err">${escapeHtml(String(e.message||e))}</div>`; }
+    input.value='';
+  };
+  r.readAsText(f);
+}
+function exportLedger(){
+  const sc = currentSchool(); const nm = id=>(sc.students.find(x=>x.id===id)||{}).name||'';
+  const rows = [['Date','Type','Reference','Learner / Category','Details','Money In','Money Out','Status','By']];
+  sc.payments.forEach(p=>rows.push([p.date,'Fee payment',p.receiptNo,nm(p.studentId),p.method+(p.ref?' '+p.ref:''),p.amount,'',p.void?'Voided':'OK',p.by]));
+  sc.expenses.forEach(e=>rows.push([e.date,'Expense','',e.category,e.desc||'','',e.amount,e.void?'Voided':'OK',e.by]));
+  sc.feeAdjust.forEach(a=>rows.push([a.date,'Discount/Bursary','',nm(a.studentId),a.reason,'','',a.void?'Voided':'OK ('+a.amount+')',a.by]));
+  rows.slice(1).sort((a,b)=>a[0]<b[0]?-1:1).forEach((r,i)=>rows[i+1]=r);
+  feesDownload(`all-transactions-${sc.code}-${today10()}.csv`, rows);
+}
+function closingData(){
+  const sc = currentSchool(); const key = qs('#clTerm').value; if(!key) return null;
+  const f = qs('#clFrom').value, t = qs('#clTo').value;
+  const exams = sc.exams.filter(e=>String(e.term)+' '+String(e.year)===key);
+  const rows = exams.map(e=>{
+    const recs = sc.fees[e.id]||{}, ls = studentsForExam(sc, e);
+    const billed = ls.reduce((a,l)=>a+(Number((recs[l.id]||{}).billed)||0),0);
+    const disc = sc.feeAdjust.filter(a=>!a.void && a.examId===e.id).reduce((a,x)=>a+x.amount,0);
+    const paid = sc.payments.filter(p=>!p.void && p.examId===e.id).reduce((a,p)=>a+p.amount,0);
+    const owing = ls.filter(l=>Number((recs[l.id]||{}).balance)>0);
+    return {cls:((sc.classes.find(c=>c.id===e.classId)||{}).name)||e.name, n:ls.length, billed, disc, paid, out:owing.reduce((a,l)=>a+Number(recs[l.id].balance),0), owing:owing.length};
+  });
+  const ids = new Set(exams.map(e=>e.id)); const byMethod = {};
+  sc.payments.filter(p=>!p.void && ids.has(p.examId)).forEach(p=>byMethod[p.method]=(byMethod[p.method]||0)+p.amount);
+  const exps = sc.expenses.filter(e=>!e.void && inRange(e.date,f,t)), byCat = {}; exps.forEach(e=>byCat[e.category]=(byCat[e.category]||0)+e.amount);
+  const top = []; exams.forEach(e=>{ const recs = sc.fees[e.id]||{}; studentsForExam(sc,e).forEach(l=>{ const b=Number((recs[l.id]||{}).balance); if(b>0) top.push({name:l.name, adm:l.adm||'', cls:(sc.classes.find(c=>c.id===e.classId)||{}).name||'', b}); }); });
+  top.sort((a,b)=>b.b-a.b);
+  return {sc, key, f, t, rows, byMethod, byCat, top:top.slice(0,10), spent:exps.reduce((a,e)=>a+e.amount,0)};
+}
+function closingHTML(d){
+  const fm = n=>Number(n).toLocaleString(), T = d.rows.reduce((a,r)=>({n:a.n+r.n,billed:a.billed+r.billed,disc:a.disc+r.disc,paid:a.paid+r.paid,out:a.out+r.out,owing:a.owing+r.owing}),{n:0,billed:0,disc:0,paid:0,out:0,owing:0});
+  return `<h3>${escapeHtml(d.sc.name)} — Closing Report: ${escapeHtml(d.key)}</h3>
+  <table><tr><th>Grade</th><th>Learners</th><th>Billed</th><th>Discounts</th><th>Collected</th><th>Outstanding</th><th>Owing</th></tr>
+  ${d.rows.map(r=>`<tr><td>${escapeHtml(r.cls)}</td><td>${r.n}</td><td>${fm(r.billed)}</td><td>${fm(r.disc)}</td><td>${fm(r.paid)}</td><td>${fm(r.out)}</td><td>${r.owing}</td></tr>`).join('')}
+  <tr><th>Total</th><th>${T.n}</th><th>${fm(T.billed)}</th><th>${fm(T.disc)}</th><th>${fm(T.paid)}</th><th>${fm(T.out)}</th><th>${T.owing}</th></tr></table>
+  <table><tr><th>Collections by method</th><th>KES</th></tr>${Object.keys(d.byMethod).map(k=>`<tr><td>${escapeHtml(k)}</td><td>${fm(d.byMethod[k])}</td></tr>`).join('')||'<tr><td colspan="2">None</td></tr>'}</table>
+  <table><tr><th>Expenses (${d.f} to ${d.t})</th><th>KES</th></tr>${Object.keys(d.byCat).map(k=>`<tr><td>${escapeHtml(k)}</td><td>${fm(d.byCat[k])}</td></tr>`).join('')||'<tr><td colspan="2">None</td></tr>'}<tr><th>Total expenses</th><th>${fm(d.spent)}</th></tr></table>
+  <p><b>Fees collected:</b> KES ${fm(T.paid)} &nbsp; <b>Expenses:</b> KES ${fm(d.spent)} &nbsp; <b>Net:</b> KES ${fm(T.paid-d.spent)}</p>
+  <table><tr><th>Top outstanding balances</th><th>Adm No.</th><th>Grade</th><th>KES</th></tr>${d.top.map(x=>`<tr><td>${escapeHtml(x.name)}</td><td>${escapeHtml(x.adm)}</td><td>${escapeHtml(x.cls)}</td><td>${fm(x.b)}</td></tr>`).join('')||'<tr><td colspan="4">No outstanding balances</td></tr>'}</table>`;
+}
+function renderClosing(){ const d = closingData(); qs('#clArea').innerHTML = d ? closingHTML(d) : '<p class="small">No term selected.</p>'; }
+function printClosing(){
+  const d = closingData(); if(!d){ toast('No term selected','err'); return; }
+  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  w.document.write(`<html><head><title>Closing Report</title><style>body{font-family:Arial;padding:22px;font-size:12px}h3{color:#123a63;margin:0 0 8px}table{border-collapse:collapse;width:100%;margin:8px 0}th,td{border:1px solid #999;padding:4px 7px;text-align:left}th{background:#e8eef5}</style></head><body>${closingHTML(d)}<p style="color:#666">Printed ${new Date().toLocaleString()}</p></body></html>`);
+  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
 }
 function feeCtx(){
   const school = currentSchool(); const exam = school.exams.find(e=>e.id===(qs('#ffExam')||{}).value);
@@ -6136,15 +6542,16 @@ function refreshPayCard(){
   qs('#payHistory').innerHTML = `<p class="small"><b>${live.length}</b> payment(s) this term · Collected: <b>KES ${total.toLocaleString()}</b></p>` + (pays.length ? `<table><tr><th>Receipt</th><th>Date</th><th>Learner</th><th>Amount</th><th>Method</th><th>Ref</th><th></th></tr>
   ${pays.slice(0,50).map(p=>`<tr style="${p.void?'opacity:.5;text-decoration:line-through':''}"><td>${escapeHtml(p.receiptNo)}</td><td>${escapeHtml(p.date)}</td><td style="text-align:left">${escapeHtml(nm(p.studentId))}</td><td>${p.amount.toLocaleString()}</td><td>${escapeHtml(p.method)}</td><td>${escapeHtml(p.ref||'-')}</td>
   <td>${p.void?'Voided':`<button class="ghost" onclick="printReceipt('${p.id}')">🖨</button> <button class="danger" onclick="voidPayment('${p.id}')">Void</button>`}</td></tr>`).join('')}</table>` : '');
-  previewFeeReminders();
 }
 function recordPayment(){
+  if(!canEdit()){ noEdit(); return; }
   const {school, exam, recs} = feeCtx(); const msg = qs('#payMsg');
   const sid = qs('#payLearner').value, amount = Number(qs('#payAmt').value);
   if(!exam || !sid){ msg.innerHTML='<div class="msg err">Pick a grade, term and learner first.</div>'; return; }
   if(!(amount>0)){ msg.innerHTML='<div class="msg err">Enter a valid amount.</div>'; return; }
   const method = qs('#payMethod').value, ref = qs('#payRef').value.trim();
   if(method==='M-Pesa' && ref && school.payments.some(p=>!p.void && p.ref && p.ref.toLowerCase()===ref.toLowerCase())){ msg.innerHTML='<div class="msg err">That reference code was already recorded.</div>'; return; }
+  const wantSms = !!(qs('#paySms')&&qs('#paySms').checked);
   const fi = currentFinance();
   const n = school.payments.reduce((m,p)=>Math.max(m,Number(String(p.receiptNo).replace(/\D/g,''))||0),0)+1;
   const pay = {id:uid('pay_'), receiptNo:'RCT-'+String(n).padStart(5,'0'), examId:exam.id, studentId:sid, amount, method, ref, date:qs('#payDate').value||new Date().toISOString().slice(0,10), by:fi?fi.name:'DOS/HOI', ts:Date.now()};
@@ -6154,9 +6561,10 @@ function recordPayment(){
   rec.balance = pay.balanceAfter; rec.updatedAt = Date.now(); rec.updatedBy = pay.by;
   school.payments.push(pay); saveDB(DB);
   qs('#payAmt').value=''; qs('#payRef').value='';
-  toast('Payment recorded'); loadFinanceFeesSummary(); printReceipt(pay.id);
+  toast('Payment recorded'); loadFinanceFeesSummary(); if(wantSms) smsPayConfirm(pay); printReceipt(pay.id);
 }
 function voidPayment(id){
+  if(!canEdit()){ noEdit(); return; }
   const school = currentSchool(); const p = school.payments.find(x=>x.id===id); if(!p||p.void) return;
   if(!confirm(`Void ${p.receiptNo}? The KES ${p.amount.toLocaleString()} will be added back to the learner's balance.`)) return;
   const rec = (school.fees[p.examId]||{})[p.studentId];
@@ -6191,6 +6599,7 @@ function previewFeeReminders(){
   el.innerHTML = `${items.length} learner(s) owing · <b>${built.recipients.length}</b> parent(s) reachable · ≈ ${credits} credit(s)${built.invalid+(items.length-items.filter(i=>i.phone).length)?` · ${built.invalid+(items.length-items.filter(i=>i.phone).length)} without a valid parent phone (skipped)`:''}`;
 }
 function sendFeeReminders(){
+  if(!canEdit()){ noEdit(); return; }
   if(smsSending){ toast('A send is already in progress','err'); return; }
   if(!hasSmsConfig()){ qs('#remMsg').innerHTML='<div class="msg err">SMS is not set up on this deployment.</div>'; return; }
   if(!smsPinGate('remMsg')) return;
@@ -6202,14 +6611,31 @@ function sendFeeReminders(){
   sendSmsBatch(school, built.recipients, {type:'Fee Reminder', audience: exam?exam.name:'Fees'}, 'remMsg');
 }
 function renderFinance(){
-  const school = currentSchool();
-  const fi = currentFinance();
+  const school = currentSchool(); const fi = currentFinance();
   if(!fi){ logout(); setTimeout(()=>toast('Your finance account is no longer available','err'),50); return; }
-  const welcome = `<div class="card no-print"><h2>💰 Welcome, ${escapeHtml(fi.name)}</h2>
-  <p class="small">Buy and monitor SMS credit, import and review fee balances, print arrears lists, record payments and receipts, send fee reminders, and view learner report forms. You don't have access to marks entry or school setup.</p>
-  </div>`;
-  app.innerHTML = welcome + tplFinanceCredits(school) + financeFeesTabHTML(school) + financePayTabHTML(school) + tplReportsPicker(school) + tplFinanceAccount(fi);
-  if(school.classes.length){ loadFinanceFeesSummary(); fillRepExams(); fillRepLearners(); }
+  const hasC = school.classes.length > 0;
+  const menu = [{group:'Overview', items:[['dashboard','🏠 Dashboard']]},
+    {group:'Fees', items:[['fees','💵 Fee Balances'],['structure','🏷 Fee Structure & Invoices']]},
+    {group:'Money', items:[['pay','🧾 Payments & Reminders'],['books','📈 Cash Book & Expenses']]},
+    {group:'SMS', items:[['sms','💳 SMS Credit']]},
+    {group:'Reports', items:[['archive','📑 Closing Report & Backup'],['reports','📄 Report Cards']]}];
+  const banner = canEdit() ? '' : '<div class="msg">👁 <b>View-only access</b> — you can view, print and export, but not change records.</div>';
+  const noGrades = '<div class="card"><p class="small">No grades or exams set up yet — ask your DOS/HOI to create them first.</p></div>';
+  let body;
+  if(finTab==='dashboard') body = `<div class="card no-print"><h2>💰 Welcome, ${escapeHtml(fi.name)}</h2><p class="small">Tap <b>☰ Menu</b> to open Fee Balances, Fee Structure &amp; Invoices, Payments &amp; Reminders, Cash Book &amp; Expenses, SMS Credit and Reports.</p></div>` + portalQuick('gotoFinTab',[['pay','🧾 Record Payment'],['fees','💵 Fee Balances'],['structure','🏷 Invoices'],['books','📈 Cash Book'],['sms','💳 SMS Credit']]) + (hasC ? financeOverviewHTML() : noGrades);
+  else if(finTab==='sms') body = tplFinanceCredits(school);
+  else if(!hasC) body = noGrades;
+  else if(finTab==='fees') body = financeFeesTabHTML(school);
+  else if(finTab==='structure') body = financeCtxBar(school) + financeStructureHTML(school);
+  else if(finTab==='pay') body = financeCtxBar(school) + financePayTabHTML(school);
+  else if(finTab==='books') body = financeBooksHTML(school);
+  else if(finTab==='archive') body = financeArchiveHTML(school);
+  else body = tplReportsPicker(school);
+  app.innerHTML = portalShell({menu, tab:finTab, goto:'gotoFinTab', side:school.name, headName:fi.name, headSub:'Finance · '+school.name+(canEdit()?'':' · View-only')}) + `<div id="finContent">${banner}${body}</div>`;
+  if(hasC){
+    if(finTab==='fees') loadFinanceFeesSummary(); else finRefreshAll();
+    if(finTab==='reports'){ fillRepExams(); fillRepLearners(); }
+  }
 }
 
 /* ============================= REPORTS ============================= */
@@ -7002,6 +7428,7 @@ function updateTopupCreditsPreview(){
 // approve it (Admin → 💬 SMS Credits) before smsCredits actually moves. This is the whole
 // "payment" flow: no card processor, just a paper trail the admin checks against M-Pesa.
 function submitSmsTopupRequest(){
+  if(!canEdit()){ noEdit(); return; }
   const school = currentSchool();
   const amount = Number(qs('#topupAmount').value);
   const mpesa = qs('#topupMpesa').value.trim();
