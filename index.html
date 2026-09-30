@@ -346,6 +346,7 @@ const ADMIN_ACCESS_KEY = 'nmVoCBopKpciLvsmCD9EuXTk';
 // same as ADMIN_ACCESS_KEY.
 const DOS_ACCESS_KEY = 'LUg35O6eNUautNpN8PsphJIM';
 const TEACHER_ACCESS_KEY = 'HreuYy1Wap0C9cEWzrrDg4y2';
+const SADMIN_ACCESS_KEY = 'e2veN5DHB1chCEZp8HOcMg2I';
 const FINANCE_ACCESS_KEY = 'Qk92LxT4mRb7ZpN0WvXsY3Hd';
 /* ============================= DATA LAYER ============================= */
 const DB_KEY = 'cbc_markbook_db_v1';
@@ -422,6 +423,7 @@ function ensureSchoolShape(s){
   if(!Array.isArray(s.dos)) s.dos = [];
   if(!Array.isArray(s.finance)) s.finance = [];
   if(!Array.isArray(s.payments)) s.payments = [];
+  if(!Array.isArray(s.sadmins)) s.sadmins = (s.dos&&s.dos[0]) ? [{id:'sa_'+s.dos[0].id, name:s.dos[0].name||'School Admin', username:s.dos[0].username, password:s.dos[0].password, email:'', phone:''}] : [];
   // Fees: s.fees[examId][studentId] = {balance, nextTermFee, updatedAt, updatedBy}. Keyed
   // the same way as attendance/remarks — one record per learner per exam/term — set either
   // by bulk CSV import or by hand from the Finance Portal. Purely informational (shown on
@@ -1978,7 +1980,7 @@ function route(){
     logout();
     return;
   }
-  if(session.role==='dos' || session.role==='teacher' || session.role==='finance' || session.role==='parent'){
+  if(session.role==='dos' || session.role==='teacher' || session.role==='finance' || session.role==='sadmin' || session.role==='parent'){
     const school = session.role==='parent' ? parentSchoolData : DB.schools[session.schoolCode];
     const access = schoolAccessStatus(school);
     if(!access.ok){
@@ -1993,11 +1995,12 @@ function route(){
   else if(session.role==='dos'){ renderDOS(); maybeShowWaGroupPrompt(); }
   else if(session.role==='teacher') renderTeacher();
   else if(session.role==='finance') renderFinance();
+  else if(session.role==='sadmin') renderSadmin();
   else if(session.role==='parent') renderParent();
   // Parent sessions deliberately never call ensureSyncConnected: they get one snapshot
   // of the school's data at login (see doParentLogin), never a live/writable connection,
   // and never touch renderDOS/renderTeacher/renderAdmin or anything reachable from them.
-  if(session.role==='dos' || session.role==='teacher' || session.role==='finance') ensureSyncConnected(DB.schools[session.schoolCode]);
+  if(session.role==='dos' || session.role==='teacher' || session.role==='finance' || session.role==='sadmin') ensureSyncConnected(DB.schools[session.schoolCode]);
   if(session.role==='admin'){ ensureAdminSyncConnected(); refreshAllSchoolsFromCloud(true); }
 }
 
@@ -2048,6 +2051,7 @@ function renderLogin(){
     if(qp.p === DOS_ACCESS_KEY) activeRole = 'dos';
     else if(qp.p === TEACHER_ACCESS_KEY) activeRole = 'teacher';
     else if(qp.p === FINANCE_ACCESS_KEY) activeRole = 'finance';
+    else if(qp.p === SADMIN_ACCESS_KEY) activeRole = 'sadmin';
     else if(qp.role === 'parent') activeRole = 'parent';
     else if(qp.role === 'teacher') activeRole = 'teacher'; // legacy link, pre-dates ?p=
     else activeRole = 'dos'; // legacy default for a bare ?school=CODE link
@@ -2059,6 +2063,7 @@ function renderLogin(){
   const heroText = activeRole==='parent' ? 'Parent Portal'
     : activeRole==='teacher' ? 'Teacher Portal'
     : activeRole==='finance' ? 'Finance Portal'
+    : activeRole==='sadmin' ? 'School Admin Portal'
     : activeRole==='dos' ? 'DOS / HOI Portal'
     : 'Admin / Owner Portal';
   app.innerHTML = `
@@ -2134,6 +2139,21 @@ function renderLogin(){
           <div class="login-field">${LOCK_ICO}<input type="password" id="fpass" placeholder="Password" onkeydown="if(event.key==='Enter')doFinanceLogin()"></div>
           ${syncFieldHtml(qp, false)}
           <button class="login-continue" id="loginBtn" onclick="doFinanceLogin()">Sign In</button>
+        </div>
+        <div id="loginMsg"></div>`;
+    } else if(activeRole==='sadmin'){
+      f.innerHTML = `
+        <p class="login-sub">Please enter your username to access your account.</p>
+        <div id="loginStep1">
+          ${prefillCode ? `<input type="hidden" id="scode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="scode" placeholder="School Code (8-digit)" maxlength="8"></div>`}
+          <div class="login-field">${PERSON_ICO}<input class="login-id-field" id="suser" placeholder="Username" onkeydown="if(event.key==='Enter')loginStep2()"></div>
+          <button class="login-continue" onclick="loginStep2()">Continue</button>
+        </div>
+        <div id="loginStep2" style="display:none">
+          <p class="login-step-label">Signing in as <b id="loginWho"></b><a href="#" onclick="loginStepBack();return false;">Change</a></p>
+          <div class="login-field">${LOCK_ICO}<input type="password" id="spass" placeholder="Password" onkeydown="if(event.key==='Enter')doSadminLogin()"></div>
+          ${syncFieldHtml(qp, false)}
+          <button class="login-continue" id="loginBtn" onclick="doSadminLogin()">Sign In</button>
         </div>
         <div id="loginMsg"></div>`;
     } else {
@@ -2492,6 +2512,37 @@ async function doFinanceLogin(){
   const access = schoolAccessStatus(school);
   if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
   setSession({role:'finance', schoolCode:code, userId:rec.id, label:`${rec.name} (Finance) · ${school.name}`});
+  route();
+}
+async function doSadminLogin(){
+  const code = qs('#scode').value.trim();
+  const u = qs('#suser').value.trim();
+  const p = qs('#spass').value;
+  setLoginBusy(true, 'Logging in…');
+  const cached = DB.schools[code];
+  const cachedRec = cached && cached.sadmins.find(f=>f.username===u && f.password===p);
+  if(cachedRec){
+    const access = schoolAccessStatus(cached);
+    if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
+    setSession({role:'sadmin', schoolCode:code, userId:cachedRec.id, label:`${cachedRec.name} (School Admin) · ${cached.name}`});
+    route();
+    const config = resolveLoginSyncConfig(code);
+    if(config) bootstrapFromCloudIfNeeded(code, config).then(()=>{ if(session && session.role==='sadmin' && session.schoolCode===code) route(); });
+    return;
+  }
+  const config = resolveLoginSyncConfig(code);
+  if(config){
+    qs('#loginMsg').innerHTML='<div class="msg ok">Connecting to sync…</div>';
+    try{ await withTimeout(bootstrapFromCloudIfNeeded(code, config), 8000, 'Sync'); }
+    catch(e){ console.warn('Sync bootstrap did not complete in time, continuing with local login', e); qs('#loginMsg').innerHTML='<div class="msg err">Sync is slow to respond — checking what\'s on this device instead.</div>'; }
+  }
+  const school = DB.schools[code];
+  if(!school){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
+  const rec = school.sadmins.find(f=>f.username===u && f.password===p);
+  if(!rec){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">Invalid credentials.</div>'; return; }
+  const access = schoolAccessStatus(school);
+  if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
+  setSession({role:'sadmin', schoolCode:code, userId:rec.id, label:`${rec.name} (School Admin) · ${school.name}`});
   route();
 }
 // Parent Portal login: instead of a username/password, a parent proves they're looking
@@ -2891,9 +2942,11 @@ function showCredentials(code){
   const dosRec = s.dos[0];
   const dosUrl = location.origin + location.pathname + `?school=${s.code}&p=${DOS_ACCESS_KEY}`;
   const teacherUrl = location.origin + location.pathname + `?school=${s.code}&p=${TEACHER_ACCESS_KEY}`;
+  const sadminUrl = location.origin + location.pathname + `?school=${s.code}&p=${SADMIN_ACCESS_KEY}`;
   const parentUrl = location.origin + location.pathname + `?school=${s.code}&role=parent`;
   qs('#linkArea').innerHTML = `<div class="card" style="background:#f7f9fc">
     <h2 style="margin-top:0">🪪 School Credentials — ${escapeHtml(s.name)}</h2>
+    <p class="small"><b>School Admin link</b> (same login as DOS/HOI at first; they create DOS &amp; Finance accounts from it):</p><div class="linkbox">${sadminUrl}</div>
     <div class="row">
       <div><label>School Code</label><div class="linkbox school-code" style="text-align:center">${s.code}</div></div>
       <div><label>DOS/HOI Username</label><div class="linkbox">${escapeHtml(dosRec?dosRec.username:'-')}</div></div>
@@ -3048,7 +3101,6 @@ const DOS_MENU = [
   {group:'School setup', items:[['classes','🏷 Grades'],['areas','📚 Learning Areas'],['grading','🎯 Grading System'],['students','🧑‍🎓 Learners'],['teachers','👩‍🏫 Teachers &amp; Permissions']]},
   {group:'Exams &amp; marks', items:[['exams','📝 Exams'],['marks','✏️ Enter/Edit Marks']]},
   {group:'Results &amp; reports', items:[['assess','🖨 Assessment Sheets'],['analysis','📈 Results Analysis'],['reports','📄 Reports'],['history','🗂 Exam History']]},
-  {group:'Finance', items:[['finance','💰 Finance Accounts']]},
   {group:'Parents', items:[['assignments','📎 Assignments'],['sms','💬 SMS to Parents'],['links','🔗 Share Login Links']]},
   {group:'School &amp; account', items:[['profile','🏫 School Details'],['account','🔑 My Account'],['help','❓ Help / Manual']]}
 ];
@@ -3090,7 +3142,7 @@ function tplShareLinks(school){
   return `<div class="card"><h2>🔗 Share Login Links</h2>
   <p class="small">School Code: <b class="school-code">${school.code}</b></p>
   <p class="small">Get a ready-made link to share on WhatsApp or the notice board, so nobody has to type the school code by hand.</p>
-  <div class="flexbtns"><button class="ghost" onclick="showLinkDos()">🔗 Get Teacher Login Link</button> <button class="ghost" onclick="showLinkFinance()">🔗 Get Finance Login Link</button> <button class="ghost" onclick="showLinkParent()">🔗 Get Parent Portal Link</button></div>
+  <div class="flexbtns"><button class="ghost" onclick="showLinkDos()">🔗 Get Teacher Login Link</button> <button class="ghost" onclick="showLinkParent()">🔗 Get Parent Portal Link</button></div>
   <div id="dosLinkArea"></div></div>`;
 }
 function copyLinkBox(btn){
@@ -4726,13 +4778,71 @@ function resetTeacherPassword(tid){
   alert(t.name+" (username: "+t.username+") — new password: "+newPw+"\n\nShare this with them directly.");
 }
 
+
+function tplFinanceCredits(school){
+  const bal = school.smsCredits||0, price = DB.settings.smsPricePerCredit||0;
+  const payNote = DB.settings.smsPaymentInstructions ? `<div class="msg" style="background:#f7f9fc;border-color:#cfe0ef">${escapeHtml(DB.settings.smsPaymentInstructions).replace(/\n/g,'<br>')}</div>` : `<p class="small">Contact the platform administrator to buy more SMS credit.</p>`;
+  const myRequests = (school.smsTopupRequests||[]).slice().reverse();
+  setTimeout(()=>watchSmsBalances([school.code]), 0);
+  return `<div class="card"><h2>💳 SMS Credit — Balance &amp; Top-up</h2>
+  <div class="linkbox" style="text-align:center;font-size:22px;font-weight:700;margin-bottom:8px">Balance: <span data-smsbal="${school.code}">${bal}</span> credit(s)<span class="small" style="font-weight:400" data-smskes="${school.code}">${price?` (≈ KES ${(bal*price).toFixed(0)})`:''}</span></div>
+  <p class="msg err" data-smslow="${school.code}" style="${bal<20?'':'display:none'}">⚠ Low balance — top up so results and announcements can still be sent.</p>
+  ${payNote}${price?`<p class="small">Price: <b>KES ${price}</b> per credit.</p>`:''}
+  <div class="row"><div><label>Amount Paid (KES)</label><input id="topupAmount" type="number" min="1" oninput="updateTopupCreditsPreview()"></div><div><label>M-Pesa Code</label><input id="topupMpesa" placeholder="e.g. QAB1C2D3E4"></div></div>
+  <label>Note (optional)</label><input id="topupNote"><p class="small" id="topupCreditsPreview"></p>
+  <div class="flexbtns"><button onclick="submitSmsTopupRequest()">📨 I've Paid — Request Top-up</button></div><div id="topupMsg"></div>
+  ${myRequests.length?`<table style="margin-top:10px"><tr><th>When</th><th>Amount</th><th>M-Pesa Code</th><th>Credits</th><th>Status</th></tr>${myRequests.map(r=>`<tr><td>${new Date(r.ts).toLocaleString()}</td><td>KES ${r.amountPaid}</td><td>${escapeHtml(r.mpesaCode||'-')}</td><td>${r.credits||'-'}</td><td>${r.status==='pending'?'<span class="badge AE">Pending</span>':r.status==='approved'?'<span class="badge EE">Approved</span>':'<span class="badge BE">Rejected</span>'}</td></tr>`).join('')}</table>`:''}
+  </div>`;
+}
+
+/* ============================= SCHOOL ADMIN PORTAL =============================
+   Top-level school account: creates the DOS/HOI and Finance accounts and hands out the
+   portal links. DOS creates teachers; Finance handles fees + SMS credit. */
+function rerenderRole(){ if(session && session.role==='sadmin') renderSadmin(); else renderDOS(); }
+function portalUrl(code, key, extra){ return location.origin + location.pathname + `?school=${code}` + (key?`&p=${key}`:'') + (extra||''); }
+function renderSadmin(){
+  const school = currentSchool(); const me = school.sadmins.find(x=>x.id===session.userId);
+  if(!me){ logout(); setTimeout(()=>toast('Your admin account is no longer available','err'),50); return; }
+  const links = [['🎓 DOS / HOI Portal', portalUrl(school.code,DOS_ACCESS_KEY),'Academics: marks, learners, results & announcements SMS. The DOS creates teacher accounts and gets the teacher link.'],
+    ['💰 Finance Portal', portalUrl(school.code,FINANCE_ACCESS_KEY),'Fees, payments & receipts, SMS credit balance and top-ups.'],
+    ['👨‍👩‍👧 Parent Portal', portalUrl(school.code,null,'&role=parent'),'Parents view their child\'s reports with name + admission no. + PIN.']];
+  const stat=(v,t)=>`<div style="flex:1;min-width:120px;background:#f7f9fc;border:1px solid var(--border);border-radius:9px;padding:9px 11px"><div class="small">${t}</div><div style="font-size:18px;font-weight:800;color:var(--navy)">${v}</div></div>`;
+  const nStu = school.students.length, nTea = school.teachers.length;
+  app.innerHTML = `<div class="card"><h2>🏫 ${escapeHtml(school.name)} — School Administration</h2>
+  <p class="small">School code: <b>${school.code}</b>. Create the DOS/HOI and Finance accounts here, then share the matching link + login with each person.</p>
+  <div class="row">${stat(nStu,'Learners')}${stat(nTea,'Teachers')}${stat(school.dos.length,'DOS/HOI accounts')}${stat(school.finance.length,'Finance accounts')}${stat(school.smsCredits||0,'SMS credits')}</div></div>
+  <div class="card"><h2>🔗 Portal Links</h2>${links.map(l=>`<div style="margin-bottom:10px"><b>${l[0]}</b> <span class="small">— ${l[2]}</span><div class="linkbox" style="margin-top:4px">${l[1]}</div><button class="ghost" style="margin-top:4px" onclick="copyLinkBox(this)">📋 Copy link</button></div>`).join('')}</div>
+  <div class="card"><h2>🎓 DOS / HOI Accounts</h2>
+  <div class="row"><div><label>Name</label><input id="dsName"></div><div><label>Username</label><input id="dsUser"></div><div><label>Password</label><input id="dsPass" placeholder="blank = auto-generate"></div><div style="align-self:flex-end"><button onclick="addDosAcct()">➕ Add DOS/HOI</button></div></div>
+  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Actions</th></tr>${school.dos.map(d=>`<tr><td>${escapeHtml(d.name||'-')}</td><td>${escapeHtml(d.username)}</td><td><button class="ghost" onclick="resetDosAcct('${d.id}')">🔑 Reset Password</button> <button class="danger" onclick="delDosAcct('${d.id}')">✕</button></td></tr>`).join('')}</table></div>
+  ${tplFinanceAccounts(school)}
+  <div class="card"><h2>🏫 School Admin Accounts</h2><div class="row"><div><label>Name</label><input id="saName"></div><div><label>Username</label><input id="saUser"></div><div><label>Password</label><input id="saPass" placeholder="blank = auto-generate"></div><div style="align-self:flex-end"><button onclick="addSadminAcct()">➕ Add</button></div></div>
+  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Actions</th></tr>${school.sadmins.map(a=>`<tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.username)}${a.id===me.id?' <span class="small">(you)</span>':''}</td><td><button class="ghost" onclick="resetSadminAcct('${a.id}')">🔑 Reset Password</button> ${a.id===me.id?'':`<button class="danger" onclick="delSadminAcct('${a.id}')">✕</button>`}</td></tr>`).join('')}</table></div>`;
+}
+function acctPw(v){ return v || Math.random().toString(36).slice(2,10); }
+function addAcct(list, prefix, nameId, userId, passId, label){
+  const school = currentSchool(); const name = qs(nameId).value.trim(), username = qs(userId).value.trim();
+  if(!name||!username){ toast('Enter a name and username','err'); return; }
+  if(school.dos.concat(school.finance,school.sadmins,school.teachers).some(x=>x.username===username)){ toast('That username is already taken','err'); return; }
+  const password = acctPw(qs(passId).value.trim());
+  list.push({id:uid(prefix), name, username, password, email:'', phone:''}); saveDB(DB);
+  toast(`${label} added. Password: ${password}`); renderSadmin();
+}
+function addDosAcct(){ addAcct(currentSchool().dos,'dos_','#dsName','#dsUser','#dsPass','DOS/HOI account'); }
+function addSadminAcct(){ addAcct(currentSchool().sadmins,'sa_','#saName','#saUser','#saPass','Admin account'); }
+function resetAcct(list,id){ const a=list.find(x=>x.id===id); if(!a) return; if(!confirm(`Reset password for ${a.username}?`)) return; a.password = acctPw(''); saveDB(DB); alert(`New password for ${a.username}: ${a.password}`); }
+function resetDosAcct(id){ resetAcct(currentSchool().dos,id); }
+function resetSadminAcct(id){ resetAcct(currentSchool().sadmins,id); }
+function delDosAcct(id){ const sc=currentSchool(); if(sc.dos.length<=1){ toast('Keep at least one DOS/HOI account','err'); return; } if(!confirm('Remove this DOS/HOI account?')) return; sc.dos=sc.dos.filter(x=>x.id!==id); saveDB(DB); renderSadmin(); }
+function delSadminAcct(id){ if(!confirm('Remove this admin account?')) return; const sc=currentSchool(); sc.sadmins=sc.sadmins.filter(x=>x.id!==id); saveDB(DB); renderSadmin(); }
+
 /* ============================= FINANCE ACCOUNTS (DOS-side management) =============================
    A Finance account is deliberately simpler than a Teacher account: no per-class/learning-area
    assignments or approval permissions — it only ever needs to reach the Finance Portal (fees
    import + report viewing), so there is nothing else to grant. */
 function tplFinanceAccounts(school){
   return `<div class="card"><h2>💰 Finance Accounts</h2>
-  <p class="small">Finance accounts can bulk-import fee balances (via CSV), see the fees summary, and view learner report forms — but cannot enter or edit marks, and never see any other DOS/HOI or Teacher tools.</p>
+  <p class="small">Finance accounts manage SMS credit, record payments, can bulk-import fee balances (via CSV), see the fees summary, and view learner report forms — but cannot enter or edit marks, and never see any other DOS/HOI or Teacher tools.</p>
   <div class="row">
     <div><label>Name</label><input id="fiName"></div>
     <div><label>Username</label><input id="fiUser"></div>
@@ -4767,11 +4877,11 @@ function addFinance(){
   const school = currentSchool();
   if(school.finance.some(f=>f.username===username)){ toast('That username is already taken','err'); return; }
   school.finance.push({id:uid('fi_'), name, username, password, email, phone});
-  saveDB(DB); toast(`Finance account added. Password: ${password}`); renderDOS();
+  saveDB(DB); toast(`Finance account added. Password: ${password}`); rerenderRole();
 }
 function delFinance(fid){
   if(!confirm('Remove this finance account?')) return;
-  const school = currentSchool(); school.finance = school.finance.filter(f=>f.id!==fid); saveDB(DB); renderDOS();
+  const school = currentSchool(); school.finance = school.finance.filter(f=>f.id!==fid); saveDB(DB); rerenderRole();
 }
 function resetFinancePassword(fid){
   const school = currentSchool();
@@ -6096,9 +6206,9 @@ function renderFinance(){
   const fi = currentFinance();
   if(!fi){ logout(); setTimeout(()=>toast('Your finance account is no longer available','err'),50); return; }
   const welcome = `<div class="card no-print"><h2>💰 Welcome, ${escapeHtml(fi.name)}</h2>
-  <p class="small">Import and review fee balances, print arrears lists, record payments and receipts, send fee reminders, and view learner report forms. You don't have access to marks entry or school setup.</p>
+  <p class="small">Buy and monitor SMS credit, import and review fee balances, print arrears lists, record payments and receipts, send fee reminders, and view learner report forms. You don't have access to marks entry or school setup.</p>
   </div>`;
-  app.innerHTML = welcome + financeFeesTabHTML(school) + financePayTabHTML(school) + tplReportsPicker(school) + tplFinanceAccount(fi);
+  app.innerHTML = welcome + tplFinanceCredits(school) + financeFeesTabHTML(school) + financePayTabHTML(school) + tplReportsPicker(school) + tplFinanceAccount(fi);
   if(school.classes.length){ loadFinanceFeesSummary(); fillRepExams(); fillRepLearners(); }
 }
 
@@ -6841,7 +6951,7 @@ function tplSms(school){
       <div><label>SMS Credit Balance</label><div class="linkbox" style="text-align:center;font-size:20px;font-weight:700"><span data-smsbal="${school.code}">${bal}</span><span class="small" style="font-weight:400" data-smskes="${school.code}">${price?` (≈ KES ${(bal*price).toFixed(0)})`:''}</span></div></div>
       <div><label>Learners with a parent phone on file</label><div class="linkbox" style="text-align:center">${withPhone} of ${school.students.length}</div></div>
     </div>
-    <p class="msg err" data-smslow="${school.code}" style="margin-top:8px;${bal < LOW_BALANCE ? '' : 'display:none'}">⚠ Low balance — top up below before sending to a large grade or the whole school.</p>
+    <p class="msg err" data-smslow="${school.code}" style="margin-top:8px;${bal < LOW_BALANCE ? '' : 'display:none'}">⚠ Low balance — ask Finance to top up before sending to a large grade or the whole school.</p>
     <div class="row" style="margin-top:8px">
       <div><label>🔐 School SMS PIN (6 digits, issued by the platform administrator)</label>
         <input id="smsPin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="Enter once — kept only until you log out" value="${escapeHtml(smsPinMem[school.code]||'')}" oninput="smsPinMem['${school.code}']=this.value.trim()"></div>
@@ -6850,23 +6960,7 @@ function tplSms(school){
     <p class="small">Add parent phone numbers on the <b>🧑‍🎓 Learners</b> tab — a learner with no number is skipped and shown as "missing" below. 1 credit = 1 SMS (up to 153 characters); longer messages use more credits per recipient.</p>
   </div>
 
-  <div class="card">
-    <h2>💳 Buy SMS Credit</h2>
-    ${payNote}
-    ${price?`<p class="small">Price: <b>KES ${price}</b> per credit.</p>`:''}
-    <div class="row">
-      <div><label>Amount Paid (KES)</label><input id="topupAmount" type="number" min="1" oninput="updateTopupCreditsPreview()"></div>
-      <div><label>M-Pesa Code</label><input id="topupMpesa" placeholder="e.g. QAB1C2D3E4"></div>
-    </div>
-    <label>Note (optional)</label>
-    <input id="topupNote" placeholder="Anything else we should know">
-    <p class="small" id="topupCreditsPreview"></p>
-    <div class="flexbtns"><button onclick="submitSmsTopupRequest()">📨 I've Paid — Request Top-up</button></div>
-    <div id="topupMsg"></div>
-    ${myRequests.length?`<table style="margin-top:10px"><tr><th>When</th><th>Amount</th><th>M-Pesa Code</th><th>Status</th></tr>
-    ${myRequests.map(r=>`<tr><td>${new Date(r.ts).toLocaleString()}</td><td>KES ${r.amountPaid}</td><td>${escapeHtml(r.mpesaCode||'-')}</td><td>${r.status==='pending'?'<span class="badge AE">Pending</span>':r.status==='approved'?'<span class="badge EE">Approved</span>':`<span class="badge BE">Rejected${r.resolvedNote?': '+escapeHtml(r.resolvedNote):''}</span>`}</td></tr>`).join('')}
-    </table>`:''}
-  </div>
+  <div class="card"><h2>💳 SMS Credit</h2><p class="small">Buying credit and topping up is handled by your <b>Finance</b> portal. The balance above updates live once Finance tops up.</p></div>
 
   <div class="card">
     <h2>📊 Send Exam Results by SMS</h2>
@@ -6919,7 +7013,7 @@ function submitSmsTopupRequest(){
   school.smsTopupRequests.push({id:uid('req_'), ts:Date.now(), amountPaid:amount, mpesaCode:mpesa, note, credits, status:'pending'});
   saveDB(DB);
   qs('#topupMsg').innerHTML = '<div class="msg ok">Request submitted — the admin will confirm and top up your balance.</div>';
-  renderDOS();
+  rerenderRole();
 }
 // Re-sends only to the numbers the server reported as failed last time, using the exact
 // same per-recipient message text as the original batch (stored in recipientsSnapshot),
