@@ -422,10 +422,22 @@ function ensureSchoolShape(s){
   if(!Array.isArray(s.gradingSystem)) s.gradingSystem = defaultGrading();
   if(!Array.isArray(s.dos)) s.dos = [];
   if(!Array.isArray(s.finance)) s.finance = [];
+  // finRetained: learners the DOS/HOI removed but Finance still keeps (fees, balances, receipts). finHidden[id]=true once Finance itself removes one from its own lists.
+  if(!Array.isArray(s.finRetained)) s.finRetained = [];
+  if(!Array.isArray(s.migrations)) s.migrations = [];
+  if(!s.finHidden || typeof s.finHidden!=='object') s.finHidden = {};
   if(!Array.isArray(s.payments)) s.payments = [];
   if(!Array.isArray(s.expenses)) s.expenses = [];
   if(!Array.isArray(s.feeAdjust)) s.feeAdjust = [];
   if(typeof s.payInstructions!=='string') s.payInstructions = '';
+  if(typeof s.invoiceNote!=='string') s.invoiceNote = '';
+  // feePublish[examId] = true once the finance office has released that term's next-term invoices to the Parent Portal.
+  if(!s.feePublish || typeof s.feePublish!=='object') s.feePublish = {};
+  // feeTerms: fee periods that stand on their own (Term + Year + Grade) -- no exam needed. Fee records, structures,
+  // payments and invoices for them are keyed by the fee term's id exactly like an exam's, so everything reuses the same code.
+  if(!Array.isArray(s.feeTerms)) s.feeTerms = [];
+  // feeCatalog: fee item names this school has used (boarding, meals...), offered as suggestions when adding items.
+  if(!Array.isArray(s.feeCatalog)) s.feeCatalog = [];
   if(!s.feeStructure || typeof s.feeStructure!=='object') s.feeStructure = {};
   if(!Array.isArray(s.sadmins)) s.sadmins = (s.dos&&s.dos[0]) ? [{id:'sa_'+s.dos[0].id, name:s.dos[0].name||'School Admin', username:s.dos[0].username, password:s.dos[0].password, email:'', phone:''}] : [];
   // Fees: s.fees[examId][studentId] = {balance, nextTermFee, updatedAt, updatedBy}. Keyed
@@ -899,6 +911,17 @@ function buildParentSafeSchool(fullSchool, student){
     const r = (fullSchool.remarks[id]||{})[student.id];
     if(r) remarks[id] = {[student.id]: r};
   });
+  const fees = {}, feeStructure = {};
+  const feeTermsOut = (fullSchool.feeTerms||[]).filter(t=>(t.classId===student.classId || (fullSchool.fees[t.id]||{})[student.id]) && fullSchool.feePublish[t.id]);
+  [...examIds, ...feeTermsOut.map(t=>t.id)].forEach(id=>{
+    if(!(fullSchool.feePublish||{})[id]) return;   // finance has not released this term's invoices
+    const r = (fullSchool.fees[id]||{})[student.id];
+    if(!r || r.hold) return;                          // no record, or this learner is held back
+    fees[id] = {[student.id]: {balance:r.balance, nextTermFee:r.nextTermFee, extras:r.extras||[], openingBalance:r.openingBalance, billed:r.billed, discount:r.discount, updatedAt:r.updatedAt}};
+    if(fullSchool.feeStructure[id]) feeStructure[id] = fullSchool.feeStructure[id];
+  });
+  const payments = fullSchool.payments.filter(p=>p.studentId===student.id && !p.void && fees[p.examId])
+    .map(p=>({id:p.id, receiptNo:p.receiptNo, examId:p.examId, studentId:p.studentId, amount:p.amount, method:p.method, date:p.date}));
   return ensureSchoolShape({
     name: fullSchool.name, code: fullSchool.code, address: fullSchool.address,
     phone: fullSchool.phone, email: fullSchool.email, hoiName: fullSchool.hoiName, hoiSignature: fullSchool.hoiSignature,
@@ -907,7 +930,10 @@ function buildParentSafeSchool(fullSchool, student){
     gradingSystem: fullSchool.gradingSystem, learningAreas: fullSchool.learningAreas,
     classes: fullSchool.classes.filter(c=>gradeIds.has(c.id)),
     classTeachers,
-    exams, marks, students, teachers, dos: [], attendance, assignments, remarks
+    exams, marks, students, teachers, dos: [], attendance, assignments, remarks,
+    // Fees: ONLY this learner's own record, payments and the fee structure of the exams in scope --
+    // never a classmate's balance.
+    fees, payments, feeStructure, feeTerms: feeTermsOut.filter(t=>fees[t.id]), payInstructions: fullSchool.payInstructions||'', invoiceNote: fullSchool.invoiceNote||''
   });
 }
 
@@ -1794,9 +1820,21 @@ function areasForClass(school, classId){
 // who has marks recorded in that exam but has since been moved or promoted to another grade — so
 // past results always stay complete under the grade they were sat in.
 function studentsForExam(school, e){
+  if(e.feeTerm) return school.students.filter(s=>s.classId===e.classId).sort(admOrName);
   const mk = school.marks[e.id] || {};
   return school.students.filter(s=> s.classId===e.classId || (mk[s.id] && Object.keys(mk[s.id]).length)).sort(admOrName);
 }
+// Finance keeps its own view of learners: everyone the DOS/HOI has now PLUS learners the DOS/HOI later deleted
+// (school.finRetained) -- minus anyone Finance itself removed (school.finHidden).
+function finRaw(school){ const ids = new Set(school.students.map(s=>s.id)); return school.students.concat((school.finRetained||[]).filter(s=>!ids.has(s.id))); }
+function finLearners(school, e){
+  const hid = school.finHidden||{}; const base = studentsForExam(school, e).filter(s=>!hid[s.id]);
+  const ids = new Set(base.map(s=>s.id));
+  const extra = (school.finRetained||[]).filter(s=>s.classId===e.classId && !ids.has(s.id) && !hid[s.id]);
+  return base.concat(extra).sort(admOrName);
+}
+// If the DOS/HOI re-adds a learner Finance still holds (same admission no.), reuse the old id so fee records re-attach.
+function takeRetainedId(school, adm){ if(!adm) return null; const i=(school.finRetained||[]).findIndex(x=>x.adm===adm); if(i<0) return null; const id=school.finRetained[i].id; school.finRetained.splice(i,1); delete (school.finHidden||{})[id]; return id; }
 function unionStudents(list){ return [...new Map(list.map(s=>[s.id,s])).values()].sort(admOrName); }
 /* ===== Gender helpers ===== */
 function normGender(v){ const t=String(v||'').trim().toLowerCase(); if(['m','male','boy'].includes(t)) return 'M'; if(['f','female','girl'].includes(t)) return 'F'; return ''; }
@@ -3250,10 +3288,11 @@ const HELP_SECTIONS = [
     It records marks, automatically grades them against the official CBC rubric, and generates printable learner
     progress reports and assessment sheets — no separate software or server needed. Everything runs from one link,
     and works from a phone, tablet or computer browser.</p>
-    <p>Three kinds of people use it: the <b>DOS/HOI</b> (you) — sets up the school, adds teachers and learners,
+    <p>Four kinds of people use it: the <b>DOS/HOI</b> (you) — sets up the school, adds teachers and learners,
     controls exams, and has access to every feature; <b>Teachers</b> — enter marks for the grade(s)/learning area(s)
     they're assigned to, and (if you allow it) print reports and assessment sheets; <b>Parents</b> — look up their
-    own child's results through a public link you share, with no login of their own.</p>` },
+    own child's results through a public link you share, with no login of their own; and <b>Finance</b> (bursar) — a separate
+    portal for fees, invoices, payments, receipts, expenses and SMS credit (see <i>Finance Portal &amp; school fees</i> below). Finance never sees marks entry or any DOS/HOI tools.</p>` },
 
   { title: '🧭 Menu overview', body: `
     <p>The screen opens on your <b>Dashboard</b> only. Tap <b>☰ Menu</b> (top-left) to open the side menu, then tap any
@@ -3265,7 +3304,7 @@ const HELP_SECTIONS = [
       <tr><td><b>Grades</b></td><td>Create and manage the school's grades/classes.</td></tr>
       <tr><td><b>Learning Areas</b></td><td>Create and manage the subjects/learning areas taught.</td></tr>
       <tr><td><b>Grading System</b></td><td>View the CBC rubric the app grades against (see below).</td></tr>
-      <tr><td><b>Learners</b></td><td>Add, edit, move learners between grades; set each learner's Parent Portal PIN.</td></tr>
+      <tr><td><b>Learners</b></td><td>Add, edit, move learners between grades; set each learner's Parent Portal PIN. A learner you add appears in the Finance Portal automatically; if you delete one, Finance still keeps them until Finance removes them.</td></tr>
       <tr><td><b>Exams</b></td><td>Create an exam for a grade/term; open or close it for mark entry; approve/disapprove its results.</td></tr>
       <tr><td><b>Teachers &amp; Permissions</b></td><td>Add teacher accounts, assign grade/learning-area combinations, set their permissions.</td></tr>
       <tr><td><b>Enter/Edit Marks</b></td><td>Enter or correct marks directly, for any grade or learning area.</td></tr>
@@ -3275,7 +3314,7 @@ const HELP_SECTIONS = [
       <tr><td><b>Exam History</b></td><td>Look back at past exams and their results.</td></tr>
       <tr><td><b>Assignments</b></td><td>Send a printable assignment/homework sheet to a grade's Parent Portal, with an optional image attachment.</td></tr>
       <tr><td><b>SMS to Parents</b></td><td>Send results/announcements by SMS (requires SMS to be configured).</td></tr>
-      <tr><td><b>Share Login Links</b></td><td>Get a ready-made Teacher Login Link and Parent Portal Link, with a Copy button, to share on WhatsApp or the notice board.</td></tr>
+      <tr><td><b>Share Login Links</b></td><td>Get a ready-made Teacher Login Link, Parent Portal Link and Finance Portal Link (Finance logins are created by the School Admin), with a Copy button, to share on WhatsApp or the notice board.</td></tr>
       <tr><td><b>School Details</b></td><td>Edit school name, address, contact details, motto, badge/crest — used on every printed report.</td></tr>
       <tr><td><b>My Account</b></td><td>Set your own email/phone for password-reset codes; manage cloud sync; download a backup.</td></tr>
     </tbody></table>` },
@@ -3361,6 +3400,25 @@ const HELP_SECTIONS = [
     A class teacher can do the same for their own grade(s) from <b>Class Teacher Tools</b>, whether or not they hold the
     other sign-off permissions.</p>` },
 
+  { title: '💰 Finance Portal &amp; school fees', body: `
+    <p>Fees are handled by your <b>Finance</b> staff in their own portal, using the <b>Finance Portal Link</b> under
+    <b>Share Login Links</b> plus the username/password the School Admin created for them. You do not need to do
+    anything in the DOS/HOI portal for fees to work.</p>
+    <p><b>What Finance can set up:</b> each school decides its own charges. Finance adds any fee item (Boarding, Meals / Lunch,
+    Transport, Uniform, activity or exam fees, or a name of their own) with its own amount, per grade and per term.
+    <i>Compulsory</i> items are charged to every learner on top of tuition; <i>optional</i> items (such as boarding or meals) are
+    charged only to the learners Finance ticks.</p>
+    <p><b>Learners and deletion — how the two portals stay in step:</b></p>
+    <ul>
+      <li>When you <b>add</b> a learner (one by one or by bulk import) they appear in the Finance Portal automatically.</li>
+      <li>When you <b>delete</b> a learner, they disappear from your lists, marks and reports, but <b>Finance keeps them</b>
+      with their balances, invoices and receipts. Only Finance can remove them from the Finance Portal (Finance menu → Learners).</li>
+      <li>If you re-add a deleted learner with the <b>same admission number</b>, their old fee records reattach automatically.</li>
+    </ul>
+    <p><b>Moving a school over from another app:</b> Finance has a <b>Data Migration</b> tool that imports learners, balances, fee structure, payment history and expenses from Excel/CSV. Learners it creates also appear in your DOS/HOI lists, in the grade from the file. Finance can undo the most recent import.</p>
+    <p><b>Finance access levels:</b> Full accounts can change fee records; View-only accounts can only view, print and export.
+    Finance can also view learner report cards but cannot enter or change marks.</p>` },
+
   { title: '🛠 Troubleshooting &amp; FAQ', body: `
     <p><b>"School code not found."</b> — Double-check the 8-digit School Code. If the school was only just created
     on another device and Multi-Device Sync isn't on yet, it may take a moment to appear on this one.</p>
@@ -3370,13 +3428,22 @@ const HELP_SECTIONS = [
     under School Details.</p>
     <p><b>A teacher can't see a grade/learning area they expect to teach.</b> — Check their assignment under
     Teachers &amp; Permissions; a teacher only sees the combinations they've been explicitly assigned to.</p>
+    <p><b>I deleted a learner but they still show in Finance.</b> — That is intended. Finance keeps fee records until Finance removes the learner itself (Finance menu → Learners).</p>
     <p><b>Marks won't save.</b> — The exam may have been closed for entry; any further change must go in as an Edit
     Request for you (or an authorised class teacher) to approve.</p>` },
 ];
+const HELP_UPDATED = '30 Sep 2026'; // bump this date whenever you edit HELP_SECTIONS or FINANCE_HELP_SECTIONS
+function helpCards(list){
+  return list.map((s,i)=>`<details ${i===0?'open':''} style="margin-top:10px;border:1px solid var(--border);border-radius:8px;padding:8px 12px">
+    <summary style="cursor:pointer;font-weight:600">${s.title}</summary>
+    <div style="margin-top:8px">${s.body}</div>
+  </details>`).join('');
+}
+function printHelp(){ document.querySelectorAll('details').forEach(d=>d.open=true); window.print(); }
 function tplHelp(school){
   return `<div class="card"><h2>❓ Help / User Manual</h2>
-  <p class="small">A quick reference for running the school on this app. Ask whoever manages this deployment if
-  something here doesn't match what you're seeing.</p>
+  <p class="small">A quick reference for running the school on this app. Manual last updated: <b>${HELP_UPDATED}</b>. Ask whoever manages this deployment if
+  something here doesn't match what you're seeing. <button class="ghost no-print" onclick="printHelp()">🖨 Print manual</button></p>
   ${HELP_SECTIONS.map((s,i)=>`<details ${i===0?'open':''} style="margin-top:10px;border:1px solid var(--border);border-radius:8px;padding:8px 12px">
     <summary style="cursor:pointer;font-weight:600">${s.title}</summary>
     <div style="margin-top:8px">${s.body}</div>
@@ -4136,7 +4203,7 @@ function addStudent(){
   // learners are allowed to have no admission number at the same time.
   if(adm && school.students.some(s=>s.adm===adm)){ toast('Admission number already exists','err'); return; }
   if(assessNo && school.students.some(s=>s.assessNo===assessNo)){ toast('Assessment number already exists','err'); return; }
-  school.students.push({id:uid('stu_'), adm, assessNo, name: name.replace(/\s+/g,' '), classId, gender, parentPhone, parentPin: genParentPin()}); saveDB(DB); renderDOS();
+  const _rid = takeRetainedId(school, adm); school.students.push({id:_rid||uid('stu_'), adm, assessNo, name: name.replace(/\s+/g,' '), classId, gender, parentPhone, parentPin: genParentPin()}); saveDB(DB); renderDOS();
 }
 // Lets HOI/DOS correct a learner's admission number directly from the Learners table
 // (e.g. it was mistyped or a number gets assigned later) without removing and re-adding
@@ -4231,13 +4298,16 @@ function bulkAddStudents(){
     if(!name) return;
     if(adm && school.students.some(s=>s.adm===adm)) return; // skip duplicate admission numbers
     if(assessNo && school.students.some(s=>s.assessNo===assessNo)) assessNo = ''; // duplicate assessment no.: still add the learner, just without it
-    school.students.push({id:uid('stu_'), adm, assessNo, name, classId, gender, parentPhone, parentPin: genParentPin()}); added++;
+    { const _rid = takeRetainedId(school, adm); school.students.push({id:_rid||uid('stu_'), adm, assessNo, name, classId, gender, parentPhone, parentPin: genParentPin()}); } added++;
   });
   saveDB(DB); toast(added+' learners added'); renderDOS();
 }
 function delStudent(id){
-  if(!confirm('Remove this learner?')) return;
-  const school = currentSchool(); school.students = school.students.filter(s=>s.id!==id); saveDB(DB); renderDOS();
+  if(!confirm('Remove this learner from the DOS/HOI lists? Finance will still keep their fee records until Finance removes them.')) return;
+  const school = currentSchool(); const gone = school.students.find(s=>s.id===id);
+  // Finance keeps the learner (fees, balances, receipts) until Finance removes them itself.
+  if(gone){ if(!Array.isArray(school.finRetained)) school.finRetained = []; if(!school.finRetained.some(x=>x.id===id)) school.finRetained.push(Object.assign({}, gone, {removedByDosAt: Date.now()})); }
+  school.students = school.students.filter(s=>s.id!==id); saveDB(DB); toast('Learner removed. Finance still keeps their fee records.'); renderDOS();
 }
 
 /* --- Exams --- */
@@ -5935,23 +6005,608 @@ function runTeacherDashboard(){
    not scoped down the way a teacher's view is), and a My Account card. It never touches
    marks entry, grading, or anything else a DOS/HOI or Teacher can do. */
 let finTab = 'dashboard';
+function termNo(t){ const m=/(\d)/.exec(String(t.term||'')); return m?Number(m[1]):0; }
+function feeTermCmp(a,b){ return (Number(a.year)-Number(b.year)) || (termNo(a)-termNo(b)); }
+function finExams(school){ return (school.exams||[]).concat(school.feeTerms||[]); }
+function periodLabel(e){ return e.feeTerm ? `${e.term} ${e.year} - term fees` : `${e.name} (${e.term} ${e.year})`; }
+// Newest fee term first, then the grade's exams (older exam-based fee records stay reachable).
+function finPeriodsForClass(school, cid){ return (school.feeTerms||[]).filter(t=>t.classId===cid).sort(feeTermCmp).reverse().concat((school.exams||[]).filter(e=>e.classId===cid)); }
+function latestFeePeriod(school, cid){ const f=(school.feeTerms||[]).filter(t=>t.classId===cid).sort(feeTermCmp); if(f.length) return f[f.length-1]; const x=(school.exams||[]).filter(e=>e.classId===cid); return x[x.length-1]||null; }
+// The period just before term/year for a grade (used to carry balances and the fee structure forward).
+function prevFeePeriod(school, cid, term, year){
+  const ref={term, year}; const c=finExams(school).filter(e=>e.classId===cid && feeTermCmp(e,ref)<0);
+  c.sort((a,b)=>feeTermCmp(a,b) || ((a.feeTerm?1:0)-(b.feeTerm?1:0))); return c[c.length-1]||null;
+}
+function parentFeePeriods(school){ return (school.feeTerms||[]).slice().sort(feeTermCmp).reverse().concat((school.exams||[]).slice().reverse()); }
 const finState = {classId:null, examId:null};
 function gotoFinTab(k){ finTab = k; document.body.classList.remove('dos-menu-open'); renderFinance(); window.scrollTo(0,0); }
 function financeCtxRow(school){
   const cid = (school.classes.find(c=>c.id===finState.classId)||school.classes[0]).id;
-  const exams = school.exams.filter(e=>e.classId===cid);
+  const exams = finPeriodsForClass(school, cid);
   const eid = exams.some(e=>e.id===finState.examId) ? finState.examId : (exams[0]||{}).id;
   finState.classId = cid; finState.examId = eid;
   return `<div class="row"><div><label>Grade</label><select id="ffClass" onchange="fillFinanceExams()">${school.classes.map(c=>`<option value="${c.id}" ${c.id===cid?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
-  <div><label>Exam / Term</label><select id="ffExam" onchange="loadFinanceFeesSummary()">${exams.map(e=>`<option value="${e.id}" ${e.id===eid?'selected':''}>${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this grade</option>'}</select></div></div>`;
+  <div><label>Fee term / Exam</label><select id="ffExam" onchange="loadFinanceFeesSummary()">${exams.map(e=>`<option value="${e.id}" ${e.id===eid?'selected':''}>${escapeHtml(periodLabel(e))}</option>`).join('') || '<option value="">No fee term yet - create one under Fee Structure</option>'}</select></div></div>`;
 }
+
+/* ---- Finance learners: the DOS/HOI adds learners (they appear here automatically); deleting them there does NOT delete them here. ---- */
+function financeLearnersHTML(school){
+  const cid = (school.classes.find(c=>c.id===finState.classId)||school.classes[0]).id; finState.classId = cid;
+  const hid = school.finHidden||{}; const ret = new Set((school.finRetained||[]).map(s=>s.id));
+  const active = new Set(school.students.map(s=>s.id));
+  const list = finRaw(school).filter(s=>s.classId===cid).sort(admOrName);
+  const rows = list.map(s=>{
+    const gone = !active.has(s.id), h = !!hid[s.id];
+    const tag = h ? '<span class="small">Removed by Finance</span>' : gone ? '<span class="small" style="color:#b45309">Removed by DOS/HOI — kept for Finance</span>' : '<span class="small">Active</span>';
+    const act = !canEdit() ? '' : h ? `<button class="ghost" onclick="finRestoreLearner('${s.id}')">Restore</button>` : `<button class="danger" onclick="finRemoveLearner('${s.id}')">✕ Remove from Finance</button>`;
+    return `<tr${h?' style="opacity:.55"':''}><td>${s.adm?escapeHtml(s.adm):'—'}</td><td>${escapeHtml(s.name)}</td><td>${tag}</td><td>${act}</td></tr>`;
+  }).join('') || '<tr><td colspan="4" class="small">No learners in this grade.</td></tr>';
+  return `<div class="card"><h2>👥 Finance Learners</h2>
+  <p class="small">Learners added by the DOS/HOI appear here automatically. If the DOS/HOI later deletes a learner, they <b>stay here</b> with their fees, balances and receipts until Finance removes them. Removing here never affects the DOS/HOI lists, and payment history is kept.</p>
+  <div class="row"><div><label>Grade</label><select onchange="finState.classId=this.value;renderFinance()">${school.classes.map(c=>`<option value="${c.id}" ${c.id===cid?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div></div>
+  <div style="overflow-x:auto"><table><thead><tr><th>Adm No</th><th>Name</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+function finRemoveLearner(id){
+  if(!canEdit()){ noEdit(); return; }
+  const school = currentSchool(); const s = finRaw(school).find(x=>x.id===id); if(!s) return;
+  if(!confirm(`Remove ${s.name} from the Finance Portal? Their payment history is kept, and the DOS/HOI lists are not affected.`)) return;
+  school.finHidden[id] = true; saveDB(DB); renderFinance();
+}
+function finRestoreLearner(id){
+  if(!canEdit()){ noEdit(); return; }
+  const school = currentSchool(); delete school.finHidden[id]; saveDB(DB); renderFinance();
+}
+/* --- Help / User Manual (Finance portal) ---
+   EDIT THIS WHENEVER THE FINANCE PORTAL CHANGES: same pattern as HELP_SECTIONS -- add, edit or remove
+   {title, body} entries below and bump HELP_UPDATED. Keep bodies free of backticks. */
+const FINANCE_HELP_SECTIONS = [
+  { title: '📖 What the Finance Portal does', body: `
+    <p>The Finance Portal is where the bursar sets school fees, invoices learners, records payments and receipts,
+    sends fee reminders, tracks expenses and manages SMS credit. It never touches marks, grading or teacher tools.</p>
+    <p>Your access is either <b>Full</b> (can change records) or <b>View-only</b> (can view, print and export only) — the
+    DOS/HOI or School Admin sets this on your account. Forgot your password? Ask the DOS/HOI or School Admin to reset it.</p>` },
+
+  { title: '🧭 Menu overview', body: `
+    <p>Tap <b>☰ Menu</b> to open the side menu; it closes by itself after you choose. <b>Logout</b> is at the bottom.</p>
+    <table class="tbl"><tbody>
+      <tr><td><b>Dashboard</b></td><td>Quick links and a fees overview (billed, paid, balance) by grade.</td></tr>
+      <tr><td><b>Fee Balances</b></td><td>Pick a grade and term, upload a CSV to set balances and next-term fees, and see each learner's summary.</td></tr>
+      <tr><td><b>Fee Structure &amp; Invoices</b></td><td>Create fee terms, set tuition, add fee items, assign optional services, generate invoices.</td></tr>
+      <tr><td><b>Learners</b></td><td>The learners Finance holds. See the rules below.</td></tr>
+      <tr><td><b>Payments &amp; Reminders</b></td><td>Record payments and print receipts; send fee-reminder SMS to parents who owe.</td></tr>
+      <tr><td><b>Cash Book &amp; Expenses</b></td><td>Collections by method and date, and expenses by category.</td></tr>
+      <tr><td><b>SMS Credit</b></td><td>See your SMS balance and request top-ups.</td></tr>
+      <tr><td><b>Closing Report &amp; Backup</b></td><td>End-of-term whole-school summary; export/restore all finance records.</td></tr>
+      <tr><td><b>Report Cards</b></td><td>View and print learner report cards (view only; no marks editing).</td></tr>
+      <tr><td><b>Data Migration</b></td><td>Bring learners, balances, fee structure, payments and expenses over from another system.</td></tr>
+      <tr><td><b>Help / Manual</b></td><td>This manual.</td></tr>
+    </tbody></table>` },
+
+  { title: '🚀 Setting up fees for a term (in order)', body: `
+    <ol>
+      <li>Open <b>Fee Structure &amp; Invoices</b>. Under <b>Create Fee Term</b>, create the term and year for the grade (or use an existing exam term).</li>
+      <li>Choose the Grade and Fee term at the top, enter the <b>term tuition</b> and save. Next-term fees then fill in automatically.</li>
+      <li>Add your <b>fee items</b> (see next section).</li>
+      <li>If you added optional items, tick the learners they apply to and press <b>Assign</b>.</li>
+      <li>Generate <b>invoices</b>. The term fee is added to each learner's existing balance, so old arrears carry forward. A learner already invoiced for that term is skipped, so nothing is charged twice.</li>
+      <li>When a new term starts, you can copy the previous term's structure instead of starting again.</li>
+    </ol>` },
+
+  { title: '🏷 Flexible fee items (boarding, meals and more)', body: `
+    <p>Every school charges differently, so you add your own items. Type any name, or pick a suggestion such as Boarding,
+    Meals / Lunch, Transport, Uniform, Activity or Exam fee.</p>
+    <ul>
+      <li><b>Compulsory</b> — charged to every learner in the grade on top of tuition.</li>
+      <li><b>Optional</b> — charged only to the learners you tick under <i>Assign optional services</i> (for example, boarders only).</li>
+      <li><b>This term only</b> — tick it for a charge that should not repeat next term.</li>
+      <li>Amounts are per term and can be different for each grade.</li>
+      <li>Removing an item does not change invoices already generated.</li>
+    </ul>` },
+
+  { title: '🔄 Moving from another system (Data Migration)', body: `
+    <p>If the school used a different fees or school app, open <b>Data Migration</b> in the menu. Export the old app's data to Excel or CSV,
+    then bring it in one part at a time. Nothing is saved until you press <b>Import</b>.</p>
+    <ol>
+      <li><b>Learners &amp; fee balances</b> — creates learners and grades that are missing and sets each balance. Tell the app whether the balance already includes this term's fees (do not invoice again) or is arrears brought forward (invoices are added on top).</li>
+      <li><b>Fee structure</b> — tuition and every fee item (boarding, meals, transport...) per grade, marked Tuition, Compulsory or Optional.</li>
+      <li><b>Optional services</b> — which learners board or take meals (admission number + item).</li>
+      <li><b>Payment history</b> — old receipts with their original dates, methods and receipt numbers. By default they do not change balances, because the balances you imported already reflect them.</li>
+      <li><b>Expenses</b> — old expenses by date and category.</li>
+    </ol>
+    <p><b>How each part works:</b> upload a CSV (Excel: File → Save As → CSV) or copy the cells and paste them into the box. The app guesses which column is which; fix any it got wrong. Press <b>Check my data</b> to preview: you see what is ready, what is left out, and any problem rows with the reason. You can download the problem rows as a CSV, correct them and import again.</p>
+    <p><b>Safe to repeat:</b> payments, expenses, services and existing learners that are already in the system are skipped, so importing the same file twice never doubles anything. A safety backup downloads before each import, and the <b>Import history</b> lets you <b>Undo</b> the most recent import.</p>
+    <p><b>Tips:</b> do learners first, and use the exact same admission numbers as the old system. Dates are read as Day/Month/Year unless you change it. Import one grade first as a test if you are unsure.</p>` },
+
+  { title: '👥 Learners: how they appear and how they are removed', body: `
+    <ul>
+      <li>Learners the DOS/HOI adds appear here <b>automatically</b>.</li>
+      <li>If the DOS/HOI later <b>deletes</b> a learner, they <b>stay in the Finance Portal</b> with their balances, invoices and receipts. The Learners tab marks them <i>Removed by DOS/HOI — kept for Finance</i>.</li>
+      <li>Only you can remove a learner from Finance: open <b>Learners</b>, pick the grade and press <b>Remove from Finance</b>. This does not affect the DOS/HOI lists, and payment history is kept for the cash book and receipts.</li>
+      <li>Removed by mistake? Press <b>Restore</b> on that row.</li>
+      <li>If the DOS/HOI re-adds a deleted learner with the same admission number, their fee records reattach automatically.</li>
+    </ul>` },
+
+  { title: '🧾 Recording payments and receipts', body: `
+    <p>Open <b>Payments &amp; Reminders</b>, choose the Grade and term, pick the learner, enter the amount and method, and save. The
+    learner's balance drops automatically and a printable receipt opens. Payments are listed below the form, where you can reopen a receipt.</p>` },
+
+  { title: '💬 Fee reminder SMS and SMS credit', body: `
+    <p>Fee reminders go to the parents of learners who still owe fees in the selected grade and term, and use your school's SMS credits.
+    Check your balance under <b>SMS Credit</b>. Credits are bought by paying the platform directly (for example via M-Pesa) and
+    the platform admin then tops up your school's balance.</p>` },
+
+  { title: '📈 Cash book, expenses and closing report', body: `
+    <p><b>Cash Book &amp; Expenses</b> shows collections by method and date, and lets you record expenses by category.
+    <b>Closing Report &amp; Backup</b> gives a whole-school summary for one term: fees per grade, collections by method, expenses
+    by category and the biggest outstanding balances. Use <b>Backup &amp; Export</b> regularly to save a copy of all finance records; you can
+    restore it later or on another device.</p>` },
+
+  { title: '🛠 Troubleshooting &amp; FAQ', body: `
+    <p><b>A learner I expect is missing.</b> — Check you have the right Grade selected. If you removed them earlier, find them on the Learners tab and press Restore. A learner the DOS/HOI has only just added appears automatically.</p>
+    <p><b>The DOS/HOI deleted a learner but they still show here.</b> — That is intended. You keep them until you remove them yourself.</p>
+    <p><b>Buttons are disabled or say I cannot edit.</b> — Your account is View-only. Ask the DOS/HOI or School Admin for Full access.</p>
+    <p><b>No fee term yet.</b> — Create one under Fee Structure &amp; Invoices. If there are no grades at all, the DOS/HOI must create them first.</p>
+    <p><b>My import shows problem rows.</b> — Each problem row says why (for example a learner not found, a date that cannot be read, or an amount that is not a number). Download the rows to fix, correct them and import again; rows already imported are skipped.</p>
+    <p><b>A CSV row was skipped.</b> — Rows are matched by Admission Number within the selected grade; rows that do not match are listed under the upload.</p>` },
+];
+function tplFinanceHelp(){
+  return `<div class="card"><h2>❓ Finance Help / User Manual</h2>
+  <p class="small">A quick reference for the Finance Portal. Manual last updated: <b>${HELP_UPDATED}</b>. <button class="ghost no-print" onclick="printHelp()">🖨 Print manual</button></p>
+  ${helpCards(FINANCE_HELP_SECTIONS)}</div>`;
+}
+/* ============================= DATA MIGRATION (Finance) =============================
+   Lets a school that used ANOTHER app bring its records over: learners + fee balances, fee structure,
+   who takes optional services (boarding, meals...), payment history / receipts, and expenses.
+   Works from any export: upload a CSV (or paste cells straight from Excel), map the columns once,
+   preview (nothing saved), then import. Re-running is safe: rows already imported are skipped.
+   Every import is logged and the most recent one can be undone. */
+const MIG_SETS = {
+  learners: {label:'1. Learners & fee balances', file:'learners-and-balances',
+    hint:'One row per learner. Creates learners (and grades) that do not exist yet and sets each learner\'s fees balance. Do this first.',
+    fields:[
+      {k:'adm',l:'Admission No',req:1,al:['admissionno','admissionnumber','admno','adm','regno','registrationno','studentno','studentid','admission']},
+      {k:'name',l:'Learner name',req:1,al:['learnername','studentname','pupilname','fullname','name','names','student','learner','pupil']},
+      {k:'grade',l:'Grade / Class',req:1,al:['grade','class','classname','form','std','level']},
+      {k:'gender',l:'Gender',al:['gender','sex']},
+      {k:'phone',l:'Parent phone',al:['parentphone','guardianphone','phone','mobile','telephone','contact','tel']},
+      {k:'balance',l:'Fees balance',al:['feesbalance','balance','arrears','outstanding','amountdue','balancebf','balancecf','bal','due']},
+      {k:'next',l:'Next term fee',al:['nexttermfee','nextterm','next']}],
+    sample:[['1001','John Mwangi','Grade 4','Boy','0712345678','15000','32000'],['1002','Mary Achieng','Grade 4','Girl','0722111222','0','32000']]},
+  structure: {label:'2. Fee structure (tuition & fee items)', file:'fee-structure',
+    hint:'One row per fee item per grade: tuition, boarding, meals, transport... Sets the amounts for the term you choose.',
+    fields:[
+      {k:'grade',l:'Grade / Class',req:1,al:['grade','class','classname','form','std','level']},
+      {k:'item',l:'Fee item',req:1,al:['feeitem','itemname','feename','voteheadname','votehead','item','description','particulars','name','fee']},
+      {k:'amount',l:'Amount',req:1,al:['amount','fee','cost','price','total']},
+      {k:'type',l:'Type (Tuition / Compulsory / Optional)',al:['type','kind','category','compulsory']},
+      {k:'once',l:'This term only (yes/no)',al:['termonly','thistermonly','once','onetime']}],
+    sample:[['Grade 4','Tuition','20000','Tuition',''],['Grade 4','Lunch','6000','Optional',''],['Grade 4','Boarding','15000','Optional',''],['Grade 4','Activity fee','1500','Compulsory','yes']]},
+  services: {label:'3. Optional services (who boards, who takes meals)', file:'optional-services',
+    hint:'One row per learner per service, e.g. 1001,Boarding. The service must exist in the fee structure for that grade and term.',
+    fields:[
+      {k:'adm',l:'Admission No',req:1,al:['admissionno','admissionnumber','admno','adm','regno','studentno','admission']},
+      {k:'item',l:'Service / fee item',req:1,al:['service','feeitem','item','name','description']}],
+    sample:[['1001','Boarding'],['1001','Lunch'],['1002','Lunch']]},
+  payments: {label:'4. Payment history (receipts)', file:'payment-history',
+    hint:'One row per payment already received. Keeps the original date, method and receipt number. Import learners first.',
+    fields:[
+      {k:'adm',l:'Admission No',req:1,al:['admissionno','admissionnumber','admno','adm','regno','studentno','admission']},
+      {k:'amount',l:'Amount paid',req:1,al:['amountpaid','amount','paid','payment','credit']},
+      {k:'date',l:'Payment date',req:1,al:['paymentdate','datepaid','paidon','date']},
+      {k:'method',l:'Method (M-Pesa / Cash / Bank / Cheque)',al:['paymentmethod','modeofpayment','paymode','method','mode','type']},
+      {k:'receipt',l:'Receipt No',al:['receiptno','receiptnumber','receipt','rctno','voucher']},
+      {k:'ref',l:'Reference / M-Pesa code',al:['transactioncode','transactionid','mpesacode','mpesaref','reference','ref','txn']},
+      {k:'term',l:'Term (optional)',al:['term']},
+      {k:'year',l:'Year (optional)',al:['year']}],
+    sample:[['1001','5000','2026-01-14','M-Pesa','R-0001','SAB12XY3Z4','Term 1','2026'],['1002','32000','2026-01-20','Bank','R-0002','','Term 1','2026']]},
+  expenses: {label:'5. Expenses', file:'expenses',
+    hint:'One row per expense. Categories that do not match ours go under "Other" with the original name kept in the description.',
+    fields:[
+      {k:'date',l:'Date',req:1,al:['expensedate','date']},
+      {k:'amount',l:'Amount',req:1,al:['amount','cost','total','paid']},
+      {k:'category',l:'Category',al:['category','expensetype','head','account','type']},
+      {k:'desc',l:'Description',al:['description','details','narration','particulars','payee','item','desc']}],
+    sample:[['2026-02-03','45000','Salaries','February support staff'],['2026-02-10','8200','Utilities','Electricity bill']]}
+};
+const MIG_MON = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+const mig = {set:'learners', header:[], rows:[], map:{}, fileName:'', plan:null, result:'', opts:{
+  term: (function(){ const m=new Date().getMonth(); return m<4?'Term 1':m<8?'Term 2':'Term 3'; })(), year:new Date().getFullYear(),
+  dateFmt:'dmy', balMode:'', payBal:'keep', mkGrades:true, mkLearners:true, update:false, overwrite:false, backup:true}};
+
+function migNorm(s){ return String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]/g,''); }
+function migClassKey(s){ return migNorm(s).replace(/grade|class|gr|std|standard/g,''); }
+function migFindClass(school, name){ const k = migClassKey(name); if(!k) return null; return school.classes.find(c=>migClassKey(c.name)===k) || null; }
+function migNum(v){ let t = String(v==null?'':v).trim(); if(!t) return NaN; let neg = /^\(.*\)$/.test(t) || /^-/.test(t) || /cr$/i.test(t); t = t.replace(/[^0-9.]/g,''); if(!t) return NaN; const n = Number(t); return isNaN(n) ? NaN : (neg ? -n : n); }
+function migIso(y,mo,d){ if(!(mo>=1&&mo<=12&&d>=1&&d<=31&&y>=2000&&y<=2100)) return null; const dt = new Date(Date.UTC(y,mo-1,d)); if(dt.getUTCMonth()!==mo-1) return null; return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0'); }
+function migDate(v, mdy){
+  v = String(v==null?'':v).trim(); if(!v) return null; let m;
+  if((m=/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/.exec(v))) return migIso(+m[1],+m[2],+m[3]);
+  if((m=/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})/.exec(v))){ let a=+m[1], b=+m[2], y=+m[3]; if(y<100) y+=2000; return mdy ? migIso(y,a,b) : migIso(y,b,a); }
+  if(/^\d{5}(\.\d+)?$/.test(v)){ const n = Math.floor(Number(v)); if(n>20000 && n<80000) return new Date(Date.UTC(1899,11,30)+n*86400000).toISOString().slice(0,10); }
+  if((m=/^(\d{1,2})[\s\-]+([A-Za-z]{3,9})\.?[\s\-,]+(\d{2,4})$/.exec(v))){ const mi = MIG_MON.indexOf(m[2].slice(0,3).toLowerCase()); if(mi>=0){ let y=+m[3]; if(y<100) y+=2000; return migIso(y,mi+1,+m[1]); } }
+  return null;
+}
+function migTerm(v){ const m = /([123])/.exec(String(v||'')); return m ? 'Term '+m[1] : null; }
+function migMethod(v){
+  const t = String(v||'').trim(), n = migNorm(t); if(!n) return 'Cash';
+  if(/mpesa|mobile|safaricom|airtel|till|paybill/.test(n)) return 'M-Pesa';
+  if(/cash/.test(n)) return 'Cash'; if(/cheque|check/.test(n)) return 'Cheque';
+  if(/bank|deposit|transfer|eft|rtgs|slip|equity|kcb|coop|cooperative/.test(n)) return 'Bank';
+  return t.charAt(0).toUpperCase()+t.slice(1);
+}
+function migParse(text){
+  text = String(text||'').replace(/^\uFEFF/,'');
+  const first = (text.split(/\r?\n/).find(l=>l.trim())||'');
+  const cnt = ch => first.split(ch).length-1;
+  const delim = cnt('\t')>=1 && cnt('\t')>=cnt(',') ? '\t' : (cnt(';')>cnt(',') ? ';' : ',');
+  const rows = []; let row = [], f = '', q = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){ f+='"'; i++; } else q=false; } else f+=c; }
+    else if(c==='"' && f==='') q = true;
+    else if(c===delim){ row.push(f); f=''; }
+    else if(c==='\r'){ }
+    else if(c==='\n'){ row.push(f); rows.push(row); row=[]; f=''; }
+    else f+=c;
+  }
+  if(f.length || row.length){ row.push(f); rows.push(row); }
+  return rows.map(r=>r.map(c=>String(c).trim())).filter(r=>r.some(c=>c!==''));
+}
+function migCsv(rows){ return rows.map(r=>r.map(c=>{ c = String(c==null?'':c); return /[",\n]/.test(c) ? '"'+c.replace(/"/g,'""')+'"' : c; }).join(',')).join('\r\n'); }
+function migAutoMap(header, fields){
+  const H = header.map(migNorm), used = new Set(), map = {};
+  const pass = test => fields.forEach(f=>{ if(map[f.k]!=null) return; for(let i=0;i<H.length;i++){ if(used.has(i) || !H[i]) continue; if(test(H[i], f)){ map[f.k] = i; used.add(i); return; } } });
+  pass((h,f)=> f.al.some(a=>h===a) || h===migNorm(f.l));
+  pass((h,f)=> f.al.some(a=>a.length>=3 && h.includes(a)));
+  return map;
+}
+function migTemplate(){ const s = MIG_SETS[mig.set]; dlBlob('migration-template-'+s.file+'.csv', migCsv([s.fields.map(f=>f.l)].concat(s.sample)), 'text/csv'); }
+
+/* ---------- planning (dry run: never changes data) ---------- */
+function migPlan(){
+  const school = currentSchool(), S = MIG_SETS[mig.set], o = mig.opts;
+  const gIdx = {}; S.fields.forEach(f=>{ gIdx[f.k] = mig.map[f.k]; });
+  const g = (r,k)=> gIdx[k]==null ? '' : String(r[gIdx[k]]==null?'':r[gIdx[k]]).trim();
+  const P = {set:mig.set, ready:[], skipped:[], errors:[], notes:[], sum:{}};
+  const mdy = o.dateFmt==='mdy';
+  const all = finRaw(school), byAdm = {}; all.forEach(s=>{ if(s.adm) byAdm[migNorm(s.adm)] = s; });
+  const err = (i,why)=>P.errors.push({i,why}), skip = (i,why)=>P.skipped.push({i,why});
+  const termOf = (clsId, term, year)=> (school.feeTerms||[]).find(t=>t.classId===clsId && t.term===term && Number(t.year)===Number(year));
+  const seen = new Set(); const newTerms = new Set(); const newGrades = new Set();
+  const clsOfStudent = s => school.classes.find(c=>c.id===s.classId) || null;
+  mig.rows.forEach((r,i)=>{
+    if(mig.set==='learners'){
+      const adm=g(r,'adm'), name=g(r,'name'), gr=g(r,'grade');
+      if(!adm) return err(i,'Missing admission number');
+      const key = migNorm(adm); if(seen.has(key)) return err(i,'Admission number appears twice in this file'); seen.add(key);
+      const ex = byAdm[key]; let cls = null;
+      if(ex && !o.update) cls = clsOfStudent(ex);
+      if(!cls && !gr && ex) cls = clsOfStudent(ex);
+      if(!cls && !gr) return err(i,'Missing grade');
+      if(!cls && gr){ cls = migFindClass(school, gr); if(!cls){ if(o.mkGrades) newGrades.add(migClassKey(gr)); else return err(i,'Grade "'+gr+'" not found (tick "create missing grades" or fix the name)'); } }
+      if(!ex && !mig.opts.mkLearners) return skip(i,'Not in the system and "create missing learners" is off');
+      if(!ex && !name) return err(i,'Missing learner name');
+      let bal = null, next = null; const bt = g(r,'balance'), nt = g(r,'next');
+      if(bt!==''){ bal = migNum(bt); if(isNaN(bal)) return err(i,'Balance "'+bt+'" is not a number'); }
+      if(nt!==''){ next = migNum(nt); if(isNaN(next)) return err(i,'Next term fee "'+nt+'" is not a number'); }
+      if(bal!=null || next!=null){
+        const c2 = cls || (ex && clsOfStudent(ex));
+        const ft = c2 && termOf(c2.id, o.term, o.year), rec = ft && (school.fees[ft.id]||{})[ex && ex.id];
+        if(rec && rec.balance!=null && rec.balance!=='' && !o.overwrite){ if(bal!=null) P.sum.kept = (P.sum.kept||0)+1; bal = null; next = null; }
+      }
+      if(ex && bal==null && next==null && !o.update) return skip(i,'Already in the system — nothing new to import');
+      P.sum[ex?'existing':'newLearners'] = (P.sum[ex?'existing':'newLearners']||0)+1;
+      if(bal!=null) P.sum.bal = (P.sum.bal||0)+1;
+      P.ready.push({i, adm, name, gr, classId: cls?cls.id:null, ex: ex?ex.id:null, phone:g(r,'phone'), gender:g(r,'gender'), bal, next});
+    }
+    else if(mig.set==='structure'){
+      const gr=g(r,'grade'), item=g(r,'item'), at=g(r,'amount');
+      if(!gr||!item) return err(i,'Missing grade or fee item');
+      const amt = migNum(at); if(isNaN(amt) || amt<=0) return err(i,'Amount "'+at+'" is not a positive number');
+      let cls = migFindClass(school, gr);
+      if(!cls){ if(o.mkGrades) newGrades.add(migClassKey(gr)); else return err(i,'Grade "'+gr+'" not found'); }
+      const ty = g(r,'type').toLowerCase(), isTuition = /tuition/.test(ty) || migNorm(item)==='tuition';
+      const optional = !isTuition && /opt/.test(ty), once = /^(y|yes|true|1|once)/i.test(g(r,'once'));
+      const dupKey = migClassKey(gr)+'|'+migNorm(item); if(seen.has(dupKey)) return err(i,'This item appears twice for the same grade'); seen.add(dupKey);
+      P.ready.push({i, gr, classId: cls?cls.id:null, item, amt, tuition:isTuition, optional, once});
+      if(cls && !termOf(cls.id,o.term,o.year)) newTerms.add(cls.name);
+    }
+    else if(mig.set==='services'){
+      const adm=g(r,'adm'), item=g(r,'item'); if(!adm||!item) return err(i,'Missing admission number or service');
+      const ex = byAdm[migNorm(adm)]; if(!ex) return err(i,'Learner '+adm+' not found (import learners first)');
+      const cls = clsOfStudent(ex); if(!cls) return err(i,'Learner has no grade');
+      const ft = termOf(cls.id, o.term, o.year); if(!ft) return err(i,'No '+o.term+' '+o.year+' fee term for '+cls.name+' (import the fee structure first)');
+      const st = school.feeStructure[ft.id], it = st && (st.items||[]).find(x=>x.optional && migNorm(x.name)===migNorm(item));
+      if(!it) return err(i,'"'+item+'" is not an optional item in the '+cls.name+' fee structure');
+      const rec = (school.fees[ft.id]||{})[ex.id];
+      if(rec && (rec.extras||[]).includes(it.name)) return skip(i,'Already assigned');
+      const dk = migNorm(adm)+'|'+migNorm(item); if(seen.has(dk)) return skip(i,'Repeated row'); seen.add(dk);
+      P.ready.push({i, adm, sid:ex.id, ftId:ft.id, name:it.name});
+    }
+    else if(mig.set==='payments'){
+      const adm=g(r,'adm'), at=g(r,'amount'), dt=g(r,'date');
+      if(!adm) return err(i,'Missing admission number');
+      const ex = byAdm[migNorm(adm)]; if(!ex) return err(i,'Learner '+adm+' not found (import learners first)');
+      const cls = clsOfStudent(ex); if(!cls) return err(i,'Learner has no grade');
+      const amt = migNum(at); if(isNaN(amt) || amt<=0) return err(i,'Amount "'+at+'" is not a positive number');
+      const date = migDate(dt, mdy); if(!date) return err(i,'Date "'+dt+'" not recognised'+(dt?'':' (empty)'));
+      const term = migTerm(g(r,'term')) || o.term; let year = parseInt(g(r,'year'),10); if(!(year>=2000&&year<=2100)) year = Number(o.year);
+      const method = migMethod(g(r,'method')), receipt = g(r,'receipt'), ref = g(r,'ref');
+      const dupKey = receipt ? 'r|'+migNorm(receipt) : ['k',ex.id,date,amt,migNorm(ref),term,year].join('|');
+      if(seen.has(dupKey)) return skip(i,'Repeated row in this file'); seen.add(dupKey);
+      const dup = school.payments.some(p=>!p.void && (receipt ? migNorm(p.receiptNo)===migNorm(receipt) : (p.studentId===ex.id && p.date===date && p.amount===amt && migNorm(p.ref||'')===migNorm(ref))));
+      if(dup) return skip(i,'Already in the system (imported before)');
+      if(!termOf(cls.id,term,year)) newTerms.add(cls.name+' '+term+' '+year);
+      P.ready.push({i, sid:ex.id, classId:cls.id, amt, date, method, receipt, ref, term, year, adm});
+    }
+    else if(mig.set==='expenses'){
+      const at=g(r,'amount'), dt=g(r,'date');
+      const amt = migNum(at); if(isNaN(amt) || amt<=0) return err(i,'Amount "'+at+'" is not a positive number');
+      const date = migDate(dt, mdy); if(!date) return err(i,'Date "'+dt+'" not recognised'+(dt?'':' (empty)'));
+      let cat = g(r,'category'), desc = g(r,'desc'); const hit = EXP_CATS.find(c=>migNorm(c)===migNorm(cat));
+      if(hit) cat = hit; else { if(cat) desc = (desc?desc+' ':'')+'('+cat+')'; cat = 'Other'; }
+      const dk = [date,amt,cat,migNorm(desc)].join('|');
+      if(seen.has(dk)) return skip(i,'Repeated row in this file'); seen.add(dk);
+      if(school.expenses.some(e=>!e.void && e.date===date && e.amount===amt && e.category===cat && migNorm(e.desc||'')===migNorm(desc))) return skip(i,'Already in the system (imported before)');
+      P.ready.push({i, date, amt, cat, desc});
+    }
+  });
+  if(newGrades.size) P.notes.push(newGrades.size+' new grade(s) will be created.');
+  if(newTerms.size) P.notes.push('Fee term(s) will be created for: '+[...newTerms].slice(0,8).join(', ')+(newTerms.size>8?'…':'')+'.');
+  return P;
+}
+
+/* ---------- applying (changes data; logged so the latest import can be undone) ---------- */
+function migSnapRec(school, log, ftId, sid){
+  const f = log.prev.fees; if(!f[ftId]) f[ftId] = {};
+  if(!(sid in f[ftId])){ const r = (school.fees[ftId]||{})[sid]; f[ftId][sid] = r ? JSON.parse(JSON.stringify(r)) : null; }
+}
+function migEnsureTerm(school, log, cls, term, year){
+  let ft = (school.feeTerms||[]).find(t=>t.classId===cls.id && t.term===term && Number(t.year)===Number(year));
+  if(!ft){ const res = makeFeeTerm(school, cls, term, Number(year), '', '', false, false); ft = res.ft; log.created.feeTerms.push(ft.id); }
+  return ft;
+}
+function migGetClass(school, log, name){
+  let c = migFindClass(school, name);
+  if(!c){ createGrade(school, String(name).replace(/\s+/g,' ').trim(), ''); c = migFindClass(school, name); if(c) log.created.classes.push(c.id); }
+  return c;
+}
+function migApply(P){
+  const school = currentSchool(), o = mig.opts, fi = currentFinance();
+  const by = 'Data migration' + (fi ? ' ('+fi.name+')' : '');
+  const log = {id:uid('mig_'), ts:Date.now(), set:P.set, label:MIG_SETS[P.set].label.replace(/^\d\.\s*/,''), file:mig.fileName||'pasted data', by, count:P.ready.length, undone:false,
+    created:{students:[],classes:[],feeTerms:[],payments:[],expenses:[]}, prev:{fees:{}, structure:{}, students:{}}, unhid:[]};
+  if(P.set==='learners'){
+    P.ready.forEach(op=>{
+      let st = op.ex ? finRaw(school).find(s=>s.id===op.ex) : null;
+      if(!st){
+        const cls = op.classId ? school.classes.find(c=>c.id===op.classId) : migGetClass(school, log, op.gr);
+        const id = takeRetainedId(school, op.adm) || uid('stu_');
+        st = {id, adm:op.adm, assessNo:'', name:op.name.replace(/\s+/g,' '), classId:cls.id, gender:normGender(op.gender), parentPhone:op.phone, parentPin:genParentPin()};
+        school.students.push(st); log.created.students.push(id);
+      } else if(o.update && school.students.some(s=>s.id===st.id)){
+        log.prev.students[st.id] = JSON.parse(JSON.stringify(st));
+        if(op.name) st.name = op.name.replace(/\s+/g,' ');
+        if(op.phone) st.parentPhone = op.phone;
+        if(op.gender) st.gender = normGender(op.gender) || st.gender;
+        if(op.gr){ const c = op.classId ? school.classes.find(x=>x.id===op.classId) : migGetClass(school, log, op.gr); if(c) st.classId = c.id; }
+      }
+      if(!school.classes.some(c=>c.id===st.classId) && school.students.some(s=>s.id===st.id) && (op.classId||op.gr)){
+        if(!(st.id in log.prev.students)) log.prev.students[st.id] = JSON.parse(JSON.stringify(st));
+        const c = op.classId ? school.classes.find(x=>x.id===op.classId) : migGetClass(school, log, op.gr); if(c) st.classId = c.id;
+      }
+      if(school.finHidden && school.finHidden[st.id]){ delete school.finHidden[st.id]; log.unhid.push(st.id); }
+      if(op.bal!=null || op.next!=null){
+        const cls = school.classes.find(c=>c.id===st.classId); if(!cls) return;
+        const ft = migEnsureTerm(school, log, cls, o.term, o.year);
+        migSnapRec(school, log, ft.id, st.id);
+        if(!school.fees[ft.id]) school.fees[ft.id] = {};
+        const rec = school.fees[ft.id][st.id] || (school.fees[ft.id][st.id] = {});
+        if(op.bal!=null){
+          if(o.balMode==='current' && rec.billed==null){ rec.openingBalance = op.bal; rec.billed = 0; rec.lines = []; rec.migrated = true; }
+          rec.balance = op.bal;
+        }
+        if(op.next!=null){ rec.nextTermFee = op.next; rec.nextManual = true; }
+        rec.updatedAt = Date.now(); rec.updatedBy = by;
+      }
+    });
+  }
+  else if(P.set==='structure'){
+    const touched = new Set();
+    P.ready.forEach(op=>{
+      const cls = op.classId ? school.classes.find(c=>c.id===op.classId) : migGetClass(school, log, op.gr);
+      const ft = migEnsureTerm(school, log, cls, o.term, o.year);
+      if(!(ft.id in log.prev.structure)) log.prev.structure[ft.id] = school.feeStructure[ft.id] ? JSON.parse(JSON.stringify(school.feeStructure[ft.id])) : null;
+      const st = school.feeStructure[ft.id] || (school.feeStructure[ft.id] = {amount:0, items:[]}); st.items = st.items||[];
+      if(op.tuition){ st.amount = op.amt; }
+      else if(!st.items.some(x=>migNorm(x.name)===migNorm(op.item))){
+        st.items.push({name:op.item, amount:op.amt, optional:op.optional, once:op.once});
+        if(!Array.isArray(school.feeCatalog)) school.feeCatalog = [];
+        if(!school.feeCatalog.some(x=>migNorm(x)===migNorm(op.item))) school.feeCatalog.push(op.item);
+      }
+      st.updatedAt = Date.now(); touched.add(ft);
+    });
+    touched.forEach(ft=>{ const st = school.feeStructure[ft.id]; if(st && st.amount>0){
+      (function(){ const before = JSON.stringify(school.fees[ft.id]||{});
+        finLearners(school, ft).forEach(l=>migSnapRec(school, log, ft.id, l.id)); autoNextFees(ft); void before; })(); } });
+  }
+  else if(P.set==='services'){
+    const touched = new Map();
+    P.ready.forEach(op=>{
+      const ft = (school.feeTerms||[]).find(t=>t.id===op.ftId), st = school.feeStructure[op.ftId], it = st.items.find(x=>x.optional && x.name===op.name);
+      migSnapRec(school, log, op.ftId, op.sid);
+      if(!school.fees[op.ftId]) school.fees[op.ftId] = {};
+      const rec = school.fees[op.ftId][op.sid] || (school.fees[op.ftId][op.sid] = {}); rec.extras = rec.extras||[];
+      if(rec.migrated){ if(!rec.extras.includes(op.name)) rec.extras.push(op.name); rec.updatedAt = Date.now(); }
+      else applyExtra(school, ft, it, op.sid, true);
+      touched.set(ft.id, ft);
+    });
+    touched.forEach(ft=>{ const st = school.feeStructure[ft.id]; if(st && st.amount>0){ finLearners(school, ft).forEach(l=>migSnapRec(school, log, ft.id, l.id)); autoNextFees(ft); } });
+  }
+  else if(P.set==='payments'){
+    let n = school.payments.reduce((m,p)=>Math.max(m,Number(String(p.receiptNo).replace(/\D/g,''))||0),0);
+    P.ready.forEach((op,k)=>{
+      const cls = school.classes.find(c=>c.id===op.classId);
+      const ft = migEnsureTerm(school, log, cls, op.term, op.year);
+      const receiptNo = op.receipt || ('RCT-'+String(++n).padStart(5,'0'));
+      const pay = {id:uid('pay_'), receiptNo, examId:ft.id, studentId:op.sid, amount:op.amt, method:op.method, ref:op.ref, date:op.date, by, ts:(Date.parse(op.date+'T12:00:00')||Date.now())+k, imported:true, balanceAfter:null};
+      if(o.payBal==='reduce'){
+        migSnapRec(school, log, ft.id, op.sid);
+        if(!school.fees[ft.id]) school.fees[ft.id] = {};
+        const rec = school.fees[ft.id][op.sid] || (school.fees[ft.id][op.sid] = {});
+        rec.balance = (Number(rec.balance)||0) - op.amt; pay.balanceAfter = rec.balance; rec.updatedAt = Date.now(); rec.updatedBy = by;
+      }
+      school.payments.push(pay); log.created.payments.push(pay.id);
+    });
+  }
+  else if(P.set==='expenses'){
+    P.ready.forEach((op,k)=>{
+      const e = {id:uid('exp_'), date:op.date, category:op.cat, amount:op.amt, desc:op.desc, by, ts:(Date.parse(op.date+'T12:00:00')||Date.now())+k, imported:true};
+      school.expenses.push(e); log.created.expenses.push(e.id);
+    });
+  }
+  if(!Array.isArray(school.migrations)) school.migrations = [];
+  school.migrations.push(log); saveDB(DB);
+  return log;
+}
+function migUndo(id){
+  if(!canEdit()){ noEdit(); return; }
+  const school = currentSchool(), L = school.migrations||[];
+  const last = [...L].reverse().find(x=>!x.undone);
+  if(!last || last.id!==id){ toast('Only the most recent import can be undone. Undo the newer one first.','err'); return; }
+  if(!confirm('Undo "'+last.label+'" ('+last.count+' row(s), '+new Date(last.ts).toLocaleString()+')?\n\nEverything that import added or changed is reverted. Anything you entered by hand since may also be affected if it touched the same learners.')) return;
+  const c = last.created;
+  school.payments = school.payments.filter(p=>!c.payments.includes(p.id));
+  school.expenses = school.expenses.filter(e=>!c.expenses.includes(e.id));
+  Object.keys(last.prev.fees).forEach(ft=>{ Object.keys(last.prev.fees[ft]).forEach(sid=>{ const p = last.prev.fees[ft][sid]; if(!school.fees[ft]) school.fees[ft] = {}; if(p) school.fees[ft][sid] = p; else delete school.fees[ft][sid]; }); });
+  Object.keys(last.prev.structure).forEach(ft=>{ const p = last.prev.structure[ft]; if(p) school.feeStructure[ft] = p; else delete school.feeStructure[ft]; });
+  c.feeTerms.forEach(ft=>{ school.feeTerms = school.feeTerms.filter(t=>t.id!==ft); delete school.fees[ft]; delete school.feeStructure[ft]; delete school.feePublish[ft]; });
+  Object.keys(last.prev.students).forEach(sid=>{ const i = school.students.findIndex(s=>s.id===sid); if(i>=0) school.students[i] = last.prev.students[sid]; });
+  school.students = school.students.filter(s=>!c.students.includes(s.id));
+  school.classes = school.classes.filter(k=>!c.classes.includes(k.id) || school.students.some(s=>s.classId===k.id) || school.exams.some(e=>e.classId===k.id));
+  (last.unhid||[]).forEach(sid=>{ school.finHidden[sid] = true; });
+  last.undone = true; saveDB(DB); toast('Import undone'); renderFinance();
+}
+
+/* ---------- screen ---------- */
+function migOpt(k,v){ mig.opts[k] = v; mig.plan = null; const el = qs('#migPlan'); if(el) el.innerHTML = ''; }
+function migPickSet(v){ mig.set = v; mig.header = []; mig.rows = []; mig.map = {}; mig.plan = null; mig.result = ''; migRender(); }
+function migSetMap(k,v){ mig.map[k] = v==='' ? null : Number(v); mig.plan = null; const el = qs('#migPlan'); if(el) el.innerHTML = ''; }
+function migIngest(text, name){
+  const rows = migParse(text);
+  if(rows.length<2){ mig.result = '<div class="msg err">That data has no rows under the header line. The first line must be the column names.</div>'; mig.rows = []; mig.header = []; migRender(); return; }
+  mig.header = rows[0].map((h,i)=>h || ('Column '+(i+1))); mig.rows = rows.slice(1); mig.fileName = name||'pasted data'; mig.plan = null; mig.result = '';
+  mig.map = migAutoMap(mig.header, MIG_SETS[mig.set].fields); migRender();
+}
+function migLoadFile(input){
+  const f = input.files && input.files[0]; if(!f) return;
+  if(/\.xlsx?$/i.test(f.name)){ mig.result = '<div class="msg err">Excel files cannot be read directly. In Excel use <b>File → Save As → CSV</b>, then choose that file — or select the cells, copy, and paste them into the box below.</div>'; migRender(); input.value=''; return; }
+  const r = new FileReader(); r.onload = ()=>migIngest(String(r.result||''), f.name); r.readAsText(f);
+}
+function migLoadPaste(){ const t = (qs('#migPaste')||{}).value||''; if(!t.trim()){ toast('Paste the cells first','err'); return; } migIngest(t, 'pasted data'); }
+function migCheck(){
+  const S = MIG_SETS[mig.set], miss = S.fields.filter(f=>f.req && mig.map[f.k]==null).map(f=>f.l);
+  if(miss.length){ toast('Match these columns first: '+miss.join(', '),'err'); return; }
+  if(mig.set==='learners' && !mig.opts.balMode && S.fields.some(f=>f.k==='balance' && mig.map.balance!=null)){ toast('Say what the balance column means (see step 4)','err'); return; }
+  if(!(Number(mig.opts.year)>=2000 && Number(mig.opts.year)<=2100)){ toast('Enter a valid year','err'); return; }
+  mig.plan = migPlan(); migRender(); const el = qs('#migPlan'); if(el) el.scrollIntoView({behavior:'smooth'});
+}
+function migProblemsCsv(){
+  const P = mig.plan; if(!P) return; const rows = [['Row in your file','Problem'].concat(mig.header)];
+  P.errors.concat(P.skipped).sort((a,b)=>a.i-b.i).forEach(x=>rows.push([x.i+2, x.why].concat(mig.rows[x.i]||[])));
+  dlBlob('migration-rows-to-fix.csv', migCsv(rows), 'text/csv');
+}
+function migRun(){
+  if(!canEdit()){ noEdit(); return; }
+  const P = mig.plan; if(!P || !P.ready.length) return;
+  if(!confirm('Import '+P.ready.length+' row(s) into the Finance Portal?'+(mig.opts.backup?'\n\nA safety backup of the current finance records will download first.':'')+'\n\nYou can undo this import afterwards from this page.')) return;
+  if(mig.opts.backup){ try{ backupFinance(); }catch(e){} }
+  const log = migApply(P);
+  mig.plan = null; mig.rows = []; mig.header = []; mig.map = {};
+  mig.result = '<div class="msg ok">✅ Imported <b>'+log.count+'</b> row(s) — '+escapeHtml(log.label)+'. '+(P.errors.length+P.skipped.length ? (P.errors.length+P.skipped.length)+' row(s) were left out (see the list you just checked). ' : '')+'Open the matching Finance tab to check the result. You can undo this import below.</div>';
+  toast('Import complete'); migRender();
+}
+function migRender(){
+  const el = qs('#migBody'); if(!el) return; const school = currentSchool(), S = MIG_SETS[mig.set], o = mig.opts;
+  const rad = (name,val,lbl)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0;font-weight:400"><input type="radio" name="${name}" value="${val}" style="width:auto;margin-top:3px" ${o[name]===val?'checked':''} onchange="migOpt('${name}','${val}')"><span>${lbl}</span></label>`;
+  const chk = (key,lbl)=>`<label style="display:flex;gap:8px;align-items:center;margin:4px 0;font-weight:400"><input type="checkbox" style="width:auto" ${o[key]?'checked':''} onchange="migOpt('${key}',this.checked)"> ${lbl}</label>`;
+  const termPick = `<div class="row"><div><label>Fee term these rows belong to</label><select onchange="migOpt('term',this.value)">${['Term 1','Term 2','Term 3'].map(t=>`<option ${t===o.term?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div><label>Year</label><input type="number" min="2000" max="2100" value="${o.year}" onchange="migOpt('year',this.value)"></div></div>`;
+  const dateFmt = `<div><label>Dates in my file are written as</label><select onchange="migOpt('dateFmt',this.value)"><option value="dmy" ${o.dateFmt==='dmy'?'selected':''}>Day/Month/Year (e.g. 14/01/2026)</option><option value="mdy" ${o.dateFmt==='mdy'?'selected':''}>Month/Day/Year (e.g. 01/14/2026)</option></select></div>`;
+  let opts = '';
+  if(mig.set==='learners') opts = termPick + `<p class="small" style="margin:6px 0 2px"><b>What does the balance column mean?</b> (required if you have one)</p>
+    ${rad('balMode','current','It is what the learner owes <b>right now</b>, already including this term\'s fees — do not invoice this term again.')}
+    ${rad('balMode','arrears','It is <b>arrears brought forward</b> from before this term — I will still generate this term\'s invoices, which are added on top.')}
+    ${chk('mkLearners','Create learners that are not in the system yet')}${chk('mkGrades','Create grades that do not exist yet')}
+    ${chk('update','Also update name / grade / phone / gender of learners already in the system')}${chk('overwrite','Overwrite balances that already exist for this term (otherwise they are kept)')}`;
+  else if(mig.set==='structure') opts = termPick + chk('mkGrades','Create grades that do not exist yet');
+  else if(mig.set==='services') opts = termPick;
+  else if(mig.set==='payments') opts = `<div class="row">${dateFmt}</div>` + termPick + `<p class="small" style="margin:2px 0">Used for rows with no Term/Year column.</p>
+    <p class="small" style="margin:6px 0 2px"><b>Should these payments change balances?</b></p>
+    ${rad('payBal','keep','No — the balances I imported already reflect these payments (most common).')}
+    ${rad('payBal','reduce','Yes — reduce each learner\'s balance by their payments.')}`;
+  else if(mig.set==='expenses') opts = `<div class="row">${dateFmt}</div>`;
+  const loaded = mig.rows.length>0;
+  const mapRows = !loaded ? '' : `<table><tr><th style="text-align:left">Needed by the app</th><th style="text-align:left">Column in your file</th><th style="text-align:left">First value</th></tr>
+    ${S.fields.map(f=>{ const idx = mig.map[f.k]; return `<tr><td style="text-align:left">${escapeHtml(f.l)}${f.req?' <b style="color:#b91c1c">*</b>':''}</td>
+    <td style="text-align:left"><select onchange="migSetMap('${f.k}',this.value)"><option value="">— not in my file —</option>${mig.header.map((h,i)=>`<option value="${i}" ${idx===i?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></td>
+    <td style="text-align:left" class="small">${idx!=null ? escapeHtml((mig.rows[0]||[])[idx]||'') : ''}</td></tr>`; }).join('')}</table>`;
+  el.innerHTML = `${canEdit()?'':'<div class="msg">👁 View-only access — you can preview but not import.</div>'}${mig.result}
+  <p class="small"><b>Suggested order:</b> learners & balances → fee structure → optional services → payment history → expenses. Each step is separate, so you can do them on different days.</p>
+  <h3 style="margin:14px 0 4px">Step 1 — What do you want to bring over?</h3>
+  <div class="row"><div style="flex:2"><select onchange="migPickSet(this.value)">${Object.keys(MIG_SETS).map(k=>`<option value="${k}" ${k===mig.set?'selected':''}>${MIG_SETS[k].label}</option>`).join('')}</select></div>
+  <div style="align-self:flex-end"><button class="ghost" onclick="migTemplate()">⬇ Download blank template</button></div></div>
+  <p class="small">${S.hint} The template shows the columns — but you can upload the other app's own export as it is; you match its columns in step 3.</p>
+  <h3 style="margin:14px 0 4px">Step 2 — Give us the data</h3>
+  <div class="row"><div><label>Upload a CSV file <span class="small">(Excel: File → Save As → CSV)</span></label><input type="file" accept=".csv,.txt,.tsv,text/csv,text/plain" onchange="migLoadFile(this)"></div></div>
+  <label>…or copy the cells in Excel / Google Sheets (including the header row) and paste here</label>
+  <textarea id="migPaste" rows="3" placeholder="Admission No&#9;Name&#9;Grade&#9;Balance"></textarea>
+  <div class="flexbtns"><button class="ghost" onclick="migLoadPaste()">Read pasted data</button></div>
+  ${loaded ? `<div class="msg ok" style="margin-top:8px">✔ Read <b>${mig.rows.length}</b> row(s) from <b>${escapeHtml(mig.fileName)}</b>.</div>
+  <h3 style="margin:14px 0 4px">Step 3 — Match your columns</h3><p class="small">We guessed from the column names. Fix any that are wrong. <b style="color:#b91c1c">*</b> means required.</p><div style="overflow-x:auto">${mapRows}</div>
+  <h3 style="margin:14px 0 4px">Step 4 — Options</h3>${opts}
+  <h3 style="margin:14px 0 4px">Step 5 — Check (nothing is saved yet)</h3>
+  <div class="flexbtns"><button onclick="migCheck()">🔍 Check my data</button></div>
+  <div id="migPlan" style="margin-top:10px">${mig.plan ? migPlanHTML(mig.plan) : ''}</div>` : ''}`;
+  migHistoryRender();
+}
+function migPlanHTML(P){
+  const n = P.ready.length, e = P.errors.length, s = P.skipped.length, S = MIG_SETS[P.set];
+  const box = (t,v,c)=>`<div style="flex:1;min-width:120px;background:#f7f9fc;border:1px solid var(--border);border-radius:9px;padding:9px 11px;border-top:3px solid ${c}"><div class="small">${t}</div><div style="font-size:19px;font-weight:800;color:var(--navy)">${v}</div></div>`;
+  const sum = [];
+  if(P.set==='learners'){ if(P.sum.newLearners) sum.push(P.sum.newLearners+' new learner(s) will be created'); if(P.sum.existing) sum.push(P.sum.existing+' already in the system'); if(P.sum.bal) sum.push(P.sum.bal+' balance(s) will be set'); if(P.sum.kept) sum.push(P.sum.kept+' existing balance(s) kept as they are'); }
+  const list = arr => arr.slice(0,40).map(x=>`<tr><td>${x.i+2}</td><td style="text-align:left">${escapeHtml(x.why)}</td><td style="text-align:left" class="small">${escapeHtml((mig.rows[x.i]||[]).slice(0,4).join(' · '))}</td></tr>`).join('');
+  const sampleCols = S.fields.filter(f=>mig.map[f.k]!=null).slice(0,6);
+  return `<div class="row">${box('Ready to import',n,'var(--ee)')}${box('Left out (already there / repeated)',s,'var(--me)')}${box('Problems to fix',e,'var(--be)')}</div>
+  ${sum.length?`<p class="small" style="margin:8px 0 2px">${sum.join(' · ')}.</p>`:''}${P.notes.map(t=>`<p class="small" style="margin:2px 0">ℹ ${escapeHtml(t)}</p>`).join('')}
+  ${e?`<p style="margin:10px 0 4px"><b>Problems</b> <span class="small">(row number is the row in your file, counting the header as row 1)</span></p><div style="overflow-x:auto"><table><tr><th>Row</th><th style="text-align:left">Problem</th><th style="text-align:left">Data</th></tr>${list(P.errors)}</table></div>${e>40?`<p class="small">Showing the first 40 of ${e}.</p>`:''}`:''}
+  ${s?`<details style="margin-top:8px"><summary class="small" style="cursor:pointer">Why ${s} row(s) are left out</summary><div style="overflow-x:auto"><table><tr><th>Row</th><th style="text-align:left">Reason</th><th style="text-align:left">Data</th></tr>${list(P.skipped)}</table></div></details>`:''}
+  ${n?`<p style="margin:10px 0 4px"><b>First rows that will be imported</b></p><div style="overflow-x:auto"><table><tr>${sampleCols.map(f=>`<th>${escapeHtml(f.l)}</th>`).join('')}</tr>${P.ready.slice(0,6).map(op=>`<tr>${sampleCols.map(f=>`<td>${escapeHtml((mig.rows[op.i]||[])[mig.map[f.k]]||'')}</td>`).join('')}</tr>`).join('')}</table></div>`:''}
+  <div style="margin-top:10px">${chkBackup()}
+  <div class="flexbtns"><button class="gold" ${n&&canEdit()?'':'disabled'} onclick="migRun()">✅ Import ${n} row(s)</button>${(e||s)?'<button class="ghost" onclick="migProblemsCsv()">⬇ Download rows to fix (CSV)</button>':''}</div>
+  ${e?'<p class="small">Rows with problems are left out. Fix them in your file and import again — rows already imported are skipped automatically, so nothing is doubled.</p>':''}</div>`;
+}
+function chkBackup(){ return `<label style="display:flex;gap:8px;align-items:center;margin:4px 0;font-weight:400"><input type="checkbox" style="width:auto" ${mig.opts.backup?'checked':''} onchange="mig.opts.backup=this.checked"> Download a safety backup of the current finance records first (recommended)</label>`; }
+function migHistoryRender(){
+  const el = qs('#migHistory'); if(!el) return; const school = currentSchool(), L = (school.migrations||[]).slice().reverse();
+  const lastLive = L.find(x=>!x.undone);
+  el.innerHTML = `<h2>🕘 Import history</h2>` + (L.length ? `<table><tr><th style="text-align:left">When</th><th style="text-align:left">What</th><th>Rows</th><th style="text-align:left">By</th><th></th></tr>
+    ${L.map(x=>`<tr style="${x.undone?'opacity:.5':''}"><td style="text-align:left">${escapeHtml(new Date(x.ts).toLocaleString())}</td><td style="text-align:left">${escapeHtml(x.label)}<div class="small">${escapeHtml(x.file)}</div></td><td>${x.count}</td><td style="text-align:left" class="small">${escapeHtml(x.by)}</td>
+    <td>${x.undone?'<span class="small">Undone</span>':(lastLive&&lastLive.id===x.id&&canEdit()?`<button class="danger" onclick="migUndo('${x.id}')">↩ Undo</button>`:'')}</td></tr>`).join('')}</table><p class="small">Only the most recent import can be undone. Undo it, then the one before it.</p>` : '<p class="small">No imports yet.</p>');
+}
+function financeMigrationHTML(school){
+  return `<div class="card"><h2>🔄 Data Migration — bring records from your old system</h2>
+  <p class="small">Moving from another fees or school app? Export your data from it (most apps can export to Excel or CSV), then bring it in here in a few steps. Nothing is saved until you press Import, every import is logged, and the latest one can be undone.</p>
+  <div id="migBody"></div></div><div class="card" id="migHistory"></div>`;
+}
+
 function financeCtxBar(school){ return `<div class="card no-print" style="padding:10px 14px"><b class="small">Working on:</b>${financeCtxRow(school)}</div>`; }
 function finRefreshAll(){ refreshPayCard(); previewFeeReminders(); refreshStructure(); renderCollections(); renderOverview(); }
 function financeFeesTabHTML(school){
   if(!school.classes.length) return `<div class="card"><h2>💵 Fee Balances</h2><p class="small">No grades set up yet — ask your DOS/HOI.</p></div>`;
   const firstClassId = school.classes[0].id;
   return `<div class="card"><h2>💵 Fee Balances — Import &amp; Summary</h2>
-  <p class="small">Pick a Grade and Exam/Term, then upload a CSV to set each learner's fees balance (arrears) and next term's expected fee for that term. Matching is by <b>Admission Number</b> — a row whose admission number doesn't match any learner in this grade is skipped and listed below, not guessed.</p>
+  <p class="small">Pick a Grade and Fee term, then upload a CSV to set each learner's fees balance (arrears) and next term's expected fee for that term. Matching is by <b>Admission Number</b> — a row whose admission number doesn't match any learner in this grade is skipped and listed below, not guessed.</p>
   ${financeCtxRow(school)}
   <div class="row">
     <div><label>CSV file <span class="small">(columns: Admission No, Fees Balance, Next Term Fee — header row required)</span></label><input type="file" id="ffCsvFile" accept=".csv,text/csv"></div>
@@ -5963,8 +6618,8 @@ function financeFeesTabHTML(school){
 }
 function fillFinanceExams(){
   const school = currentSchool(); const classId = qs('#ffClass').value;
-  const exams = school.exams.filter(e=>e.classId===classId);
-  qs('#ffExam').innerHTML = exams.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this grade</option>';
+  const exams = finPeriodsForClass(school, classId);
+  qs('#ffExam').innerHTML = exams.map(e=>`<option value="${e.id}">${escapeHtml(periodLabel(e))}</option>`).join('') || '<option value="">No fee term yet - create one under Fee Structure</option>';
   loadFinanceFeesSummary();
 }
 function loadFinanceFeesSummary(){
@@ -5973,14 +6628,16 @@ function loadFinanceFeesSummary(){
   const examId = qs('#ffExam') && qs('#ffExam').value; finState.examId = examId;
   const area = qs('#ffSummaryArea');
   if(!area){ finRefreshAll(); return; }
-  const exam = school.exams.find(e=>e.id===examId);
+  const exam = finExams(school).find(e=>e.id===examId);
   if(!exam){ area.innerHTML = '<p class="small">No exam selected for this grade yet.</p>'; finRefreshAll(); return; }
-  const learners = studentsForExam(school, exam);
+  const learners = finLearners(school, exam);
   const recs = school.fees[examId] || {};
   const bal = l => { const v=(recs[l.id]||{}).balance; return (v==null||v==='')?null:Number(v); };
   const owing = learners.filter(l=>bal(l)>0), cleared = learners.filter(l=>bal(l)!=null && bal(l)<=0), none = learners.filter(l=>bal(l)==null);
   const totalBal = owing.reduce((t,l)=>t+bal(l),0);
   const totalNext = learners.reduce((t,l)=>t+(Number((recs[l.id]||{}).nextTermFee)||0),0);
+  const dueOf = l=>Math.max(0,(Number((recs[l.id]||{}).balance)||0)+(Number((recs[l.id]||{}).nextTermFee)||0));
+  const totalDue = learners.reduce((t,l)=>t+dueOf(l),0), stc = school.feeStructure[examId];
   const stat = (v,t,c)=>`<div style="flex:1;min-width:130px;background:#f7f9fc;border:1px solid var(--border);border-radius:9px;padding:9px 11px;border-top:3px solid ${c}"><div class="small">${t}</div><div style="font-size:17px;font-weight:800;color:var(--navy)">${v}</div></div>`;
   area.innerHTML = `<div class="row" style="margin-bottom:10px">
     ${stat('KES '+totalBal.toLocaleString(),'Total arrears','var(--be)')}
@@ -5988,22 +6645,24 @@ function loadFinanceFeesSummary(){
     ${stat(cleared.length,'Cleared / credit','var(--ee)')}
     ${stat(none.length,'No fee record yet','#9aa8b8')}
     ${stat('KES '+totalNext.toLocaleString(),'Next-term fees expected','var(--me)')}
+    ${stat('KES '+totalDue.toLocaleString(),'Due at opening (arrears + next fee)','var(--ae)')}
   </div>
   <div class="row no-print" style="margin-bottom:8px">
     <div><input id="ffSearch" placeholder="🔍 Search name or admission no." oninput="filterFeeRows()"></div>
     <div><select id="ffFilter" onchange="filterFeeRows()"><option value="all">All learners</option><option value="owing">Owing only</option><option value="cleared">Cleared only</option><option value="none">No record</option></select></div>
     <div class="flexbtns" style="align-self:flex-end"><button class="ghost" onclick="exportFeesCsv()">⬇ Export CSV</button><button class="gold" onclick="printDefaulters()">🖨 Print Arrears List</button></div>
   </div>
-  <table id="ffTable"><tr><th>Adm No.</th><th>Name</th><th>Fees Balance (Arrears)</th><th>Next Term Fee</th><th>Status</th></tr>
+  <table id="ffTable"><tr><th>Adm No.</th><th>Name</th><th>Fees Balance (Arrears)</th><th>Next Term Fee</th><th>Due at Opening</th><th>Status</th><th>Invoice</th></tr>
   ${learners.map(s=>{
     const r = recs[s.id] || {}; const b = bal(s);
     const st = b==null?'none':(b>0?'owing':'cleared');
     const badge = st==='owing'?'<span class="badge BE">Owing</span>':st==='cleared'?'<span class="badge EE">Cleared</span>':'<span class="small">—</span>';
     return `<tr data-st="${st}" data-q="${escapeHtml(((s.adm||'')+' '+s.name).toLowerCase())}"><td>${s.adm?escapeHtml(s.adm):'<span class="small">—</span>'}</td><td style="text-align:left">${escapeHtml(s.name)}</td>
     <td><input type="number" value="${r.balance??''}" style="max-width:110px" onchange="saveFeeCell('${examId}','${s.id}','balance',this.value)"></td>
-    <td><input type="number" min="0" value="${r.nextTermFee??''}" style="max-width:110px" onchange="saveFeeCell('${examId}','${s.id}','nextTermFee',this.value)"></td>
-    <td>${badge}</td></tr>`;
-  }).join('') || `<tr><td colspan="5" class="small">No learners in this grade.</td></tr>`}
+    <td><input type="number" min="0" value="${r.nextTermFee??''}" style="max-width:110px" onchange="saveFeeCell('${examId}','${s.id}','nextTermFee',this.value)"> ${r.nextManual?`<span class="small" title="edited manually">✎</span><button class="ghost" style="padding:2px 6px" title="Reset to automatic" onclick="resetNextFee('${examId}','${s.id}')">↺</button>`:(stc&&r.nextTermFee!=null?'<span class="small">auto</span>':'')}</td>
+    <td><b>${dueOf(s).toLocaleString()}</b></td>
+    <td>${badge}</td><td><button class="ghost" style="padding:2px 8px" title="Print next-term invoice" onclick="printNextTermInvoices('${s.id}')">🧾</button> <label class="small" title="Keep this learner's invoice out of the Parent Portal"><input type="checkbox" style="width:auto" ${r.hold?'checked':''} onchange="setFeeHold('${examId}','${s.id}',this.checked)"> hide</label></td></tr>`;
+  }).join('') || `<tr><td colspan="7" class="small">No learners in this grade.</td></tr>`}
   </table><p class="small">Tip: a negative balance means the learner has paid ahead (credit).</p>`;
   finRefreshAll();
 }
@@ -6020,24 +6679,24 @@ function feesDownload(name, rows){
   a.download = name; document.body.appendChild(a); a.click(); a.remove();
 }
 function feesTemplateCsv(){
-  const school = currentSchool(); const exam = school.exams.find(e=>e.id===qs('#ffExam').value);
+  const school = currentSchool(); const exam = finExams(school).find(e=>e.id===qs('#ffExam').value);
   const rows = [['Admission No','Fees Balance','Next Term Fee']];
-  if(exam) studentsForExam(school, exam).forEach(s=>rows.push([s.adm||'','','']));
+  if(exam) finLearners(school, exam).forEach(s=>rows.push([s.adm||'','','']));
   feesDownload('fees-template.csv', rows);
 }
 function exportFeesCsv(){
-  const school = currentSchool(); const exam = school.exams.find(e=>e.id===qs('#ffExam').value);
+  const school = currentSchool(); const exam = finExams(school).find(e=>e.id===qs('#ffExam').value);
   if(!exam){ toast('Pick an exam/term first','err'); return; }
   const recs = school.fees[exam.id]||{};
-  const rows = [['Admission No','Name','Fees Balance','Next Term Fee','Last Updated By']];
-  studentsForExam(school, exam).forEach(s=>{ const r=recs[s.id]||{}; rows.push([s.adm||'',s.name,r.balance??'',r.nextTermFee??'',r.updatedBy||'']); });
+  const rows = [['Admission No','Name','Fees Balance','Next Term Fee','Due at Opening','Last Updated By']];
+  finLearners(school, exam).forEach(s=>{ const r=recs[s.id]||{}; rows.push([s.adm||'',s.name,r.balance??'',r.nextTermFee??'',Math.max(0,(Number(r.balance)||0)+(Number(r.nextTermFee)||0)),r.updatedBy||'']); });
   feesDownload('fee-balances-'+exam.name.replace(/\W+/g,'_')+'.csv', rows);
 }
 function printDefaulters(){
-  const school = currentSchool(); const exam = school.exams.find(e=>e.id===qs('#ffExam').value);
+  const school = currentSchool(); const exam = finExams(school).find(e=>e.id===qs('#ffExam').value);
   if(!exam){ toast('Pick an exam/term first','err'); return; }
   const recs = school.fees[exam.id]||{};
-  const list = studentsForExam(school, exam).map(s=>({s,b:Number((recs[s.id]||{}).balance)||0,n:(recs[s.id]||{}).nextTermFee})).filter(x=>x.b>0).sort((a,b)=>b.b-a.b);
+  const list = finLearners(school, exam).map(s=>({s,b:Number((recs[s.id]||{}).balance)||0,n:(recs[s.id]||{}).nextTermFee})).filter(x=>x.b>0).sort((a,b)=>b.b-a.b);
   const total = list.reduce((t,x)=>t+x.b,0);
   const w = window.open('','_blank');
   if(!w){ toast('Allow pop-ups to print','err'); return; }
@@ -6058,8 +6717,10 @@ function saveFeeCell(examId, sid, field, val){
   school.fees[examId][sid].updatedAt = Date.now();
   const fi = currentFinance();
   school.fees[examId][sid].updatedBy = fi ? fi.name : 'DOS/HOI';
+  let reload = false;
+  if(field==='nextTermFee'){ const man = school.fees[examId][sid].nextTermFee!=null; school.fees[examId][sid].nextManual = man; if(!man){ const ex = finExams(school).find(e=>e.id===examId); if(ex) autoNextFees(ex); reload = true; } }
   saveDB(DB);
-  toast('Saved');
+  toast('Saved'); if(reload) loadFinanceFeesSummary();
 }
 // Tiny CSV reader — handles quoted fields (so a note with a comma in it doesn't split a
 // row wrong) without pulling in a library for three plain columns.
@@ -6085,7 +6746,7 @@ function applyFeesCsv(){
   if(!canEdit()){ noEdit(); return; }
   const school = currentSchool();
   const examId = qs('#ffExam') && qs('#ffExam').value;
-  const exam = school.exams.find(e=>e.id===examId);
+  const exam = finExams(school).find(e=>e.id===examId);
   const msgEl = qs('#ffImportMsg');
   const fileInput = qs('#ffCsvFile');
   const file = fileInput && fileInput.files[0];
@@ -6101,7 +6762,7 @@ function applyFeesCsv(){
     let nextIdx = header.findIndex(h=>h.includes('next'));
     if(admIdx<0 && header.length>=3){ admIdx=0; balIdx=1; nextIdx=2; } // no recognizable header — assume fixed column order
     if(admIdx<0){ msgEl.innerHTML = '<div class="msg err">Could not find an "Admission No" column in the header row.</div>'; return; }
-    const learners = studentsForExam(school, exam);
+    const learners = finLearners(school, exam);
     const byAdm = {}; learners.forEach(s=>{ if(s.adm) byAdm[String(s.adm).trim().toLowerCase()] = s; });
     let matched = 0; const unmatched = [];
     if(!school.fees[examId]) school.fees[examId] = {};
@@ -6114,11 +6775,10 @@ function applyFeesCsv(){
       if(!s){ unmatched.push(adm); continue; }
       const balance = balIdx>=0 ? Number(String(r[balIdx]||'').replace(/[^0-9.\-]/g,'')) : null;
       const nextTermFee = nextIdx>=0 ? Number(String(r[nextIdx]||'').replace(/[^0-9.\-]/g,'')) : null;
-      school.fees[examId][s.id] = {
-        balance: isNaN(balance) ? null : balance,
-        nextTermFee: isNaN(nextTermFee) ? null : nextTermFee,
-        updatedAt: Date.now(), updatedBy: fi ? fi.name : 'DOS/HOI'
-      };
+      const cur = school.fees[examId][s.id] || (school.fees[examId][s.id] = {});
+      if(balIdx>=0) cur.balance = isNaN(balance) ? null : balance;
+      if(nextIdx>=0){ cur.nextTermFee = isNaN(nextTermFee) ? null : nextTermFee; cur.nextManual = cur.nextTermFee!=null; }
+      cur.updatedAt = Date.now(); cur.updatedBy = fi ? fi.name : 'DOS/HOI';
       matched++;
     }
     saveDB(DB);
@@ -6149,8 +6809,8 @@ function financePayTabHTML(school){
   <p class="small">Sends a personalised SMS to the parents of learners who still owe fees in the selected grade/term. Uses your school's SMS credits.</p>
   <div class="row"><div><label>School SMS PIN</label><input id="smsPin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" value="${escapeHtml(smsPinMem[school.code]||'')}" oninput="smsPinMem['${school.code}']=this.value.trim()"></div>
   <div><label>Only owing more than (KES)</label><input id="remMin" type="number" min="0" value="0" oninput="previewFeeReminders()"></div></div>
-  <label style="margin-top:8px">Message <span class="small">— use {name}, {balance}, {next}</span></label>
-  <textarea id="remText" rows="3" oninput="previewFeeReminders()">Dear Parent, {name}'s fee balance is KES {balance}. Next term fee: KES {next}. Kindly clear at your earliest convenience. - ${escapeHtml(school.name)}</textarea>
+  <label style="margin-top:8px">Message <span class="small">— use {name}, {balance}, {next}, {total} (= balance + next fee)</span></label>
+  <textarea id="remText" rows="3" oninput="previewFeeReminders()">Dear Parent, {name}'s fee balance is KES {balance}. Next term fee: KES {next}. Total due at opening: KES {total}. Kindly clear at your earliest convenience. - ${escapeHtml(school.name)}</textarea>
   <div id="remPreview" class="small" style="margin:6px 0"></div>
   <div class="flexbtns"><button class="gold" onclick="sendFeeReminders()">📤 Send Reminders</button></div><div id="remMsg"></div></div>`;
 }
@@ -6180,7 +6840,7 @@ function collectionsData(){
 }
 function renderCollections(){
   const el = qs('#colReport'); if(!el) return;
-  const d = collectionsData(); const nm = id=>(d.school.students.find(x=>x.id===id)||{}).name||'—';
+  const d = collectionsData(); const nm = id=>(finRaw(d.school).find(x=>x.id===id)||{}).name||'—';
   const box=(t,v,c)=>`<div style="flex:1;min-width:130px;background:#f7f9fc;border:1px solid var(--border);border-radius:9px;padding:9px 11px;border-top:3px solid ${c}"><div class="small">${t}</div><div style="font-size:17px;font-weight:800;color:var(--navy)">KES ${v.toLocaleString()}</div></div>`;
   el.innerHTML = `<div class="row">${box('Fees collected',d.income,'var(--ee)')}${box('Expenses',d.spent,'var(--be)')}${box('Net (collected − spent)',d.income-d.spent,'var(--me)')}</div>
   <p class="small" style="margin-top:8px">By method: ${Object.keys(d.byMethod).map(k=>`<b>${escapeHtml(k)}</b> KES ${d.byMethod[k].toLocaleString()}`).join(' · ')||'no payments in this period'}</p>
@@ -6188,11 +6848,11 @@ function renderCollections(){
   renderExpenses();
 }
 function exportCollections(){
-  const d = collectionsData(); const nm = id=>(d.school.students.find(x=>x.id===id)||{}).name||'';
+  const d = collectionsData(); const nm = id=>(finRaw(d.school).find(x=>x.id===id)||{}).name||'';
   feesDownload(`collections-${d.f}_to_${d.t}.csv`, [['Date','Receipt','Learner','Method','Reference','Amount','Received By']].concat(d.pays.map(p=>[p.date,p.receiptNo,nm(p.studentId),p.method,p.ref||'',p.amount,p.by])));
 }
 function printCollections(){
-  const d = collectionsData(); const nm = id=>(d.school.students.find(x=>x.id===id)||{}).name||'—';
+  const d = collectionsData(); const nm = id=>(finRaw(d.school).find(x=>x.id===id)||{}).name||'—';
   const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
   w.document.write(`<html><head><title>Cash Book</title><style>body{font-family:Arial;padding:20px;font-size:12px}h2{margin:0;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #999;padding:4px 6px;text-align:left}th{background:#123a63;color:#fff}.r{text-align:right}</style></head><body>
   <h2>${escapeHtml(d.school.name)} — Cash Book</h2><div>${d.f} to ${d.t} · Printed ${new Date().toLocaleDateString()}</div>
@@ -6223,7 +6883,7 @@ function renderExpenses(){
 }
 function printStatement(){
   const {school, exam, recs} = feeCtx(); const sid = (qs('#payLearner')||{}).value;
-  const st = school.students.find(x=>x.id===sid); if(!st){ toast('Pick a learner first','err'); return; }
+  const st = finRaw(school).find(x=>x.id===sid); if(!st){ toast('Pick a learner first','err'); return; }
   const pays = school.payments.filter(p=>p.studentId===sid && !p.void).sort((a,b)=>a.date<b.date?-1:1);
   const paid = pays.reduce((t,p)=>t+p.amount,0), r = exam ? (recs[sid]||{}) : {};
   const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
@@ -6239,36 +6899,51 @@ function printStatement(){
 /* ---------- Finance: fee structure, invoicing, bursaries/discounts ---------- */
 function financeStructureHTML(school){
   if(!school.classes.length) return '';
-  return `<div class="card"><h2>🏷 Fee Structure &amp; Invoicing</h2>
+  return feeTermsCardHTML(school) + `<div class="card"><h2>🏷 Fee Structure &amp; Invoicing</h2>
   <p class="small">Set the fee for the selected grade/term, then generate invoices: the term fee is <b>added to each learner's existing balance</b> (so old arrears carry forward). Learners already invoiced for this term are skipped, so nothing is charged twice.</p>
   <div class="row"><div><label>Tuition / base fee per learner (KES)</label><input id="fsAmt" type="number" min="1"></div>
+  <div><label>Next-term tuition (KES) <span class="small">blank = same</span></label><input id="fsNext" type="number" min="0"></div>
   <div class="flexbtns" style="align-self:flex-end"><button class="ghost" onclick="saveFeeStructure()">💾 Save Fee</button><button class="gold" onclick="generateInvoices()">🧾 Generate Invoices</button></div></div>
+  <div class="row" style="margin-top:6px"><div style="flex:2"><label>Copy fee structure (tuition &amp; items) from another term of this grade</label><select id="fsCopySrc"></select></div><div class="flexbtns" style="align-self:flex-end"><button class="ghost" onclick="copyFeeStructure()">📋 Copy Here</button><button class="gold" onclick="applyFeeToAllGrades()">🏫 Apply This Fee to All Grades</button></div></div>
+  <div class="flexbtns" style="margin-top:6px"><button onclick="autoFillNext()">⚡ Auto-fill Next-Term Fees</button><label class="small" style="align-self:center"><input type="checkbox" id="fsOverwrite" style="width:auto"> also overwrite manual edits</label></div>
+  <p class="small">Next-term fees fill in <b>automatically</b> whenever you save the fee, add/remove items or assign optional items. You can still edit any learner's next-term fee in Fee Balances — edited fees are kept (✎) until you reset them (↺).</p>
   <div id="fsInfo" class="small" style="margin:6px 0"></div><div id="fsMsg"></div>
-  <div class="flexbtns no-print"><button class="ghost" onclick="printInvoices()">🖨 Print All Invoices (this grade)</button><button class="ghost" onclick="printFeeSheet()">📋 Print Fee Structure Sheet</button><button class="danger" onclick="reverseInvoices()">↩ Reverse Invoices (this grade)</button></div>
+  <div class="card" style="background:#f7f9fc;margin:8px 0"><label style="display:flex;gap:8px;align-items:center;font-weight:700"><input type="checkbox" id="fsPublish" style="width:auto" onchange="setFeePublish(this.checked)"> 👪 Show next-term invoices to parents in the Parent Portal (this grade &amp; term)</label>
+  <p class="small" style="margin:4px 0 0">Off by default. Turn it on only once balances and next-term fees are checked. Each parent sees only their own child. Tick <b>hide</b> beside a learner in Fee Balances to keep that one back (e.g. a payment dispute). Untick here at any time to withdraw every invoice for this term.</p></div>
+  <div class="flexbtns no-print"><button class="ghost" onclick="printInvoices()">🖨 Print All Invoices (this grade)</button><button class="gold" onclick="printNextTermInvoices()">🧾 Print Next-Term Invoices (arrears + next term)</button><label class="small" style="align-self:center"><input type="checkbox" id="fsNtiArrOnly" style="width:auto"> only learners with arrears</label><button class="ghost" onclick="printFeeSheet()">📋 Print Fee Structure Sheet</button><button class="danger" onclick="reverseInvoices()">↩ Reverse Invoices (this grade)</button></div>
   <label style="margin-top:10px">How parents should pay <span class="small">— printed on invoices &amp; the fee sheet (e.g. Paybill 123456, Acc: Adm No; bank details)</span></label>
   <textarea id="payInstr" rows="2" onchange="savePayInstr()">${escapeHtml(school.payInstructions||'')}</textarea>
+  <label style="margin-top:10px">Note for parents on next-term invoices <span class="small">-- optional, e.g. clearance policy: "Learners with unpaid arrears must clear or agree a payment plan with the Bursar before reporting."</span></label>
+  <textarea id="invNote" rows="2" onchange="saveInvNote()">${escapeHtml(school.invoiceNote||'')}</textarea>
   <h3 style="margin:14px 0 6px">📚 Extra Fee Items</h3>
-  <p class="small"><b>Compulsory</b> items (e.g. Activity, Exam fee) are charged to every learner on top of tuition. <b>Optional</b> items (Transport, Boarding, Lunch) are charged only to learners you assign below.</p>
-  <div class="row"><div><label>Item</label><input id="fiName" placeholder="e.g. Transport"></div><div><label>Amount (KES)</label><input id="fiAmt" type="number" min="1"></div><div><label>Type</label><select id="fiType"><option value="0">Compulsory</option><option value="1">Optional</option></select></div><div style="align-self:flex-end"><button onclick="addFeeItem()">➕ Add Item</button></div></div>
+  <p class="small">Add <b>any charge your school makes</b> -- type your own name or pick a suggestion (Boarding, Meals / Lunch, Transport, Uniform, Activity, Exam fee...). <b>Compulsory</b> items are charged to every learner on top of tuition. <b>Optional</b> items (boarding, meals, transport) are charged only to the learners you tick under <i>Assign optional services</i>. Tick <b>this term only</b> for a charge that should not repeat next term. Amounts are per term and can be different for each grade.</p>
+  <div class="row"><div><label>Item</label><input id="fiName" list="fiNames" placeholder="e.g. Boarding, Meals, Transport"><datalist id="fiNames">${feeItemSuggestions(school).map(n=>`<option>${escapeHtml(n)}</option>`).join('')}</datalist></div><div><label>Amount (KES)</label><input id="fiAmt" type="number" min="1"></div><div><label>Type</label><select id="fiType"><option value="0">Compulsory (every learner)</option><option value="1">Optional (only those I assign)</option></select></div><div style="align-self:flex-end"><label class="small"><input type="checkbox" id="fiOnce" style="width:auto"> this term only</label></div><div style="align-self:flex-end"><button onclick="addFeeItem()">➕ Add Item</button></div></div>
   <div id="fiList" style="margin-top:8px"></div>
-  <div class="row" style="margin-top:8px"><div style="flex:2"><label>Learner</label><select id="optLearner"></select></div><div><label>Optional item</label><select id="optItem"></select></div>
-  <div class="flexbtns" style="align-self:flex-end"><button onclick="assignExtra(true)">➕ Assign</button><button class="ghost" onclick="assignExtra(false)">➖ Remove</button></div></div>
+  <h3 style="margin:14px 0 6px">🎯 Assign optional services (boarding, meals, transport...)</h3>
+  <p class="small">Choose the optional item, tick the learners it applies to (e.g. all boarders), then press <b>Assign</b>. Learners already invoiced are charged straight away; others when you generate invoices.</p>
+  <div class="row"><div><label>Optional item</label><select id="optItem"></select></div><div><label>Find learner</label><input id="optSearch" placeholder="🔍 name or adm no." oninput="filterOptRows()"></div>
+  <div class="flexbtns" style="align-self:flex-end"><button onclick="assignExtraMany(true)">➕ Assign to Ticked</button><button class="ghost" onclick="assignExtraMany(false)">➖ Remove from Ticked</button></div></div>
+  <div class="flexbtns" style="margin:4px 0"><button class="ghost" onclick="optPickAll(true)">☑ Tick all shown</button><button class="ghost" onclick="optPickAll(false)">☐ Clear ticks</button></div>
+  <div id="optPick" style="max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
   <div id="optList" style="margin-top:8px"></div>
   <h3 style="margin:14px 0 6px">🎗 Bursary / Discount</h3>
   <div class="row"><div style="flex:2"><label>Learner</label><select id="discLearner"></select></div><div><label>Amount (KES)</label><input id="discAmt" type="number" min="1"></div>
   <div style="flex:2"><label>Reason</label><input id="discReason" placeholder="e.g. CDF bursary, sibling discount"></div><div style="align-self:flex-end"><button onclick="applyDiscount()">➕ Apply</button></div></div>
-  <div id="discList" style="margin-top:8px"></div></div>`;
+  <div id="discList" style="margin-top:8px"></div></div>${feeChargesCardHTML()}`;
 }
 function refreshStructure(){
   const inp = qs('#fsAmt'); if(!inp) return;
   const {school, exam, recs, learners} = feeCtx();
   const fee = exam ? (school.feeStructure[exam.id]||{}).amount : null;
   if(document.activeElement!==inp) inp.value = fee||'';
+  const nx = qs('#fsNext'); if(nx && document.activeElement!==nx) nx.value = (exam && (school.feeStructure[exam.id]||{}).nextAmount) || '';
   const billed = learners.filter(l=>(recs[l.id]||{}).billed!=null).length;
   qs('#fsInfo').innerHTML = exam ? `${learners.length} learner(s) · <b>${billed}</b> invoiced · <b>${learners.length-billed}</b> not yet invoiced${fee?` · Expected (tuition + compulsory items): KES ${((fee+compTotal(school.feeStructure[exam.id]))*learners.length).toLocaleString()}`:''}` : 'Select a grade and exam above.';
   qs('#discLearner').innerHTML = learners.map(l=>`<option value="${l.id}">${escapeHtml((l.adm?l.adm+' · ':'')+l.name)}</option>`).join('');
-  refreshItems();
-  const nm = id=>(school.students.find(x=>x.id===id)||{}).name||'—';
+  { const pub = qs('#fsPublish'); if(pub) pub.checked = !!(exam && school.feePublish[exam.id]); }
+  { const cs = qs('#fsCopySrc'); if(cs){ const o = exam ? finExams(school).filter(x=>x.classId===exam.classId && x.id!==exam.id && (school.feeStructure[x.id]||{}).amount>0) : []; cs.innerHTML = o.map(x=>`<option value="${x.id}">${escapeHtml(periodLabel(x))}</option>`).join('') || '<option value="">No other term of this grade has a fee set yet</option>'; } }
+  refreshItems(); refreshCharges();
+  const nm = id=>(finRaw(school).find(x=>x.id===id)||{}).name||'—';
   const list = exam ? school.feeAdjust.filter(a=>a.examId===exam.id).sort((a,b)=>b.ts-a.ts) : [];
   const tot = list.filter(a=>!a.void).reduce((t,a)=>t+a.amount,0);
   qs('#discList').innerHTML = list.length ? `<p class="small">Total discounts this term: <b>KES ${tot.toLocaleString()}</b></p><table><tr><th>Date</th><th>Learner</th><th>Amount</th><th>Reason</th><th></th></tr>${list.map(a=>`<tr style="${a.void?'opacity:.5;text-decoration:line-through':''}"><td>${escapeHtml(a.date)}</td><td style="text-align:left">${escapeHtml(nm(a.studentId))}</td><td>${a.amount.toLocaleString()}</td><td>${escapeHtml(a.reason)}</td><td>${a.void?'Voided':`<button class="danger" onclick="voidAdjust('${a.id}')">Void</button>`}</td></tr>`).join('')}</table>` : '';
@@ -6278,14 +6953,46 @@ function saveFeeStructure(quiet){
   const {school, exam} = feeCtx(); const amt = Number(qs('#fsAmt').value);
   if(!exam){ toast('Pick a grade and exam first','err'); return false; }
   if(!(amt>0)){ toast('Enter the term fee','err'); return false; }
-  school.feeStructure[exam.id] = Object.assign({items:[]}, school.feeStructure[exam.id], {amount:amt, updatedAt:Date.now()}); saveDB(DB);
+  school.feeStructure[exam.id] = Object.assign({items:[]}, school.feeStructure[exam.id], {amount:amt, nextAmount:Number((qs('#fsNext')||{}).value)||0, updatedAt:Date.now()}); autoNextFees(exam); saveDB(DB);
   if(!quiet) toast('Fee saved'); refreshStructure(); return true;
+}
+function nextFeeFor(st, r){
+  const base = (st.nextAmount>0 ? st.nextAmount : st.amount)||0;
+  const ex = ((r&&r.extras)||[]).reduce((t,n)=>{ const it=(st.items||[]).find(i=>i.optional && !i.once && i.name===n); return t+(it?it.amount:0); },0);
+  return base + (st.items||[]).filter(i=>!i.optional && !i.once).reduce((t,i)=>t+i.amount,0) + ex;   // 'this term only' items don't roll into next term
+}
+// Fills each learner's Next Term Fee from the fee structure (tuition + compulsory items + the learner's own
+// optional items). Fees the finance officer edited by hand (nextManual) are left alone unless force is true.
+function autoNextFees(exam, force){
+  const school = currentSchool(); const st = school.feeStructure[exam.id]; if(!st || !(st.amount>0)) return 0;
+  if(!school.fees[exam.id]) school.fees[exam.id] = {}; let n = 0;
+  finLearners(school, exam).forEach(l=>{
+    const r = school.fees[exam.id][l.id] || (school.fees[exam.id][l.id] = {});
+    if(r.nextManual && !force) return;
+    const v = nextFeeFor(st, r); if(r.nextTermFee!==v){ r.nextTermFee = v; r.updatedAt = Date.now(); n++; }
+    if(force) r.nextManual = false;
+  });
+  return n;
+}
+function autoFillNext(){
+  if(!canEdit()){ noEdit(); return; }
+  const {school, exam, recs, learners} = feeCtx(); const st = exam && school.feeStructure[exam.id];
+  if(!st || !(st.amount>0)){ toast('Save the tuition fee for this grade first','err'); return; }
+  const force = !!qs('#fsOverwrite').checked, manual = learners.filter(l=>(recs[l.id]||{}).nextManual).length;
+  if(!confirm(`Set next-term fees for ${learners.length} learner(s)?${manual?(force?` This will OVERWRITE ${manual} manually edited fee(s).`:` ${manual} manually edited fee(s) will be kept.`):''}`)) return;
+  const n = autoNextFees(exam, force); saveDB(DB); toast(`Next-term fee updated for ${n} learner(s)`); loadFinanceFeesSummary();
+}
+function resetNextFee(examId, sid){
+  if(!canEdit()){ noEdit(); return; }
+  const school = currentSchool(); const r = (school.fees[examId]||{})[sid]; const exam = finExams(school).find(e=>e.id===examId); if(!r||!exam) return;
+  r.nextManual = false; autoNextFees(exam); saveDB(DB); toast('Reset to automatic'); loadFinanceFeesSummary();
 }
 function compTotal(st){ return ((st&&st.items)||[]).filter(i=>!i.optional).reduce((t,i)=>t+i.amount,0); }
 function invoiceLines(st, r){
   const lines = [{name:'Tuition', amount:st.amount}];
   (st.items||[]).filter(i=>!i.optional).forEach(i=>lines.push({name:i.name, amount:i.amount}));
   (r.extras||[]).forEach(n=>{ const it=(st.items||[]).find(i=>i.optional && i.name===n); if(it) lines.push({name:it.name, amount:it.amount}); });
+  (r.charges||[]).forEach(c=>lines.push({name:c.name, amount:c.amount, chargeId:c.id}));   // one-off extra charges
   return lines;
 }
 function generateInvoices(){
@@ -6308,8 +7015,10 @@ function addFeeItem(){
   if(!name||!(amt>0)){ toast('Enter an item name and amount','err'); return; }
   const st = school.feeStructure[exam.id] || (school.feeStructure[exam.id] = {amount:0, items:[]}); st.items = st.items||[];
   if(st.items.some(i=>i.name.toLowerCase()===name.toLowerCase())){ toast('That item already exists','err'); return; }
-  st.items.push({name, amount:amt, optional: qs('#fiType').value==='1'}); saveDB(DB);
-  qs('#fiName').value=''; qs('#fiAmt').value=''; toast('Item added'); refreshStructure();
+  st.items.push({name, amount:amt, optional: qs('#fiType').value==='1', once: !!(qs('#fiOnce')||{}).checked});
+  if(!Array.isArray(school.feeCatalog)) school.feeCatalog = []; if(!school.feeCatalog.some(x=>x.toLowerCase()===name.toLowerCase())) school.feeCatalog.push(name);
+  if(st.amount>0) autoNextFees(exam); saveDB(DB);
+  qs('#fiName').value=''; qs('#fiAmt').value=''; if(qs('#fiOnce')) qs('#fiOnce').checked=false; toast('Item added'); refreshStructure();
 }
 function removeFeeItem(i){
   if(!canEdit()){ noEdit(); return; }
@@ -6317,16 +7026,61 @@ function removeFeeItem(i){
   if(!confirm('Remove this item? Invoices already generated are NOT changed.')) return;
   const n = st.items[i].name; st.items.splice(i,1);
   Object.values(school.fees[exam.id]||{}).forEach(r=>{ if(r.extras) r.extras = r.extras.filter(x=>x!==n); });
-  saveDB(DB); refreshStructure();
+  if(st.amount>0) autoNextFees(exam); saveDB(DB); loadFinanceFeesSummary();
 }
 function refreshItems(){
   if(!qs('#fiList')) return;
   const {school, exam, recs, learners} = feeCtx(); const st = exam ? school.feeStructure[exam.id] : null; const items = (st&&st.items)||[];
-  qs('#fiList').innerHTML = items.length ? `<table><tr><th>Item</th><th>Amount</th><th>Type</th><th></th></tr>${items.map((i,k)=>`<tr><td style="text-align:left">${escapeHtml(i.name)}</td><td>${i.amount.toLocaleString()}</td><td>${i.optional?'Optional':'Compulsory'}</td><td><button class="danger" onclick="removeFeeItem(${k})">✕</button></td></tr>`).join('')}</table>` : '<p class="small">No extra items yet — only the tuition fee is charged.</p>';
-  qs('#optLearner').innerHTML = learners.map(l=>`<option value="${l.id}">${escapeHtml((l.adm?l.adm+' · ':'')+l.name)}</option>`).join('');
+  qs('#fiList').innerHTML = items.length ? `<table><tr><th>Item</th><th>Amount</th><th>Type</th><th></th></tr>${items.map((i,k)=>`<tr><td style="text-align:left">${escapeHtml(i.name)}</td><td><input type="number" min="1" value="${i.amount}" style="max-width:110px" onchange="editFeeItemAmount(${k},this.value)"></td><td>${i.optional?'Optional':'Compulsory'}${i.once?' <span class="small">&middot; this term only</span>':''}${i.optional?` <span class="small">&middot; ${learners.filter(l=>((recs[l.id]||{}).extras||[]).includes(i.name)).length} learner(s)</span>`:''}</td><td><button class="danger" onclick="removeFeeItem(${k})">✕</button></td></tr>`).join('')}</table>` : '<p class="small">No extra items yet — only the tuition fee is charged.</p>';
+  { const dl = qs('#fiNames'); if(dl) dl.innerHTML = feeItemSuggestions(school).map(n=>`<option>${escapeHtml(n)}</option>`).join('');
+    const pick = qs('#optPick'); if(pick){ const keep = new Set([...document.querySelectorAll('.optChk:checked')].map(x=>x.value));
+      pick.innerHTML = learners.map(l=>{ const has = (recs[l.id]||{}).extras||[]; return `<label class="small" data-q="${escapeHtml(((l.adm||'')+' '+l.name).toLowerCase())}" style="display:block;padding:2px 4px"><input type="checkbox" class="optChk" value="${l.id}" style="width:auto" ${keep.has(l.id)?'checked':''}> ${escapeHtml((l.adm?l.adm+' · ':'')+l.name)}${has.length?` <span style="color:#667">— ${escapeHtml(has.join(', '))}</span>`:''}</label>`; }).join('') || '<span class="small">No learners in this grade.</span>'; filterOptRows(); } }
   qs('#optItem').innerHTML = items.filter(i=>i.optional).map(i=>`<option>${escapeHtml(i.name)}</option>`).join('') || '<option value="">No optional items</option>';
   const withX = learners.filter(l=>((recs[l.id]||{}).extras||[]).length);
-  qs('#optList').innerHTML = withX.length ? `<table><tr><th>Learner</th><th>Optional items</th></tr>${withX.map(l=>`<tr><td style="text-align:left">${escapeHtml(l.name)}</td><td>${escapeHtml(recs[l.id].extras.join(', '))}</td></tr>`).join('')}</table>` : '';
+  qs('#optList').innerHTML = withX.length ? `<p class="small">${items.filter(i=>i.optional).map(i=>`<b>${escapeHtml(i.name)}</b>: ${learners.filter(l=>((recs[l.id]||{}).extras||[]).includes(i.name)).length}`).join(' &middot; ')} learner(s)</p><table><tr><th>Learner</th><th>Optional items</th></tr>${withX.map(l=>`<tr><td style="text-align:left">${escapeHtml(l.name)}</td><td>${escapeHtml(recs[l.id].extras.join(', '))}</td></tr>`).join('')}</table>` : '';
+}
+function feeItemSuggestions(school){
+  const base = ['Boarding','Meals / Lunch','Transport','Uniform','Activity','Exam fee','Library','Games / Sports','Development','School trip','Medical','Remedial tuition'];
+  const seen = new Set(), out = [];
+  base.concat(school.feeCatalog||[]).forEach(n=>{ const k=String(n).toLowerCase(); if(!seen.has(k)){ seen.add(k); out.push(n); } });
+  return out;
+}
+function filterOptRows(){
+  const q = ((qs('#optSearch')||{}).value||'').trim().toLowerCase();
+  document.querySelectorAll('#optPick label[data-q]').forEach(el=>{ el.style.display = (!q || el.dataset.q.includes(q)) ? 'block' : 'none'; });
+}
+function optPickAll(on){
+  document.querySelectorAll('#optPick label[data-q]').forEach(el=>{ if(el.style.display!=='none'){ const c = el.querySelector('.optChk'); if(c) c.checked = on; } });
+}
+function editFeeItemAmount(i, val){
+  if(!canEdit()){ noEdit(); return; }
+  const {school, exam} = feeCtx(); const st = exam && school.feeStructure[exam.id]; const it = st && st.items[i]; const n = Number(val);
+  if(!it) return; if(!(n>0)){ toast('Enter a valid amount','err'); refreshItems(); return; }
+  it.amount = n; if(st.amount>0) autoNextFees(exam); saveDB(DB);
+  toast('Amount updated -- invoices already generated are not changed'); loadFinanceFeesSummary();
+}
+// Adds/removes one optional item for one learner; returns 0 (no change), 1 (changed) or 2 (changed an already-generated invoice).
+function applyExtra(school, exam, it, sid, add){
+  if(!school.fees[exam.id]) school.fees[exam.id] = {};
+  const r = school.fees[exam.id][sid] || (school.fees[exam.id][sid] = {}); r.extras = r.extras||[];
+  const has = r.extras.includes(it.name); if(add===has) return 0;
+  const billed = r.billed!=null; r.lines = r.lines||[];
+  if(add){ r.extras.push(it.name); if(billed){ r.lines.push({name:it.name, amount:it.amount}); r.billed += it.amount; r.balance = (Number(r.balance)||0) + it.amount; } }
+  else { r.extras = r.extras.filter(x=>x!==it.name); if(billed){ const k = r.lines.findIndex(x=>x.name===it.name); if(k>-1) r.lines.splice(k,1); r.billed -= it.amount; r.balance = (Number(r.balance)||0) - it.amount; } }
+  r.updatedAt = Date.now(); return billed ? 2 : 1;
+}
+function assignExtraMany(add){
+  if(!canEdit()){ noEdit(); return; }
+  const {school, exam} = feeCtx(); const name = (qs('#optItem')||{}).value;
+  const st = exam && school.feeStructure[exam.id]; const it = st && (st.items||[]).find(i=>i.optional && i.name===name);
+  if(!it){ toast('Add an optional item first, then choose it here','err'); return; }
+  const ids = [...document.querySelectorAll('.optChk:checked')].map(x=>x.value);
+  if(!ids.length){ toast('Tick the learners first','err'); return; }
+  if(ids.length>1 && !confirm(`${add?'Assign':'Remove'} "${name}" (KES ${it.amount.toLocaleString()} per learner) ${add?'to':'from'} ${ids.length} learner(s)?`)) return;
+  let changed = 0, live = 0; ids.forEach(id=>{ const res = applyExtra(school, exam, it, id, add); if(res) changed++; if(res===2) live++; });
+  if(!changed){ toast(add?'Those learners already have it':'None of them had it','err'); return; }
+  if(st.amount>0) autoNextFees(exam); saveDB(DB);
+  toast(`${name}: ${changed} learner(s) ${add?'assigned':'removed'}${live?` -- ${live} invoiced balance(s) ${add?'increased':'reduced'}`:''}`); loadFinanceFeesSummary();
 }
 function assignExtra(add){
   if(!canEdit()){ noEdit(); return; }
@@ -6341,7 +7095,7 @@ function assignExtra(add){
   const billed = r.billed!=null; r.lines = r.lines||[];
   if(add){ r.extras.push(name); if(billed){ r.lines.push({name, amount:it.amount}); r.billed += it.amount; r.balance = (Number(r.balance)||0) + it.amount; } }
   else { r.extras = r.extras.filter(x=>x!==name); if(billed){ const k = r.lines.findIndex(x=>x.name===name); if(k>-1) r.lines.splice(k,1); r.billed -= it.amount; r.balance = (Number(r.balance)||0) - it.amount; } }
-  r.updatedAt = Date.now(); saveDB(DB);
+  r.updatedAt = Date.now(); if(st.amount>0) autoNextFees(exam); saveDB(DB);
   toast(billed ? (add?'Assigned and charged to balance':'Removed and credited back') : (add?'Assigned — charged when invoiced':'Removed')); loadFinanceFeesSummary();
 }
 function savePayInstr(){
@@ -6392,6 +7146,240 @@ function printInvoices(onlySid){
   w.document.write(`<html><head><title>Invoices</title><style>body{font-family:Arial;font-size:13px}.pg{padding:26px;page-break-after:always;max-width:640px;margin:auto}h2{margin:0;color:#123a63}.c{color:#555;margin:2px 0}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #999;padding:6px 8px;text-align:left}th{background:#e8eef5}.r{text-align:right}</style></head><body>${pages}</body></html>`);
   w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
 }
+function setFeePublish(on){
+  const cb = qs('#fsPublish'); const undo = ()=>{ if(cb) cb.checked = !on; };
+  if(!canEdit()){ noEdit(); undo(); return; }
+  const {school, exam, recs, learners} = feeCtx(); if(!exam){ toast('Pick a grade and exam first','err'); undo(); return; }
+  if(on){
+    const n = learners.filter(l=>{ const r=recs[l.id]; return r && !r.hold && ((r.balance!=null && r.balance!=='') || (r.nextTermFee!=null && r.nextTermFee!=='')); }).length;
+    if(!n){ toast('No learner has a balance or next-term fee yet -- nothing to publish','err'); undo(); return; }
+    if(!confirm(`Show next-term invoices to the parents of ${n} learner(s) for ${exam.name}?\n\nEach parent will see their own child's arrears, next-term fees and recent payments. Check the figures first.`)){ undo(); return; }
+    school.feePublish[exam.id] = true;
+  } else delete school.feePublish[exam.id];
+  saveDB(DB); toast(on ? 'Invoices are now visible to parents' : 'Invoices withdrawn from the Parent Portal');
+}
+function setFeeHold(examId, sid, on){
+  if(!canEdit()){ noEdit(); loadFinanceFeesSummary(); return; }
+  const school = currentSchool(); const r = (school.fees[examId]||{})[sid]; if(!r) return;
+  if(on) r.hold = true; else delete r.hold;
+  saveDB(DB); toast(on ? 'Hidden from parent' : 'Visible to parent again');
+}
+function feeTermsCardHTML(school){
+  const m = new Date().getMonth(), curTerm = m<=3 ? 'Term 1' : (m<=7 ? 'Term 2' : 'Term 3');
+  const list = (school.feeTerms||[]).slice().sort(feeTermCmp).reverse();
+  const cn = id=>(school.classes.find(c=>c.id===id)||{}).name||'--';
+  return `<div class="card no-print"><h2>📅 Fee Terms <span class="small">-- independent of exams</span></h2>
+  <p class="small">A fee term is just <b>Term + Year + Grade</b>. Create one to set fees, arrears and invoices for that term -- no exam needed. Pick it in the Grade / Fee term list above. (Older exam-based fee records still appear in that list.)</p>
+  <div class="row"><div><label>Term</label><select id="ftTerm">${['Term 1','Term 2','Term 3'].map(t=>`<option ${t===curTerm?'selected':''}>${t}</option>`).join('')}</select></div>
+  <div><label>Year</label><input id="ftYear" type="number" min="2000" max="2100" value="${new Date().getFullYear()}"></div>
+  <div><label>Grade</label><select id="ftClass"><option value="all">All grades</option>${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div></div>
+  <div class="row"><div><label>Term closes <span class="small">(optional)</span></label><input type="date" id="ftClose"></div><div><label>Next term opens <span class="small">(optional, printed on invoices)</span></label><input type="date" id="ftOpen"></div></div>
+  <label class="small"><input type="checkbox" id="ftCarry" checked style="width:auto"> carry each learner's balance (and optional services) over from the grade's previous term</label><br>
+  <label class="small"><input type="checkbox" id="ftCopy" checked style="width:auto"> copy the previous term's fee structure (tuition &amp; items) to start from</label>
+  <div class="flexbtns" style="margin-top:8px"><button onclick="createFeeTerm()">➕ Create Fee Term</button></div><div id="ftMsg"></div>
+  ${list.length?`<table style="margin-top:8px"><tr><th>Term</th><th>Grade</th><th>Closes</th><th>Next term opens</th><th></th></tr>${list.map(t=>`<tr><td>${escapeHtml(t.term)} ${escapeHtml(String(t.year))}</td><td>${escapeHtml(cn(t.classId))}</td>
+  <td><input type="date" value="${escapeHtml(t.termCloseDate||'')}" onchange="setFeeTermDate('${t.id}','termCloseDate',this.value)"></td><td><input type="date" value="${escapeHtml(t.nextTermDate||'')}" onchange="setFeeTermDate('${t.id}','nextTermDate',this.value)"></td>
+  <td><button class="danger" onclick="deleteFeeTerm('${t.id}')">✕</button></td></tr>`).join('')}</table>`:''}</div>`;
+}
+// Creates one grade's fee term (skipped, returns null, if it already exists), optionally copying the previous
+// term's fee structure and carrying each learner's balance / optional services over.
+function makeFeeTerm(school, c, term, year, close, open, carry, copy){
+  if((school.feeTerms||[]).some(t=>t.classId===c.id && t.term===term && Number(t.year)===Number(year))) return null;
+  const fi = currentFinance(); let carried = 0;
+  const prev = prevFeePeriod(school, c.id, term, year);
+  const ft = {id:uid('ft_'), feeTerm:true, classId:c.id, name:'Term fees', term, year:Number(year), termCloseDate:close||'', nextTermDate:open||'', createdAt:Date.now()};
+  school.feeTerms.push(ft);
+  if(prev){
+    const ps = school.feeStructure[prev.id];
+    if(copy && ps && ps.amount>0) school.feeStructure[ft.id] = {amount:ps.amount, nextAmount:ps.nextAmount||0, items:JSON.parse(JSON.stringify((ps.items||[]).filter(i=>!i.once))), updatedAt:Date.now()};
+    if(carry){
+      const pr = school.fees[prev.id]||{}, out = {}; const hasItems = school.feeStructure[ft.id];
+      finLearners(school, ft).forEach(l=>{ const r = pr[l.id]; const hasBal = r && r.balance!=null && r.balance!==''; if(r && (hasBal || (r.extras||[]).length)){ out[l.id] = {updatedAt:Date.now(), updatedBy:fi?fi.name:'DOS/HOI'}; if(hasBal) out[l.id].balance = Number(r.balance)||0; if(hasItems){ const ex = (r.extras||[]).filter(n=>(school.feeStructure[ft.id].items||[]).some(i=>i.name===n)); if(ex.length) out[l.id].extras = ex; } carried++; } });
+      if(Object.keys(out).length) school.fees[ft.id] = out;
+    }
+    if(school.feeStructure[ft.id]) autoNextFees(ft);
+  }
+  return {ft, carried};
+}
+function createFeeTerm(){
+  if(!canEdit()){ noEdit(); return; }
+  const school = currentSchool(); const term = qs('#ftTerm').value, year = Number(qs('#ftYear').value), cid = qs('#ftClass').value;
+  if(!(year>=2000 && year<=2100)){ toast('Enter a valid year','err'); return; }
+  const close = qs('#ftClose').value||'', open = qs('#ftOpen').value||'', carry = qs('#ftCarry').checked, copy = qs('#ftCopy').checked;
+  const targets = cid==='all' ? school.classes : school.classes.filter(c=>c.id===cid);
+  const fi = currentFinance(); let made = 0, skipped = 0, carried = 0, last = null;
+  targets.forEach(c=>{ const res = makeFeeTerm(school, c, term, year, close, open, carry, copy); if(!res) skipped++; else { made++; last = res.ft; carried += res.carried; } });
+  if(!made){ qs('#ftMsg').innerHTML = `<div class="msg err">${term} ${year} already exists for ${skipped>1?'those grades':'that grade'}.</div>`; return; }
+  const mine = school.feeTerms.find(t=>t.classId===finState.classId && t.term===term && Number(t.year)===year) || last;
+  if(mine){ finState.classId = mine.classId; finState.examId = mine.id; }
+  saveDB(DB); toast(`${term} ${year}: ${made} fee term(s) created${carried?`, ${carried} balance(s) carried over`:''}${skipped?`, ${skipped} already existed`:''}`); renderFinance();
+}
+function setFeeTermDate(id, field, val){
+  if(!canEdit()){ noEdit(); return; } const t = currentSchool().feeTerms.find(x=>x.id===id); if(!t) return;
+  t[field] = val||''; saveDB(DB); toast('Saved');
+}
+function deleteFeeTerm(id){
+  if(!canEdit()){ noEdit(); return; }
+  const school = currentSchool(); const t = school.feeTerms.find(x=>x.id===id); if(!t) return;
+  if(school.payments.some(p=>p.examId===id && !p.void)){ toast('Payments were recorded against this term -- void them first (Payments tab) before deleting it','err'); return; }
+  if(!confirm(`Delete ${t.term} ${t.year} fee term? Its fee structure, balances and invoices for this grade are removed.`)) return;
+  school.feeTerms = school.feeTerms.filter(x=>x.id!==id); delete school.fees[id]; delete school.feeStructure[id]; delete school.feePublish[id];
+  school.feeAdjust = school.feeAdjust.filter(a=>a.examId!==id); school.payments = school.payments.filter(p=>p.examId!==id);
+  if(finState.examId===id) finState.examId = null;
+  saveDB(DB); toast('Fee term deleted'); renderFinance();
+}
+function applyFeeToAllGrades(){
+  if(!canEdit()){ noEdit(); return; }
+  const {school, exam} = feeCtx(); const st = exam && school.feeStructure[exam.id];
+  if(!exam || !st || !(st.amount>0)){ toast('Save the fee for this grade and term first','err'); return; }
+  const others = school.classes.filter(c=>c.id!==exam.classId);
+  if(!others.length){ toast('There is only one grade','err'); return; }
+  const plan = others.map(c=>({c, ex:(school.feeTerms||[]).find(t=>t.classId===c.id && t.term===exam.term && Number(t.year)===Number(exam.year))}));
+  const create = plan.filter(x=>!x.ex).length, replace = plan.filter(x=>x.ex && (school.feeStructure[x.ex.id]||{}).amount>0).length;
+  if(!confirm(`Apply this fee (tuition KES ${st.amount.toLocaleString()}${(st.items||[]).length?', '+st.items.length+' extra item(s)':''}) to the other ${others.length} grade(s) for ${exam.term} ${exam.year}?`
+    + (create?`\n\n${create} grade(s) have no ${exam.term} ${exam.year} fee term yet -- one is created for each (balances carried over from their previous term).`:'')
+    + (replace?`\n${replace} grade(s) already have a fee set -- it will be REPLACED.`:'')
+    + `\n\nOptional services assigned to individual learners are not copied.`)) return;
+  let n = 0;
+  plan.forEach(({c, ex})=>{
+    let t = ex; if(!t){ const r = makeFeeTerm(school, c, exam.term, exam.year, exam.termCloseDate||'', exam.nextTermDate||'', true, false); t = r && r.ft; }
+    if(!t) return;
+    school.feeStructure[t.id] = {amount:st.amount, nextAmount:st.nextAmount||0, items:JSON.parse(JSON.stringify(st.items||[])), updatedAt:Date.now()};
+    autoNextFees(t); n++;
+  });
+  saveDB(DB); toast(`Fee structure applied to ${n} grade(s)`); renderFinance();
+}
+function copyFeeStructure(){
+  if(!canEdit()){ noEdit(); return; }
+  const {school, exam} = feeCtx(); const src = qs('#fsCopySrc').value; const p = src && school.feeStructure[src];
+  if(!exam){ toast('Pick a grade and term first','err'); return; }
+  if(!p || !(p.amount>0)){ toast('Choose a term that already has a fee set','err'); return; }
+  const cur = school.feeStructure[exam.id];
+  if(cur && cur.amount>0 && !confirm('This term already has a fee structure. Replace it with the copy?')) return;
+  school.feeStructure[exam.id] = {amount:p.amount, nextAmount:p.nextAmount||0, items:JSON.parse(JSON.stringify(p.items||[])), updatedAt:Date.now()};
+  autoNextFees(exam); saveDB(DB); toast('Fee structure copied'); loadFinanceFeesSummary();
+}
+function feeChargesCardHTML(){
+  return `<div class="card"><h2>➕ Extra Charges — add more to invoices</h2>
+  <p class="small">Add a one-off charge (uniform, trip, books, replacement report book, a compulsory item added after invoicing…) to <b>one learner or the whole grade</b> for the term selected above. Learners <b>already invoiced</b> get it added to their invoice and balance straight away; learners not yet invoiced get it when you press <b>Generate Invoices</b>. New learners who joined later are invoiced by <b>Generate Invoices</b> too.</p>
+  <div class="row"><div style="flex:2"><label>Charge to</label><select id="chLearner"></select></div><div style="flex:2"><label>Item</label><input id="chName" list="chNames" placeholder="e.g. School trip"><datalist id="chNames"><option>Uniform</option><option>School trip</option><option>Books / stationery</option><option>Replacement report book</option><option>Damages</option><option>Remedial / holiday tuition</option></datalist></div>
+  <div><label>Amount (KES)</label><input id="chAmt" type="number" min="1"></div><div style="align-self:flex-end"><button onclick="addCharge()">➕ Add Charge</button></div></div>
+  <div id="chList" style="margin-top:8px"></div></div>`;
+}
+function refreshCharges(){
+  const sel = qs('#chLearner'); if(!sel) return;
+  const {school, exam, recs, learners} = feeCtx(); const keep = sel.value;
+  sel.innerHTML = '<option value="all">All learners in this grade</option>' + learners.map(l=>`<option value="${l.id}">${escapeHtml((l.adm?l.adm+' · ':'')+l.name)}</option>`).join('');
+  if([...sel.options].some(o=>o.value===keep)) sel.value = keep;
+  const rows = []; learners.forEach(l=>{ const r = recs[l.id]||{}; (r.charges||[]).forEach(c=>rows.push({l, c, on:r.billed!=null})); });
+  rows.sort((a,b)=>b.c.ts-a.c.ts);
+  const total = rows.reduce((t,x)=>t+x.c.amount,0);
+  qs('#chList').innerHTML = rows.length ? `<p class="small">${rows.length} extra charge(s) this term, total KES ${total.toLocaleString()}${rows.length>60?' (showing the latest 60)':''}</p><table><tr><th>Date</th><th>Learner</th><th>Item</th><th>Amount</th><th>Status</th><th></th></tr>${rows.slice(0,60).map(x=>`<tr><td>${escapeHtml(x.c.date||'')}</td><td style="text-align:left">${escapeHtml(x.l.name)}</td><td style="text-align:left">${escapeHtml(x.c.name)}</td><td>${x.c.amount.toLocaleString()}</td><td>${x.on?'<span class="badge EE">On invoice</span>':'<span class="badge AE">Will be invoiced</span>'}</td><td>${x.on?`<button class="ghost" style="padding:2px 8px" title="Print this learner's invoice" onclick="printInvoices('${x.l.id}')">🖨</button> `:''}<button class="danger" onclick="removeCharge('${x.l.id}','${x.c.id}')">✕</button></td></tr>`).join('')}</table>` : '';
+}
+function addCharge(){
+  if(!canEdit()){ noEdit(); return; }
+  const {school, exam, recs, learners} = feeCtx(); if(!exam){ toast('Pick a grade and term first','err'); return; }
+  const name = qs('#chName').value.trim(), amt = Number(qs('#chAmt').value), target = qs('#chLearner').value;
+  if(!name || !(amt>0)){ toast('Enter the item and a valid amount','err'); return; }
+  const list = target==='all' ? learners : learners.filter(l=>l.id===target);
+  if(!list.length){ toast('No learner selected','err'); return; }
+  if(list.length>1 && !confirm(`Add "${name}" (KES ${amt.toLocaleString()} each) to ${list.length} learners -- KES ${(amt*list.length).toLocaleString()} in total?`)) return;
+  const fi = currentFinance(); if(!school.fees[exam.id]) school.fees[exam.id] = {};
+  list.forEach(l=>{
+    const r = school.fees[exam.id][l.id] || (school.fees[exam.id][l.id] = {}); r.charges = r.charges||[];
+    const ch = {id:uid('chg_'), name, amount:amt, date:today10(), by:fi?fi.name:'DOS/HOI', ts:Date.now()}; r.charges.push(ch);
+    if(r.billed!=null){ r.lines = r.lines||[]; r.lines.push({name, amount:amt, chargeId:ch.id}); r.billed = (Number(r.billed)||0)+amt; r.balance = (Number(r.balance)||0)+amt; }
+    r.updatedAt = Date.now(); r.updatedBy = fi?fi.name:'DOS/HOI';
+  });
+  saveDB(DB); qs('#chName').value=''; qs('#chAmt').value=''; toast(`Charge added for ${list.length} learner(s)`); loadFinanceFeesSummary();
+}
+function removeCharge(sid, cid){
+  if(!canEdit()){ noEdit(); return; }
+  const {school, exam} = feeCtx(); const r = exam && (school.fees[exam.id]||{})[sid]; const ch = r && (r.charges||[]).find(c=>c.id===cid); if(!ch) return;
+  if(!confirm(`Remove "${ch.name}" (KES ${ch.amount.toLocaleString()})?${r.billed!=null?' It is taken off the invoice and balance.':''}`)) return;
+  r.charges = r.charges.filter(c=>c.id!==cid);
+  if(r.billed!=null && (r.lines||[]).some(x=>x.chargeId===cid)){ r.lines = r.lines.filter(x=>x.chargeId!==cid); r.billed = (Number(r.billed)||0)-ch.amount; r.balance = (Number(r.balance)||0)-ch.amount; }
+  r.updatedAt = Date.now(); saveDB(DB); toast('Charge removed'); loadFinanceFeesSummary();
+}
+function saveInvNote(){
+  if(!canEdit()){ noEdit(); return; } currentSchool().invoiceNote = (qs('#invNote').value||'').trim(); saveDB(DB); toast('Invoice note saved'); }
+// The term after the exam's term: Term 1 -> Term 2 -> Term 3 -> Term 1 of next year.
+function nextTermInfo(exam){
+  const m = /(\d)/.exec(String(exam.term||'')); const n = m ? Number(m[1]) : 1; const y = Number(exam.year)||new Date().getFullYear();
+  return n>=3 ? {label:'Term 1', year:y+1} : {label:'Term '+(n+1), year:y};
+}
+// Itemised next-term charges. Uses the fee structure when there is one; if the finance officer hand-edited a
+// learner's next-term fee, an adjustment line keeps the items adding up to exactly what Fee Balances shows.
+function nextInvoiceLines(st, r){
+  const total = Number(r.nextTermFee)||0; const lines = [];
+  if(st && st.amount>0){
+    lines.push({name:'Tuition', amount:(st.nextAmount>0?st.nextAmount:st.amount)});
+    (st.items||[]).filter(i=>!i.optional && !i.once).forEach(i=>lines.push({name:i.name, amount:i.amount}));
+    (r.extras||[]).forEach(n=>{ const it=(st.items||[]).find(i=>i.optional && !i.once && i.name===n); if(it) lines.push({name:it.name+' (optional service)', amount:it.amount}); });
+    const sum = lines.reduce((a,x)=>a+x.amount,0);
+    if(sum!==total) lines.push({name:'Adjustment set by the finance office', amount:total-sum});
+  } else if(total) lines.push({name:'Next term fees', amount:total});
+  return lines;
+}
+// Per-learner "next term invoice": arrears brought forward + next-term items on ONE page, ready for parents.
+// Print-only: it never changes balances, so it can be re-printed any time (e.g. after a late payment).
+// One learner's next-term invoice page (HTML string). Shared by the Finance Portal print and the Parent Portal.
+function ntiPageHTML(school, exam, l, r){
+  const st = school.feeStructure[exam.id]; const fm = n=>Number(n).toLocaleString();
+  const nt = nextTermInfo(exam), ntName = nt.label+' '+nt.year, cls = (school.classes.find(c=>c.id===exam.classId)||{}).name || '';
+  const fmtDate = d => { if(!d) return ''; const dt = new Date(String(d).slice(0,10)+'T00:00:00'); return isNaN(dt) ? '' : dt.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}); };
+  const opens = fmtDate(exam.nextTermDate), closed = fmtDate(exam.termCloseDate);
+  const today = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+    const bal = Number(r.balance)||0, next = Number(r.nextTermFee)||0, total = bal+next;
+    const lines = nextInvoiceLines(st, r);
+    const pays = school.payments.filter(p=>!p.void && p.examId===exam.id && p.studentId===l.id).sort((a,b)=>a.date<b.date?-1:1).slice(-4);
+    const invNo = 'NTI/'+(l.adm||String(l.id).slice(-4))+'/'+nt.label.replace(/\s/g,'')+nt.year;
+    const due = total>0 ? `<tr class="tot"><th>TOTAL PAYABLE${opens?' BEFORE '+escapeHtml(opens.toUpperCase()):' BEFORE THE TERM OPENS'}</th><th class="r">KES ${fm(total)}</th></tr>`
+      : `<tr class="tot ok"><th>NO PAYMENT DUE -- credit carried forward</th><th class="r">KES ${fm(Math.abs(total))}</th></tr>`;
+    return `<div class="pg">
+    <div class="hd">${school.logo?`<img src="${school.logo}" alt="">`:''}<div><h2>${escapeHtml(school.name)}</h2><p class="c">${escapeHtml([school.address,school.phone,school.email].filter(Boolean).join(' | '))}</p>${school.motto?`<p class="c"><i>${escapeHtml(school.motto)}</i></p>`:''}</div></div>
+    <div class="ttl">NEXT TERM FEE INVOICE -- ${escapeHtml(ntName.toUpperCase())}</div>
+    <table class="meta"><tr><td>Learner: <b>${escapeHtml(l.name)}</b></td><td>Adm No: <b>${escapeHtml(l.adm||'-')}</b></td></tr>
+    <tr><td>Current grade: <b>${escapeHtml(cls||'-')}</b></td><td>Invoice No: <b>${escapeHtml(invNo)}</b></td></tr>
+    <tr><td>Date issued: <b>${today}</b></td><td>Balance as at end of: <b>${escapeHtml(String(exam.term))} ${escapeHtml(String(exam.year))}</b></td></tr>
+    ${(closed||opens)?`<tr><td>${closed?'Term closes: <b>'+escapeHtml(closed)+'</b>':''}</td><td>${opens?'Next term opens: <b>'+escapeHtml(opens)+'</b>':''}</td></tr>`:''}</table>
+    ${r.updatedAt?`<p class="c" style="margin:4px 0;font-size:11px">Figures last updated: ${new Date(r.updatedAt).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}. If you have paid since then, please carry your receipt.</p>`:''}<div class="sum"><div><span>Arrears brought forward</span><b>${bal>0?'KES '+fm(bal):(bal<0?'Credit '+fm(-bal):'Nil')}</b></div><div><span>${escapeHtml(ntName)} fees</span><b>KES ${fm(next)}</b></div><div class="big"><span>${total>0?'TOTAL DUE':'CREDIT'}</span><b>KES ${fm(Math.abs(total))}</b></div></div>
+    <table class="it"><tr><th>Description</th><th class="r">Amount (KES)</th></tr>
+    <tr class="sub"><td colspan="2">A. Arrears (unpaid from ${escapeHtml(String(exam.term))} ${escapeHtml(String(exam.year))} and earlier)</td></tr>
+    <tr><td>${bal<0?'Less: credit / overpayment brought forward':'Balance brought forward'}</td><td class="r">${bal<0?'-'+fm(-bal):fm(bal)}</td></tr>
+    <tr class="sub"><td colspan="2">B. Fees for ${escapeHtml(ntName)}</td></tr>
+    ${lines.map(x=>`<tr><td>${escapeHtml(x.name)}</td><td class="r">${x.amount<0?'-':''}${fm(Math.abs(x.amount))}</td></tr>`).join('')||'<tr><td colspan="2" class="c">No next-term fee set yet -- please contact the accounts office.</td></tr>'}
+    <tr><td><b>Sub-total B (${escapeHtml(ntName)})</b></td><td class="r"><b>${fm(next)}</b></td></tr>
+    ${due}</table>
+    ${pays.length?`<p class="lbl">Recent payments received (already deducted from the arrears above)</p><table class="it sm"><tr><th>Date</th><th>Receipt</th><th>Method</th><th class="r">Amount (KES)</th></tr>${pays.map(p=>`<tr><td>${escapeHtml(p.date)}</td><td>${escapeHtml(p.receiptNo)}</td><td>${escapeHtml(p.method||'')}</td><td class="r">${fm(p.amount)}</td></tr>`).join('')}</table>`:''}
+    ${school.payInstructions?`<p class="lbl">How to pay</p><p class="box">${escapeHtml(school.payInstructions).replace(/\n/g,'<br>')}<br><i>Use the learner's Adm No (${escapeHtml(l.adm||'-')}) as the account/reference and keep your receipt or M-Pesa message.</i></p>`:''}
+    ${school.invoiceNote?`<p class="box warn">${escapeHtml(school.invoiceNote).replace(/\n/g,'<br>')}</p>`:''}
+    <p class="c" style="margin-top:8px">Optional services (e.g. transport, boarding, lunch) are charged only where listed above; tell the accounts office before the term opens if any should change. If any figure looks wrong, please contact the school office${school.phone?' on '+escapeHtml(school.phone):''} with your receipts.</p>
+    <div class="sg"><div>Parent / Guardian name: ____________________________</div><div>Signature: ______________ Date: ___________</div><div class="stamp">Accounts office stamp</div></div>
+    </div>`;
+}
+const NTI_CSS = `@page{size:A4;margin:10mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial;font-size:12.5px;color:#111;margin:0}.pg{padding:18px 26px;page-break-after:always;max-width:700px;margin:auto}.pg:last-child{page-break-after:auto}
+  .hd{display:flex;gap:12px;align-items:center;border-bottom:2px solid #123a63;padding-bottom:8px}.hd img{height:56px;width:auto}h2{margin:0;color:#123a63;font-size:20px}.c{color:#555;margin:2px 0}
+  .ttl{background:#123a63;color:#fff;font-weight:700;text-align:center;padding:7px;margin:10px 0 6px;letter-spacing:.5px}
+  table{border-collapse:collapse;width:100%}.meta td{padding:3px 6px;border:none}.it{margin-top:8px}.it th,.it td{border:1px solid #999;padding:5px 8px;text-align:left}.it th{background:#e8eef5}.r{text-align:right!important}
+  .sub td{background:#f1f4f8;font-weight:700;color:#123a63}.tot th{background:#123a63!important;color:#fff;font-size:14px}.tot.ok th{background:#2e7d32!important}.sm{font-size:11px}
+  .sum{display:flex;gap:8px;margin:8px 0}.sum div{flex:1;border:1px solid #999;border-radius:6px;padding:6px 9px}.sum span{display:block;font-size:10.5px;color:#555}.sum b{font-size:15px;color:#123a63}.sum .big{background:#fff4d6;border-color:#c99a00}.sum .big b{color:#8a1c1c;font-size:17px}
+  .lbl{font-weight:700;margin:10px 0 3px;color:#123a63}.box{border:1px dashed #777;padding:7px 9px;margin:0;border-radius:5px}.warn{border:1px solid #c99a00;background:#fff9e6;margin-top:8px}
+  .sg{display:flex;gap:10px;margin-top:16px;align-items:flex-end;font-size:11.5px}.sg div{flex:1}.stamp{border:1px dashed #777;height:56px;text-align:center;color:#999;padding-top:20px;box-sizing:border-box}`;
+function ntiDocument(pages, title){ return `<html><head><meta charset="utf-8"><title>${title||'Next Term Invoice'}</title><style>${NTI_CSS}</style></head><body>${pages}</body></html>`; }
+function printNextTermInvoices(onlySid){
+  const {school, exam, recs, learners} = feeCtx(); if(!exam){ toast('Pick a grade and exam first','err'); return; }
+  const has = r => r && ((r.balance!=null && r.balance!=='') || (r.nextTermFee!=null && r.nextTermFee!==''));
+  let list = learners.filter(l=>(!onlySid || l.id===onlySid) && has(recs[l.id]));
+  const noRecord = onlySid ? 0 : learners.length - list.length;
+  if(!onlySid && qs('#fsNtiArrOnly') && qs('#fsNtiArrOnly').checked) list = list.filter(l=>(Number(recs[l.id].balance)||0)>0);
+  if(!list.length){ toast(onlySid ? 'This learner has no fee balance or next-term fee yet' : 'No learners to print -- set balances / next-term fees first','err'); return; }
+  const pages = list.map(l=>ntiPageHTML(school, exam, l, recs[l.id]||{})).join('');
+  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  w.document.write(ntiDocument(pages));
+  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+  if(noRecord && !onlySid) toast(`${noRecord} learner(s) skipped -- no balance or next-term fee recorded`);
+}
 function applyDiscount(){
   if(!canEdit()){ noEdit(); return; }
   const {school, exam} = feeCtx(); const sid = qs('#discLearner').value, amt = Number(qs('#discAmt').value), reason = qs('#discReason').value.trim();
@@ -6411,7 +7399,7 @@ function voidAdjust(id){
   a.void = true; saveDB(DB); toast('Discount voided'); loadFinanceFeesSummary();
 }
 function smsPayConfirm(pay){
-  const school = currentSchool(), st = school.students.find(x=>x.id===pay.studentId)||{}, el = qs('#payMsg');
+  const school = currentSchool(), st = finRaw(school).find(x=>x.id===pay.studentId)||{}, el = qs('#payMsg');
   const msg = `Received KES ${pay.amount.toLocaleString()} for ${st.name} on ${pay.date}. Receipt ${pay.receiptNo}. Balance: KES ${pay.balanceAfter.toLocaleString()}. - ${school.name}`;
   const built = buildSmsRecipients([{phone:st.parentPhone, message:msg}]);
   const note = t=>{ el.innerHTML = `<div class="msg err">Payment saved. ${t}</div>`; };
@@ -6426,8 +7414,8 @@ function financeOverviewHTML(){ return `<div class="card"><h2>📊 Fees Overview
 function renderOverview(){
   const el = qs('#ovArea'); if(!el) return; const school = currentSchool();
   const rows = school.classes.map(c=>{
-    const exs = school.exams.filter(e=>e.classId===c.id); const e = exs[exs.length-1]; if(!e) return null;
-    const recs = school.fees[e.id]||{}, learners = studentsForExam(school, e);
+    const e = latestFeePeriod(school, c.id); if(!e) return null;
+    const recs = school.fees[e.id]||{}, learners = finLearners(school, e);
     const billed = learners.reduce((t,l)=>t+(Number((recs[l.id]||{}).billed)||0),0);
     const owing = learners.filter(l=>Number((recs[l.id]||{}).balance)>0);
     const out = owing.reduce((t,l)=>t+Number(recs[l.id].balance),0);
@@ -6445,7 +7433,7 @@ function renderOverview(){
 
 /* ---------- Finance: backup/restore, ledger export, end-of-term closing report ---------- */
 function financeArchiveHTML(school){
-  const terms = [...new Set(school.exams.map(e=>String(e.term)+' '+String(e.year)))];
+  const terms = [...new Set(finExams(school).map(e=>String(e.term)+' '+String(e.year)))];
   const d0 = new Date(); d0.setMonth(d0.getMonth()-3); const from = d0.toISOString().slice(0,8)+'01';
   return `<div class="card"><h2>🧾 End-of-Term Closing Report</h2>
   <p class="small">A whole-school summary for one term: fees per grade, collections by method, expenses by category, and the biggest outstanding balances. Choose the term, and the date range for expenses.</p>
@@ -6462,7 +7450,7 @@ function financeArchiveHTML(school){
 function dlBlob(name, text, type){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type})); a.download=name; document.body.appendChild(a); a.click(); a.remove(); }
 function backupFinance(){
   const sc = currentSchool();
-  dlBlob(`finance-backup-${sc.code}-${today10()}.json`, JSON.stringify({app:'EduTrack finance backup', version:1, school:sc.code, name:sc.name, exportedAt:new Date().toISOString(), fees:sc.fees, payments:sc.payments, expenses:sc.expenses, feeAdjust:sc.feeAdjust, feeStructure:sc.feeStructure, payInstructions:sc.payInstructions}), 'application/json');
+  dlBlob(`finance-backup-${sc.code}-${today10()}.json`, JSON.stringify({app:'EduTrack finance backup', version:1, school:sc.code, name:sc.name, exportedAt:new Date().toISOString(), fees:sc.fees, payments:sc.payments, expenses:sc.expenses, feeAdjust:sc.feeAdjust, feeStructure:sc.feeStructure, payInstructions:sc.payInstructions, invoiceNote:sc.invoiceNote, feePublish:sc.feePublish, feeTerms:sc.feeTerms}), 'application/json');
   toast('Backup downloaded');
 }
 function restoreFinance(input){
@@ -6475,7 +7463,7 @@ function restoreFinance(input){
       if(d.app!=='EduTrack finance backup') throw new Error('This is not a finance backup file.');
       if(d.school!==sc.code) throw new Error('This backup belongs to a different school ('+(d.name||d.school)+').');
       if(!confirm(`Restore backup from ${new Date(d.exportedAt).toLocaleString()}?\n\nThis REPLACES all current fee balances, payments, expenses, discounts and fee structures.`)) { input.value=''; return; }
-      sc.fees = d.fees||{}; sc.payments = d.payments||[]; sc.expenses = d.expenses||[]; sc.feeAdjust = d.feeAdjust||[]; sc.feeStructure = d.feeStructure||{}; sc.payInstructions = d.payInstructions||'';
+      sc.fees = d.fees||{}; sc.payments = d.payments||[]; sc.expenses = d.expenses||[]; sc.feeAdjust = d.feeAdjust||[]; sc.feeStructure = d.feeStructure||{}; sc.payInstructions = d.payInstructions||''; sc.invoiceNote = d.invoiceNote||''; sc.feePublish = d.feePublish||{}; sc.feeTerms = d.feeTerms||[];
       saveDB(DB); toast('Backup restored'); renderFinance();
     }catch(e){ out.innerHTML = `<div class="msg err">${escapeHtml(String(e.message||e))}</div>`; }
     input.value='';
@@ -6483,7 +7471,7 @@ function restoreFinance(input){
   r.readAsText(f);
 }
 function exportLedger(){
-  const sc = currentSchool(); const nm = id=>(sc.students.find(x=>x.id===id)||{}).name||'';
+  const sc = currentSchool(); const nm = id=>(finRaw(sc).find(x=>x.id===id)||{}).name||'';
   const rows = [['Date','Type','Reference','Learner / Category','Details','Money In','Money Out','Status','By']];
   sc.payments.forEach(p=>rows.push([p.date,'Fee payment',p.receiptNo,nm(p.studentId),p.method+(p.ref?' '+p.ref:''),p.amount,'',p.void?'Voided':'OK',p.by]));
   sc.expenses.forEach(e=>rows.push([e.date,'Expense','',e.category,e.desc||'','',e.amount,e.void?'Voided':'OK',e.by]));
@@ -6494,9 +7482,9 @@ function exportLedger(){
 function closingData(){
   const sc = currentSchool(); const key = qs('#clTerm').value; if(!key) return null;
   const f = qs('#clFrom').value, t = qs('#clTo').value;
-  const exams = sc.exams.filter(e=>String(e.term)+' '+String(e.year)===key);
+  const exams = finExams(sc).filter(e=>String(e.term)+' '+String(e.year)===key);
   const rows = exams.map(e=>{
-    const recs = sc.fees[e.id]||{}, ls = studentsForExam(sc, e);
+    const recs = sc.fees[e.id]||{}, ls = finLearners(sc, e);
     const billed = ls.reduce((a,l)=>a+(Number((recs[l.id]||{}).billed)||0),0);
     const disc = sc.feeAdjust.filter(a=>!a.void && a.examId===e.id).reduce((a,x)=>a+x.amount,0);
     const paid = sc.payments.filter(p=>!p.void && p.examId===e.id).reduce((a,p)=>a+p.amount,0);
@@ -6506,7 +7494,7 @@ function closingData(){
   const ids = new Set(exams.map(e=>e.id)); const byMethod = {};
   sc.payments.filter(p=>!p.void && ids.has(p.examId)).forEach(p=>byMethod[p.method]=(byMethod[p.method]||0)+p.amount);
   const exps = sc.expenses.filter(e=>!e.void && inRange(e.date,f,t)), byCat = {}; exps.forEach(e=>byCat[e.category]=(byCat[e.category]||0)+e.amount);
-  const top = []; exams.forEach(e=>{ const recs = sc.fees[e.id]||{}; studentsForExam(sc,e).forEach(l=>{ const b=Number((recs[l.id]||{}).balance); if(b>0) top.push({name:l.name, adm:l.adm||'', cls:(sc.classes.find(c=>c.id===e.classId)||{}).name||'', b}); }); });
+  const top = []; exams.forEach(e=>{ const recs = sc.fees[e.id]||{}; finLearners(sc,e).forEach(l=>{ const b=Number((recs[l.id]||{}).balance); if(b>0) top.push({name:l.name, adm:l.adm||'', cls:(sc.classes.find(c=>c.id===e.classId)||{}).name||'', b}); }); });
   top.sort((a,b)=>b.b-a.b);
   return {sc, key, f, t, rows, byMethod, byCat, top:top.slice(0,10), spent:exps.reduce((a,e)=>a+e.amount,0)};
 }
@@ -6529,8 +7517,8 @@ function printClosing(){
   w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
 }
 function feeCtx(){
-  const school = currentSchool(); const exam = school.exams.find(e=>e.id===(qs('#ffExam')||{}).value);
-  return {school, exam, recs: exam ? (school.fees[exam.id]||{}) : {}, learners: exam ? studentsForExam(school, exam) : []};
+  const school = currentSchool(); const exam = finExams(school).find(e=>e.id===(qs('#ffExam')||{}).value);
+  return {school, exam, recs: exam ? (school.fees[exam.id]||{}) : {}, learners: exam ? finLearners(school, exam) : []};
 }
 function refreshPayCard(){
   const sel = qs('#payLearner'); if(!sel) return;
@@ -6538,7 +7526,7 @@ function refreshPayCard(){
   sel.innerHTML = learners.map(l=>{ const b=(recs[l.id]||{}).balance; return `<option value="${l.id}">${escapeHtml((l.adm?l.adm+' · ':'')+l.name)}${b!=null&&b!==''?' — bal '+Number(b).toLocaleString():''}</option>`; }).join('') || '<option value="">No learners</option>';
   const pays = exam ? school.payments.filter(p=>p.examId===exam.id).sort((a,b)=>b.ts-a.ts) : [];
   const live = pays.filter(p=>!p.void), total = live.reduce((t,p)=>t+p.amount,0);
-  const nm = id => (school.students.find(x=>x.id===id)||{}).name || '—';
+  const nm = id => (finRaw(school).find(x=>x.id===id)||{}).name || '—';
   qs('#payHistory').innerHTML = `<p class="small"><b>${live.length}</b> payment(s) this term · Collected: <b>KES ${total.toLocaleString()}</b></p>` + (pays.length ? `<table><tr><th>Receipt</th><th>Date</th><th>Learner</th><th>Amount</th><th>Method</th><th>Ref</th><th></th></tr>
   ${pays.slice(0,50).map(p=>`<tr style="${p.void?'opacity:.5;text-decoration:line-through':''}"><td>${escapeHtml(p.receiptNo)}</td><td>${escapeHtml(p.date)}</td><td style="text-align:left">${escapeHtml(nm(p.studentId))}</td><td>${p.amount.toLocaleString()}</td><td>${escapeHtml(p.method)}</td><td>${escapeHtml(p.ref||'-')}</td>
   <td>${p.void?'Voided':`<button class="ghost" onclick="printReceipt('${p.id}')">🖨</button> <button class="danger" onclick="voidPayment('${p.id}')">Void</button>`}</td></tr>`).join('')}</table>` : '');
@@ -6573,13 +7561,13 @@ function voidPayment(id){
 }
 function printReceipt(id){
   const school = currentSchool(); const p = school.payments.find(x=>x.id===id); if(!p) return;
-  const st = school.students.find(x=>x.id===p.studentId)||{}; const exam = school.exams.find(e=>e.id===p.examId)||{};
+  const st = finRaw(school).find(x=>x.id===p.studentId)||{}; const exam = finExams(school).find(e=>e.id===p.examId)||{};
   const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
   const row=(a,b)=>`<tr><td style="color:#555;width:38%">${a}</td><td><b>${b}</b></td></tr>`;
   w.document.write(`<html><head><title>${escapeHtml(p.receiptNo)}</title><style>body{font-family:Arial,sans-serif;max-width:420px;margin:20px auto;padding:18px;border:2px solid #123a63;border-radius:8px;font-size:13px}h2{margin:0;color:#123a63;text-align:center}.c{text-align:center;color:#555;margin:2px 0}table{width:100%;border-collapse:collapse;margin-top:10px}td{padding:6px 4px;border-bottom:1px dotted #bbb}.amt{font-size:20px;text-align:center;margin:12px 0;color:#1f8a4c}</style></head><body>
   <h2>${escapeHtml(school.name)}</h2><p class="c">${escapeHtml([school.address,school.phone].filter(Boolean).join(' · '))}</p><p class="c"><b>FEE PAYMENT RECEIPT</b></p>
   <div class="amt"><b>KES ${p.amount.toLocaleString()}</b></div>
-  <table>${row('Receipt No.',escapeHtml(p.receiptNo))}${row('Date',escapeHtml(p.date))}${row('Learner',escapeHtml(st.name||'-'))}${row('Adm No.',escapeHtml(st.adm||'-'))}${row('Term',escapeHtml((exam.name||'')+' '+(exam.term||'')+' '+(exam.year||'')))}${row('Method',escapeHtml(p.method))}${row('Reference',escapeHtml(p.ref||'-'))}${row('Balance after payment','KES '+p.balanceAfter.toLocaleString())}${row('Received by',escapeHtml(p.by))}</table>
+  <table>${row('Receipt No.',escapeHtml(p.receiptNo))}${row('Date',escapeHtml(p.date))}${row('Learner',escapeHtml(st.name||'-'))}${row('Adm No.',escapeHtml(st.adm||'-'))}${row('Term',escapeHtml((exam.name||'')+' '+(exam.term||'')+' '+(exam.year||'')))}${row('Method',escapeHtml(p.method))}${row('Reference',escapeHtml(p.ref||'-'))}${row('Balance after payment', p.balanceAfter!=null ? 'KES '+p.balanceAfter.toLocaleString() : '—')}${row('Received by',escapeHtml(p.by))}</table>
   <p class="c" style="margin-top:14px">Thank you. Keep this receipt for your records.</p></body></html>`);
   w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
 }
@@ -6588,7 +7576,7 @@ function feeReminderItems(){
   const min = Number((qs('#remMin')||{}).value)||0, tpl = ((qs('#remText')||{}).value||'');
   const items = learners.filter(l=>Number((recs[l.id]||{}).balance)>min).map(l=>{
     const r = recs[l.id];
-    return {phone:l.parentPhone, message: tpl.replace(/\{name\}/g,l.name).replace(/\{balance\}/g,Number(r.balance).toLocaleString()).replace(/\{next\}/g,r.nextTermFee!=null?Number(r.nextTermFee).toLocaleString():'-')};
+    return {phone:l.parentPhone, message: tpl.replace(/\{name\}/g,l.name).replace(/\{balance\}/g,Number(r.balance).toLocaleString()).replace(/\{next\}/g,r.nextTermFee!=null?Number(r.nextTermFee).toLocaleString():'-').replace(/\{total\}/g,Math.max(0,(Number(r.balance)||0)+(Number(r.nextTermFee)||0)).toLocaleString())};
   });
   return {school, items, built: buildSmsRecipients(items.filter(i=>i.phone))};
 }
@@ -6615,23 +7603,29 @@ function renderFinance(){
   if(!fi){ logout(); setTimeout(()=>toast('Your finance account is no longer available','err'),50); return; }
   const hasC = school.classes.length > 0;
   const menu = [{group:'Overview', items:[['dashboard','🏠 Dashboard']]},
-    {group:'Fees', items:[['fees','💵 Fee Balances'],['structure','🏷 Fee Structure & Invoices']]},
+    {group:'Fees', items:[['fees','💵 Fee Balances'],['structure','🏷 Fee Structure & Invoices'],['learners','👥 Learners']]},
     {group:'Money', items:[['pay','🧾 Payments & Reminders'],['books','📈 Cash Book & Expenses']]},
     {group:'SMS', items:[['sms','💳 SMS Credit']]},
-    {group:'Reports', items:[['archive','📑 Closing Report & Backup'],['reports','📄 Report Cards']]}];
+    {group:'Reports', items:[['archive','📑 Closing Report & Backup'],['reports','📄 Report Cards']]},
+    {group:'Data', items:[['migrate','🔄 Data Migration']]},
+    {group:'Help', items:[['help','❓ Help / Manual']]}];
   const banner = canEdit() ? '' : '<div class="msg">👁 <b>View-only access</b> — you can view, print and export, but not change records.</div>';
   const noGrades = '<div class="card"><p class="small">No grades or exams set up yet — ask your DOS/HOI to create them first.</p></div>';
   let body;
   if(finTab==='dashboard') body = `<div class="card no-print"><h2>💰 Welcome, ${escapeHtml(fi.name)}</h2><p class="small">Tap <b>☰ Menu</b> to open Fee Balances, Fee Structure &amp; Invoices, Payments &amp; Reminders, Cash Book &amp; Expenses, SMS Credit and Reports.</p></div>` + portalQuick('gotoFinTab',[['pay','🧾 Record Payment'],['fees','💵 Fee Balances'],['structure','🏷 Invoices'],['books','📈 Cash Book'],['sms','💳 SMS Credit']]) + (hasC ? financeOverviewHTML() : noGrades);
+  else if(finTab==='help') body = tplFinanceHelp();
   else if(finTab==='sms') body = tplFinanceCredits(school);
+  else if(finTab==='migrate') body = financeMigrationHTML(school);
   else if(!hasC) body = noGrades;
   else if(finTab==='fees') body = financeFeesTabHTML(school);
   else if(finTab==='structure') body = financeCtxBar(school) + financeStructureHTML(school);
+  else if(finTab==='learners') body = financeLearnersHTML(school);
   else if(finTab==='pay') body = financeCtxBar(school) + financePayTabHTML(school);
   else if(finTab==='books') body = financeBooksHTML(school);
   else if(finTab==='archive') body = financeArchiveHTML(school);
   else body = tplReportsPicker(school);
   app.innerHTML = portalShell({menu, tab:finTab, goto:'gotoFinTab', side:school.name, headName:fi.name, headSub:'Finance · '+school.name+(canEdit()?'':' · View-only')}) + `<div id="finContent">${banner}${body}</div>`;
+  if(finTab==='migrate') migRender();
   if(hasC){
     if(finTab==='fees') loadFinanceFeesSummary(); else finRefreshAll();
     if(finTab==='reports'){ fillRepExams(); fillRepLearners(); }
@@ -6725,7 +7719,8 @@ function buildReportHTML(school, sid, examId){
   // Fees balance/next-term-fee: purely informational, set by the Finance Portal (bulk CSV
   // import or manual entry) against this exact exam/term — left off entirely for a learner
   // with no fee record yet, rather than printing a misleading "KES 0".
-  const feeRec = (school.fees[examId]||{})[sid];
+  let feeRec = (school.fees[examId]||{})[sid];
+  if(!feeRec){ const ex0 = school.exams.find(e=>e.id===examId), st0 = school.students.find(x=>x.id===sid); const ft0 = (ex0&&st0) ? (school.feeTerms||[]).find(t=>t.classId===st0.classId && t.term===ex0.term && String(t.year)===String(ex0.year)) : null; if(ft0) feeRec = (school.fees[ft0.id]||{})[sid]; }
   const feesLine = (feeRec && (feeRec.balance!=null || feeRec.nextTermFee!=null))
     ? `<div>${feeRec.balance!=null?`<b>Fees Balance:</b> KES ${Number(feeRec.balance).toLocaleString()}`:''}${(feeRec.balance!=null && feeRec.nextTermFee!=null)?' &nbsp;·&nbsp; ':''}${feeRec.nextTermFee!=null?`<b>Next Term Fee:</b> KES ${Number(feeRec.nextTermFee).toLocaleString()}`:''}</div>` : '';
   const metaLine = (attendanceLine || closeLine || nextTermLine || feesLine) ? `<div class="rc-meta">${attendanceLine}${closeLine}${nextTermLine}${feesLine}</div>` : '';
@@ -6856,7 +7851,7 @@ function renderParent(){
   const assignments = school.assignments.slice().sort((a,b)=>b.postedAt-a.postedAt); // already limited to this learner's grade + visible ones
   const menu = [
     {group:'Overview', items:[['dashboard','🏠 Dashboard']]},
-    {group:'My child', items:[['report','📄 Progress Report'],['assignments','📎 Assignments']]}
+    {group:'My child', items:[['report','📄 Progress Report'],['assignments','📎 Assignments'],['fees','🧾 Fee Invoice']]}
   ];
   if(!menu.some(g=>g.items.some(i=>i[0]===parentTab))) parentTab = 'dashboard';
   const latest = exams[0];
@@ -6885,13 +7880,50 @@ function renderParent(){
     <div id="pAssignmentArea"></div>
   </div>` : `<div class="card"><h2>📎 Assignments</h2><p class="small">No assignments have been posted for your child's grade yet.</p></div>`;
   const content = {
-    dashboard: head + portalQuick('gotoParentTab', [['report','📄 Progress Report'],['assignments','📎 Assignments'+(assignments.length?' ('+assignments.length+')':'')]]),
+    dashboard: head + parentFeeSummaryHTML(school, student, parentFeePeriods(school)) + portalQuick('gotoParentTab', [['report','📄 Progress Report'],['assignments','📎 Assignments'+(assignments.length?' ('+assignments.length+')':'')],['fees','🧾 Fee Invoice']]),
     report: reportCard,
-    assignments: asgCard
+    assignments: asgCard,
+    fees: parentFeesCardHTML(school, student, parentFeePeriods(school))
   }[parentTab] || '';
   app.innerHTML = portalShell({menu, tab:parentTab, goto:'gotoParentTab', side:student.name, headName:student.name, headSub:(cls?cls.name+' · ':'')+'Adm '+(student.adm||'-')}) + `<div id="dosContent">${content}</div>`;
   dosSyncBarOffset();
   if(parentTab==='report' && exams.length) viewParentReport();
+  if(parentTab==='fees') viewParentInvoice();
+}
+// Parent Portal: this learner's own next-term invoice (arrears + next-term items). Read-only; shown in an isolated
+// frame so it looks and prints exactly like the school's printed copy.
+function parentFeeExams(school, student, exams){
+  const recs = e => (school.fees[e.id]||{})[student.id];
+  return exams.filter(e=>{ const r = recs(e); return r && ((r.balance!=null && r.balance!=='') || (r.nextTermFee!=null && r.nextTermFee!=='')); });
+}
+function parentFeesCardHTML(school, student, exams){
+  const list = parentFeeExams(school, student, exams);
+  if(!list.length) return `<div class="card"><h2>🧾 Fee Invoice</h2><p class="small">No fee invoice is available for ${escapeHtml(student.name)} yet. Please check again later or contact the school office${school.phone?' on '+escapeHtml(school.phone):''}.</p></div>`;
+  return `<div class="card"><h2>🧾 Next-Term Fee Invoice</h2>
+  <p class="small">Shows any unpaid balance (arrears) together with next term's fees, so you can pay everything in one go. You can print it or save it as a PDF from your phone or computer.</p>
+  <div class="row"><div><label>Based on balance at end of</label><select id="pFeeExam" onchange="viewParentInvoice()">${list.map(e=>`<option value="${e.id}">${escapeHtml(periodLabel(e))}</option>`).join('')}</select></div></div>
+  </div><div id="feeArea"></div>`;
+}
+function parentFeeSummaryHTML(school, student, exams){
+  const list = parentFeeExams(school, student, exams); if(!list.length) return '';
+  const e = list[0], r = school.fees[e.id][student.id]; const bal = Number(r.balance)||0, next = Number(r.nextTermFee)||0, total = bal+next; const nt = nextTermInfo(e);
+  const fm = n=>Number(n).toLocaleString(); const box = (t,v,c)=>`<div style="flex:1;min-width:120px;background:#f7f9fc;border:1px solid var(--border);border-radius:9px;padding:9px 11px;border-top:3px solid ${c}"><div class="small">${t}</div><div style="font-size:17px;font-weight:800;color:var(--navy)">${v}</div></div>`;
+  return `<div class="card"><h2>🧾 Fees for ${escapeHtml(nt.label+' '+nt.year)}</h2>
+  <div class="row" style="margin-bottom:8px">${box('Arrears', bal>0?'KES '+fm(bal):(bal<0?'Credit '+fm(-bal):'Nil'), bal>0?'var(--be)':'var(--ee)')}${box(escapeHtml(nt.label)+' fees','KES '+fm(next),'var(--me)')}${box(total>0?'Total due':'Credit','KES '+fm(Math.abs(total)), total>0?'var(--ae)':'var(--ee)')}</div>
+  <div class="flexbtns"><button class="gold" onclick="gotoParentTab('fees')">🧾 View / Print Invoice</button></div></div>`;
+}
+function viewParentInvoice(){
+  const school = parentSchoolData; const sel = qs('#pFeeExam'); const area = qs('#feeArea'); if(!school || !sel || !area) return;
+  const exam = finExams(school).find(e=>e.id===sel.value), student = school.students.find(s=>s.id===session.studentId);
+  if(!exam || !student){ area.innerHTML=''; return; }
+  const r = (school.fees[exam.id]||{})[student.id] || {};
+  const doc = ntiDocument(ntiPageHTML(school, exam, student, r), 'Next Term Invoice - '+student.name);
+  area.innerHTML = `<div class="card" style="padding:6px"><iframe id="feeFrame" title="Next term fee invoice" style="width:100%;height:1080px;border:0;background:#fff" srcdoc="${escapeHtml(doc)}"></iframe></div>
+  <div class="flexbtns no-print"><button class="gold" onclick="printParentInvoice()">🖨 Print / Save as PDF</button></div>`;
+}
+function printParentInvoice(){
+  const f = qs('#feeFrame'); if(!f || !f.contentWindow){ toast('Invoice not ready','err'); return; }
+  f.contentWindow.focus(); f.contentWindow.print();
 }
 function viewParentAssignment(id){
   const school = parentSchoolData;
