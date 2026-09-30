@@ -346,6 +346,7 @@ const ADMIN_ACCESS_KEY = 'nmVoCBopKpciLvsmCD9EuXTk';
 // same as ADMIN_ACCESS_KEY.
 const DOS_ACCESS_KEY = 'LUg35O6eNUautNpN8PsphJIM';
 const TEACHER_ACCESS_KEY = 'HreuYy1Wap0C9cEWzrrDg4y2';
+const FINANCE_ACCESS_KEY = 'Qk92LxT4mRb7ZpN0WvXsY3Hd';
 /* ============================= DATA LAYER ============================= */
 const DB_KEY = 'cbc_markbook_db_v1';
 // Wraps localStorage so a school running in a browser that blocks it (private/incognito
@@ -419,6 +420,13 @@ function ensureSchoolShape(s){
   if(!Array.isArray(s.learningAreas)) s.learningAreas = defaultAreas();
   if(!Array.isArray(s.gradingSystem)) s.gradingSystem = defaultGrading();
   if(!Array.isArray(s.dos)) s.dos = [];
+  if(!Array.isArray(s.finance)) s.finance = [];
+  if(!Array.isArray(s.payments)) s.payments = [];
+  // Fees: s.fees[examId][studentId] = {balance, nextTermFee, updatedAt, updatedBy}. Keyed
+  // the same way as attendance/remarks — one record per learner per exam/term — set either
+  // by bulk CSV import or by hand from the Finance Portal. Purely informational (shown on
+  // the report card and the Finance Portal's own summary); never feeds grading/positions.
+  if(!s.fees || typeof s.fees!=='object') s.fees = {};
   if(!s.classTeachers || typeof s.classTeachers!=='object') s.classTeachers = {};
   if(!s.marks || typeof s.marks!=='object') s.marks = {};
   // Attendance: s.attendance[examId][studentId] = days present. Keyed the same way as
@@ -1970,7 +1978,7 @@ function route(){
     logout();
     return;
   }
-  if(session.role==='dos' || session.role==='teacher' || session.role==='parent'){
+  if(session.role==='dos' || session.role==='teacher' || session.role==='finance' || session.role==='parent'){
     const school = session.role==='parent' ? parentSchoolData : DB.schools[session.schoolCode];
     const access = schoolAccessStatus(school);
     if(!access.ok){
@@ -1984,11 +1992,12 @@ function route(){
   if(session.role==='admin') renderAdmin();
   else if(session.role==='dos'){ renderDOS(); maybeShowWaGroupPrompt(); }
   else if(session.role==='teacher') renderTeacher();
+  else if(session.role==='finance') renderFinance();
   else if(session.role==='parent') renderParent();
   // Parent sessions deliberately never call ensureSyncConnected: they get one snapshot
   // of the school's data at login (see doParentLogin), never a live/writable connection,
   // and never touch renderDOS/renderTeacher/renderAdmin or anything reachable from them.
-  if(session.role==='dos' || session.role==='teacher') ensureSyncConnected(DB.schools[session.schoolCode]);
+  if(session.role==='dos' || session.role==='teacher' || session.role==='finance') ensureSyncConnected(DB.schools[session.schoolCode]);
   if(session.role==='admin'){ ensureAdminSyncConnected(); refreshAllSchoolsFromCloud(true); }
 }
 
@@ -2038,6 +2047,7 @@ function renderLogin(){
   if(restricted){
     if(qp.p === DOS_ACCESS_KEY) activeRole = 'dos';
     else if(qp.p === TEACHER_ACCESS_KEY) activeRole = 'teacher';
+    else if(qp.p === FINANCE_ACCESS_KEY) activeRole = 'finance';
     else if(qp.role === 'parent') activeRole = 'parent';
     else if(qp.role === 'teacher') activeRole = 'teacher'; // legacy link, pre-dates ?p=
     else activeRole = 'dos'; // legacy default for a bare ?school=CODE link
@@ -2048,6 +2058,7 @@ function renderLogin(){
   }
   const heroText = activeRole==='parent' ? 'Parent Portal'
     : activeRole==='teacher' ? 'Teacher Portal'
+    : activeRole==='finance' ? 'Finance Portal'
     : activeRole==='dos' ? 'DOS / HOI Portal'
     : 'Admin / Owner Portal';
   app.innerHTML = `
@@ -2108,6 +2119,21 @@ function renderLogin(){
           <button class="login-continue" id="loginBtn" onclick="doTeacherLogin()">Sign In</button>
           <p class="login-back"><a href="#" onclick="toggleStaffRecovery(event,'teacher')">Forgot your password?</a></p>
           <div id="staffRecoveryArea" class="hidden"></div>
+        </div>
+        <div id="loginMsg"></div>`;
+    } else if(activeRole==='finance'){
+      f.innerHTML = `
+        <p class="login-sub">Please enter your username to access your account.</p>
+        <div id="loginStep1">
+          ${prefillCode ? `<input type="hidden" id="scode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="scode" placeholder="School Code (8-digit)" maxlength="8"></div>`}
+          <div class="login-field">${PERSON_ICO}<input class="login-id-field" id="fuser" placeholder="Username" onkeydown="if(event.key==='Enter')loginStep2()"></div>
+          <button class="login-continue" onclick="loginStep2()">Continue</button>
+        </div>
+        <div id="loginStep2" style="display:none">
+          <p class="login-step-label">Signing in as <b id="loginWho"></b><a href="#" onclick="loginStepBack();return false;">Change</a></p>
+          <div class="login-field">${LOCK_ICO}<input type="password" id="fpass" placeholder="Password" onkeydown="if(event.key==='Enter')doFinanceLogin()"></div>
+          ${syncFieldHtml(qp, false)}
+          <button class="login-continue" id="loginBtn" onclick="doFinanceLogin()">Sign In</button>
         </div>
         <div id="loginMsg"></div>`;
     } else {
@@ -2435,6 +2461,37 @@ async function doTeacherLogin(){
   const access = schoolAccessStatus(school);
   if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
   setSession({role:'teacher', schoolCode:code, userId:rec.id, label:`${rec.name} (Teacher) · ${school.name}`});
+  route();
+}
+async function doFinanceLogin(){
+  const code = qs('#scode').value.trim();
+  const u = qs('#fuser').value.trim();
+  const p = qs('#fpass').value;
+  setLoginBusy(true, 'Logging in…');
+  const cached = DB.schools[code];
+  const cachedRec = cached && cached.finance.find(f=>f.username===u && f.password===p);
+  if(cachedRec){
+    const access = schoolAccessStatus(cached);
+    if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
+    setSession({role:'finance', schoolCode:code, userId:cachedRec.id, label:`${cachedRec.name} (Finance) · ${cached.name}`});
+    route();
+    const config = resolveLoginSyncConfig(code);
+    if(config) bootstrapFromCloudIfNeeded(code, config).then(()=>{ if(session && session.role==='finance' && session.schoolCode===code) route(); });
+    return;
+  }
+  const config = resolveLoginSyncConfig(code);
+  if(config){
+    qs('#loginMsg').innerHTML='<div class="msg ok">Connecting to sync…</div>';
+    try{ await withTimeout(bootstrapFromCloudIfNeeded(code, config), 8000, 'Sync'); }
+    catch(e){ console.warn('Sync bootstrap did not complete in time, continuing with local login', e); qs('#loginMsg').innerHTML='<div class="msg err">Sync is slow to respond — checking what\'s on this device instead.</div>'; }
+  }
+  const school = DB.schools[code];
+  if(!school){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
+  const rec = school.finance.find(f=>f.username===u && f.password===p);
+  if(!rec){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">Invalid credentials.</div>'; return; }
+  const access = schoolAccessStatus(school);
+  if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
+  setSession({role:'finance', schoolCode:code, userId:rec.id, label:`${rec.name} (Finance) · ${school.name}`});
   route();
 }
 // Parent Portal login: instead of a username/password, a parent proves they're looking
@@ -2991,6 +3048,7 @@ const DOS_MENU = [
   {group:'School setup', items:[['classes','🏷 Grades'],['areas','📚 Learning Areas'],['grading','🎯 Grading System'],['students','🧑‍🎓 Learners'],['teachers','👩‍🏫 Teachers &amp; Permissions']]},
   {group:'Exams &amp; marks', items:[['exams','📝 Exams'],['marks','✏️ Enter/Edit Marks']]},
   {group:'Results &amp; reports', items:[['assess','🖨 Assessment Sheets'],['analysis','📈 Results Analysis'],['reports','📄 Reports'],['history','🗂 Exam History']]},
+  {group:'Finance', items:[['finance','💰 Finance Accounts']]},
   {group:'Parents', items:[['assignments','📎 Assignments'],['sms','💬 SMS to Parents'],['links','🔗 Share Login Links']]},
   {group:'School &amp; account', items:[['profile','🏫 School Details'],['account','🔑 My Account'],['help','❓ Help / Manual']]}
 ];
@@ -3032,7 +3090,7 @@ function tplShareLinks(school){
   return `<div class="card"><h2>🔗 Share Login Links</h2>
   <p class="small">School Code: <b class="school-code">${school.code}</b></p>
   <p class="small">Get a ready-made link to share on WhatsApp or the notice board, so nobody has to type the school code by hand.</p>
-  <div class="flexbtns"><button class="ghost" onclick="showLinkDos()">🔗 Get Teacher Login Link</button> <button class="ghost" onclick="showLinkParent()">🔗 Get Parent Portal Link</button></div>
+  <div class="flexbtns"><button class="ghost" onclick="showLinkDos()">🔗 Get Teacher Login Link</button> <button class="ghost" onclick="showLinkFinance()">🔗 Get Finance Login Link</button> <button class="ghost" onclick="showLinkParent()">🔗 Get Parent Portal Link</button></div>
   <div id="dosLinkArea"></div></div>`;
 }
 function copyLinkBox(btn){
@@ -3111,6 +3169,7 @@ function renderDOS(){
   if(dosTab==='students') c.innerHTML = tplStudents(school);
   if(dosTab==='exams') c.innerHTML = tplExams(school);
   if(dosTab==='teachers') c.innerHTML = tplTeachers(school);
+  if(dosTab==='finance') c.innerHTML = tplFinanceAccounts(school);
   if(dosTab==='marks'){ c.innerHTML = tplDosMarks(school); if(school.classes.length) dosRenderExamOptions(); }
   if(dosTab==='assess') c.innerHTML = tplAssessPicker(school);
   if(dosTab==='analysis'){ c.innerHTML = tplResultsAnalysis(school); raFillExams(); }
@@ -3606,6 +3665,10 @@ function showLinkDos(){
 function showLinkParent(){
   const url = location.origin + location.pathname + `?school=${session.schoolCode}&role=parent`;
   qs('#dosLinkArea').innerHTML = `<div class="linkbox">${url}</div><button class="ghost" style="margin-top:6px" onclick="copyLinkBox(this)">📋 Copy link</button><p class="small">Share with parents — opens straight to the results lookup form.</p>`;
+}
+function showLinkFinance(){
+  const url = location.origin + location.pathname + `?school=${session.schoolCode}&p=${FINANCE_ACCESS_KEY}`;
+  qs('#dosLinkArea').innerHTML = `<div class="linkbox">${url}</div><button class="ghost" style="margin-top:6px" onclick="copyLinkBox(this)">📋 Copy link</button><p class="small">Share with your Finance/bursar staff along with their username/password (see Finance Accounts in the ☰ Menu).</p>`;
 }
 
 /* --- Classes --- */
@@ -4663,6 +4726,99 @@ function resetTeacherPassword(tid){
   alert(t.name+" (username: "+t.username+") — new password: "+newPw+"\n\nShare this with them directly.");
 }
 
+/* ============================= FINANCE ACCOUNTS (DOS-side management) =============================
+   A Finance account is deliberately simpler than a Teacher account: no per-class/learning-area
+   assignments or approval permissions — it only ever needs to reach the Finance Portal (fees
+   import + report viewing), so there is nothing else to grant. */
+function tplFinanceAccounts(school){
+  return `<div class="card"><h2>💰 Finance Accounts</h2>
+  <p class="small">Finance accounts can bulk-import fee balances (via CSV), see the fees summary, and view learner report forms — but cannot enter or edit marks, and never see any other DOS/HOI or Teacher tools.</p>
+  <div class="row">
+    <div><label>Name</label><input id="fiName"></div>
+    <div><label>Username</label><input id="fiUser"></div>
+    <div><label>Password</label><input id="fiPass" placeholder="leave blank to default to fin123"></div>
+    <div><label>Email <span class="small">(optional)</span></label><input id="fiEmail" type="email"></div>
+    <div><label>Phone <span class="small">(optional)</span></label><input id="fiPhone"></div>
+  </div>
+  <div class="flexbtns"><button onclick="addFinance()">➕ Add Finance Account</button></div>
+  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Actions</th></tr>
+  ${school.finance.map(fi=>`<tr>
+    <td>${escapeHtml(fi.name)}</td><td>${escapeHtml(fi.username)}</td>
+    <td><input value="${escapeHtml(fi.email||'')}" placeholder="email" onchange="setFinanceContact('${fi.id}','email',this.value)"></td>
+    <td><input value="${escapeHtml(fi.phone||'')}" placeholder="phone" onchange="setFinanceContact('${fi.id}','phone',this.value)"></td>
+    <td><button class="ghost" onclick="resetFinancePassword('${fi.id}')">🔑 Reset Password</button> <button class="danger" onclick="delFinance('${fi.id}')">✕</button></td>
+  </tr>`).join('') || '<tr><td colspan="5" class="small">No finance accounts yet.</td></tr>'}
+  </table>
+  </div>`;
+}
+function setFinanceContact(fid,field,value){
+  const fi = currentSchool().finance.find(x=>x.id===fid);
+  if(!fi) return;
+  fi[field] = value.trim();
+  saveDB(DB);
+  toast('Saved');
+}
+function addFinance(){
+  const name=qs('#fiName').value.trim(), username=qs('#fiUser').value.trim();
+  let password=qs('#fiPass').value.trim();
+  const email=qs('#fiEmail').value.trim(), phone=qs('#fiPhone').value.trim();
+  if(!name||!username){ toast('Fill in name & username','err'); return; }
+  if(!password) password = 'fin123';
+  const school = currentSchool();
+  if(school.finance.some(f=>f.username===username)){ toast('That username is already taken','err'); return; }
+  school.finance.push({id:uid('fi_'), name, username, password, email, phone});
+  saveDB(DB); toast(`Finance account added. Password: ${password}`); renderDOS();
+}
+function delFinance(fid){
+  if(!confirm('Remove this finance account?')) return;
+  const school = currentSchool(); school.finance = school.finance.filter(f=>f.id!==fid); saveDB(DB); renderDOS();
+}
+function resetFinancePassword(fid){
+  const school = currentSchool();
+  const fi = school.finance.find(x=>x.id===fid);
+  const custom = prompt("Enter a new password for "+fi.name+" (username: "+fi.username+"). Leave blank to auto-generate one:");
+  if(custom===null) return;
+  const newPw = custom.trim() || Math.random().toString(36).slice(2,8);
+  fi.password = newPw; saveDB(DB);
+  toast(fi.name+"'s new password: "+newPw);
+  alert(fi.name+" (username: "+fi.username+") — new password: "+newPw+"\n\nShare this with them directly.");
+}
+// A finance user's own small self-service card — mirrors tplTeacherAccount.
+function tplFinanceAccount(fi){
+  return `<div class="card no-print"><h2>🔑 My Account</h2>
+  <div class="row">
+    <div><label>Your Email</label><input id="myFiEmail" type="email" value="${escapeHtml(fi.email||'')}" placeholder="optional"></div>
+    <div><label>Your Phone</label><input id="myFiPhone" value="${escapeHtml(fi.phone||'')}" placeholder="optional"></div>
+    <div style="align-self:flex-end"><button class="ghost" onclick="saveMyFinanceContact()">Save Contact</button></div>
+  </div>
+  <div class="row">
+    <div><label>Current Password</label><input type="password" id="curFiPw"></div>
+    <div><label>New Password</label><input type="password" id="newFiPw"></div>
+    <div><label>Confirm New Password</label><input type="password" id="confFiPw"></div>
+    <div style="align-self:flex-end"><button onclick="changeFinancePassword()">Update Password</button></div>
+  </div>
+  <div id="fiAcctMsg"></div>
+  </div>`;
+}
+function saveMyFinanceContact(){
+  const fi = currentFinance(); if(!fi) return;
+  fi.email = qs('#myFiEmail').value.trim();
+  fi.phone = qs('#myFiPhone').value.trim();
+  saveDB(DB);
+  qs('#fiAcctMsg').innerHTML = '<div class="msg ok">Contact details saved.</div>';
+}
+function changeFinancePassword(){
+  const fi = currentFinance();
+  const cur = qs('#curFiPw').value, nw = qs('#newFiPw').value, conf = qs('#confFiPw').value;
+  if(!fi){ qs('#fiAcctMsg').innerHTML='<div class="msg err">Account not found.</div>'; return; }
+  if(fi.password !== cur){ qs('#fiAcctMsg').innerHTML='<div class="msg err">Current password is incorrect.</div>'; return; }
+  if(!nw || nw.length<4){ qs('#fiAcctMsg').innerHTML='<div class="msg err">New password must be at least 4 characters.</div>'; return; }
+  if(nw !== conf){ qs('#fiAcctMsg').innerHTML='<div class="msg err">New password and confirmation do not match.</div>'; return; }
+  fi.password = nw; saveDB(DB);
+  qs('#fiAcctMsg').innerHTML='<div class="msg ok">Password updated.</div>';
+  qs('#curFiPw').value=''; qs('#newFiPw').value=''; qs('#confFiPw').value='';
+}
+
 /* --- DOS/HOI: Enter/Edit Marks (school-wide override, not limited by teacher assignments) --- */
 function tplDosMarks(school){
   if(!school.classes.length) return `<div class="card"><h2>✏️ Enter / Edit Marks</h2><p class="small">Add a grade first.</p></div>`;
@@ -4721,6 +4877,11 @@ function currentTeacher(){
   if(!session || session.role!=='teacher') return null;
   const sc = currentSchool();
   return sc ? (sc.teachers.find(x=>x.id===session.userId)||null) : null;
+}
+function currentFinance(){
+  if(!session || session.role!=='finance') return null;
+  const sc = currentSchool();
+  return sc ? (sc.finance.find(x=>x.id===session.userId)||null) : null;
 }
 // Learning areas this teacher is assigned to in one class (must still be valid for that class).
 function teacherAreaIds(school, t, classId){
@@ -5638,6 +5799,309 @@ function runTeacherDashboard(){
     </table></div>`;
   }).join('')}`;
 }
+/* ============================= FINANCE PORTAL ============================= */
+/* A Finance session gets its own small portal: bulk-import fee balances/next-term fees via
+   CSV (matched to learners by admission number, scoped to one Grade + Exam/Term at a time —
+   the same pairing report cards are already generated against), a summary table to check
+   the result, full read access to report forms (reusing tplReportsPicker, same as DOS/HOI —
+   not scoped down the way a teacher's view is), and a My Account card. It never touches
+   marks entry, grading, or anything else a DOS/HOI or Teacher can do. */
+function financeFeesTabHTML(school){
+  if(!school.classes.length) return `<div class="card"><h2>💵 Fee Balances</h2><p class="small">No grades set up yet — ask your DOS/HOI.</p></div>`;
+  const firstClassId = school.classes[0].id;
+  return `<div class="card"><h2>💵 Fee Balances — Import &amp; Summary</h2>
+  <p class="small">Pick a Grade and Exam/Term, then upload a CSV to set each learner's fees balance (arrears) and next term's expected fee for that term. Matching is by <b>Admission Number</b> — a row whose admission number doesn't match any learner in this grade is skipped and listed below, not guessed.</p>
+  <div class="row">
+    <div><label>Grade</label><select id="ffClass" onchange="fillFinanceExams()">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
+    <div><label>Exam / Term</label><select id="ffExam" onchange="loadFinanceFeesSummary()">${school.exams.filter(e=>e.classId===firstClassId).map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this grade</option>'}</select></div>
+  </div>
+  <div class="row">
+    <div><label>CSV file <span class="small">(columns: Admission No, Fees Balance, Next Term Fee — header row required)</span></label><input type="file" id="ffCsvFile" accept=".csv,text/csv"></div>
+    <div style="align-self:flex-end"><div class="flexbtns"><button onclick="applyFeesCsv()">⬆ Upload &amp; Apply</button><button class="ghost" onclick="feesTemplateCsv()">⬇ CSV Template</button></div></div>
+  </div>
+  <div id="ffImportMsg"></div>
+  <div id="ffSummaryArea" style="margin-top:14px"></div>
+  </div>`;
+}
+function fillFinanceExams(){
+  const school = currentSchool(); const classId = qs('#ffClass').value;
+  const exams = school.exams.filter(e=>e.classId===classId);
+  qs('#ffExam').innerHTML = exams.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this grade</option>';
+  loadFinanceFeesSummary();
+}
+function loadFinanceFeesSummary(){
+  const school = currentSchool();
+  const examId = qs('#ffExam') && qs('#ffExam').value;
+  const area = qs('#ffSummaryArea');
+  if(!area) return;
+  const exam = school.exams.find(e=>e.id===examId);
+  if(!exam){ area.innerHTML = '<p class="small">No exam selected for this grade yet.</p>'; return; }
+  const learners = studentsForExam(school, exam);
+  const recs = school.fees[examId] || {};
+  const bal = l => { const v=(recs[l.id]||{}).balance; return (v==null||v==='')?null:Number(v); };
+  const owing = learners.filter(l=>bal(l)>0), cleared = learners.filter(l=>bal(l)!=null && bal(l)<=0), none = learners.filter(l=>bal(l)==null);
+  const totalBal = owing.reduce((t,l)=>t+bal(l),0);
+  const totalNext = learners.reduce((t,l)=>t+(Number((recs[l.id]||{}).nextTermFee)||0),0);
+  const stat = (v,t,c)=>`<div style="flex:1;min-width:130px;background:#f7f9fc;border:1px solid var(--border);border-radius:9px;padding:9px 11px;border-top:3px solid ${c}"><div class="small">${t}</div><div style="font-size:17px;font-weight:800;color:var(--navy)">${v}</div></div>`;
+  area.innerHTML = `<div class="row" style="margin-bottom:10px">
+    ${stat('KES '+totalBal.toLocaleString(),'Total arrears','var(--be)')}
+    ${stat(owing.length,'Learners owing','var(--ae)')}
+    ${stat(cleared.length,'Cleared / credit','var(--ee)')}
+    ${stat(none.length,'No fee record yet','#9aa8b8')}
+    ${stat('KES '+totalNext.toLocaleString(),'Next-term fees expected','var(--me)')}
+  </div>
+  <div class="row no-print" style="margin-bottom:8px">
+    <div><input id="ffSearch" placeholder="🔍 Search name or admission no." oninput="filterFeeRows()"></div>
+    <div><select id="ffFilter" onchange="filterFeeRows()"><option value="all">All learners</option><option value="owing">Owing only</option><option value="cleared">Cleared only</option><option value="none">No record</option></select></div>
+    <div class="flexbtns" style="align-self:flex-end"><button class="ghost" onclick="exportFeesCsv()">⬇ Export CSV</button><button class="gold" onclick="printDefaulters()">🖨 Print Arrears List</button></div>
+  </div>
+  <table id="ffTable"><tr><th>Adm No.</th><th>Name</th><th>Fees Balance (Arrears)</th><th>Next Term Fee</th><th>Status</th></tr>
+  ${learners.map(s=>{
+    const r = recs[s.id] || {}; const b = bal(s);
+    const st = b==null?'none':(b>0?'owing':'cleared');
+    const badge = st==='owing'?'<span class="badge BE">Owing</span>':st==='cleared'?'<span class="badge EE">Cleared</span>':'<span class="small">—</span>';
+    return `<tr data-st="${st}" data-q="${escapeHtml(((s.adm||'')+' '+s.name).toLowerCase())}"><td>${s.adm?escapeHtml(s.adm):'<span class="small">—</span>'}</td><td style="text-align:left">${escapeHtml(s.name)}</td>
+    <td><input type="number" value="${r.balance??''}" style="max-width:110px" onchange="saveFeeCell('${examId}','${s.id}','balance',this.value)"></td>
+    <td><input type="number" min="0" value="${r.nextTermFee??''}" style="max-width:110px" onchange="saveFeeCell('${examId}','${s.id}','nextTermFee',this.value)"></td>
+    <td>${badge}</td></tr>`;
+  }).join('') || `<tr><td colspan="5" class="small">No learners in this grade.</td></tr>`}
+  </table><p class="small">Tip: a negative balance means the learner has paid ahead (credit).</p>`;
+  refreshPayCard();
+}
+function filterFeeRows(){
+  const q = (qs('#ffSearch').value||'').trim().toLowerCase(), f = qs('#ffFilter').value;
+  document.querySelectorAll('#ffTable tr[data-st]').forEach(tr=>{
+    tr.style.display = ((f==='all'||tr.dataset.st===f) && (!q||tr.dataset.q.includes(q))) ? '' : 'none';
+  });
+}
+function feesDownload(name, rows){
+  const csv = rows.map(r=>r.map(c=>'"'+String(c??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv'}));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+}
+function feesTemplateCsv(){
+  const school = currentSchool(); const exam = school.exams.find(e=>e.id===qs('#ffExam').value);
+  const rows = [['Admission No','Fees Balance','Next Term Fee']];
+  if(exam) studentsForExam(school, exam).forEach(s=>rows.push([s.adm||'','','']));
+  feesDownload('fees-template.csv', rows);
+}
+function exportFeesCsv(){
+  const school = currentSchool(); const exam = school.exams.find(e=>e.id===qs('#ffExam').value);
+  if(!exam){ toast('Pick an exam/term first','err'); return; }
+  const recs = school.fees[exam.id]||{};
+  const rows = [['Admission No','Name','Fees Balance','Next Term Fee','Last Updated By']];
+  studentsForExam(school, exam).forEach(s=>{ const r=recs[s.id]||{}; rows.push([s.adm||'',s.name,r.balance??'',r.nextTermFee??'',r.updatedBy||'']); });
+  feesDownload('fee-balances-'+exam.name.replace(/\W+/g,'_')+'.csv', rows);
+}
+function printDefaulters(){
+  const school = currentSchool(); const exam = school.exams.find(e=>e.id===qs('#ffExam').value);
+  if(!exam){ toast('Pick an exam/term first','err'); return; }
+  const recs = school.fees[exam.id]||{};
+  const list = studentsForExam(school, exam).map(s=>({s,b:Number((recs[s.id]||{}).balance)||0,n:(recs[s.id]||{}).nextTermFee})).filter(x=>x.b>0).sort((a,b)=>b.b-a.b);
+  const total = list.reduce((t,x)=>t+x.b,0);
+  const w = window.open('','_blank');
+  if(!w){ toast('Allow pop-ups to print','err'); return; }
+  w.document.write(`<html><head><title>Arrears List</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h2{margin:0 0 4px;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:10px}th,td{border:1px solid #999;padding:5px 7px;text-align:left}th{background:#123a63;color:#fff}td.r{text-align:right}</style></head><body>
+  <h2>${escapeHtml(school.name)} — Fee Arrears List</h2><div>${escapeHtml(exam.name)} (${escapeHtml(String(exam.term))} ${escapeHtml(String(exam.year))}) · Printed ${new Date().toLocaleDateString()}</div>
+  <table><tr><th>#</th><th>Adm No.</th><th>Name</th><th>Arrears (KES)</th><th>Next Term Fee (KES)</th></tr>
+  ${list.map((x,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(x.s.adm||'')}</td><td>${escapeHtml(x.s.name)}</td><td class="r">${x.b.toLocaleString()}</td><td class="r">${x.n!=null?Number(x.n).toLocaleString():''}</td></tr>`).join('')||'<tr><td colspan="5">No learners owing.</td></tr>'}
+  <tr><th colspan="3">Total (${list.length} learners)</th><th class="r">${total.toLocaleString()}</th><th></th></tr></table></body></html>`);
+  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+}
+function saveFeeCell(examId, sid, field, val){
+  const school = currentSchool();
+  if(!school.fees[examId]) school.fees[examId] = {};
+  if(!school.fees[examId][sid]) school.fees[examId][sid] = {};
+  const n = val==='' ? null : Number(val);
+  school.fees[examId][sid][field] = (n==null || isNaN(n)) ? null : n;
+  school.fees[examId][sid].updatedAt = Date.now();
+  const fi = currentFinance();
+  school.fees[examId][sid].updatedBy = fi ? fi.name : 'DOS/HOI';
+  saveDB(DB);
+  toast('Saved');
+}
+// Tiny CSV reader — handles quoted fields (so a note with a comma in it doesn't split a
+// row wrong) without pulling in a library for three plain columns.
+function parseSimpleCSV(text){
+  const rows = []; let row = [], field = '', inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c === '"'){ if(text[i+1]==='"'){ field+='"'; i++; } else inQuotes=false; }
+      else field += c;
+    } else {
+      if(c === '"') inQuotes = true;
+      else if(c === ','){ row.push(field); field=''; }
+      else if(c === '\r'){ /* ignore, \n handles the row break */ }
+      else if(c === '\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+      else field += c;
+    }
+  }
+  if(field.length || row.length){ row.push(field); rows.push(row); }
+  return rows.filter(r=>r.some(c=>String(c).trim()!==''));
+}
+function applyFeesCsv(){
+  const school = currentSchool();
+  const examId = qs('#ffExam') && qs('#ffExam').value;
+  const exam = school.exams.find(e=>e.id===examId);
+  const msgEl = qs('#ffImportMsg');
+  const fileInput = qs('#ffCsvFile');
+  const file = fileInput && fileInput.files[0];
+  if(!exam){ msgEl.innerHTML = '<div class="msg err">Pick a Grade and Exam/Term first.</div>'; return; }
+  if(!file){ msgEl.innerHTML = '<div class="msg err">Choose a CSV file first.</div>'; return; }
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const rows = parseSimpleCSV(String(e.target.result||''));
+    if(rows.length < 2){ msgEl.innerHTML = '<div class="msg err">That file has no data rows (just a header, or empty).</div>'; return; }
+    const header = rows[0].map(h=>String(h).trim().toLowerCase());
+    let admIdx = header.findIndex(h=>h.includes('adm'));
+    let balIdx = header.findIndex(h=>h.includes('balance')||h.includes('arrear'));
+    let nextIdx = header.findIndex(h=>h.includes('next'));
+    if(admIdx<0 && header.length>=3){ admIdx=0; balIdx=1; nextIdx=2; } // no recognizable header — assume fixed column order
+    if(admIdx<0){ msgEl.innerHTML = '<div class="msg err">Could not find an "Admission No" column in the header row.</div>'; return; }
+    const learners = studentsForExam(school, exam);
+    const byAdm = {}; learners.forEach(s=>{ if(s.adm) byAdm[String(s.adm).trim().toLowerCase()] = s; });
+    let matched = 0; const unmatched = [];
+    if(!school.fees[examId]) school.fees[examId] = {};
+    const fi = currentFinance();
+    for(let i=1;i<rows.length;i++){
+      const r = rows[i];
+      const adm = String(r[admIdx]||'').trim();
+      if(!adm) continue;
+      const s = byAdm[adm.toLowerCase()];
+      if(!s){ unmatched.push(adm); continue; }
+      const balance = balIdx>=0 ? Number(String(r[balIdx]||'').replace(/[^0-9.\-]/g,'')) : null;
+      const nextTermFee = nextIdx>=0 ? Number(String(r[nextIdx]||'').replace(/[^0-9.\-]/g,'')) : null;
+      school.fees[examId][s.id] = {
+        balance: isNaN(balance) ? null : balance,
+        nextTermFee: isNaN(nextTermFee) ? null : nextTermFee,
+        updatedAt: Date.now(), updatedBy: fi ? fi.name : 'DOS/HOI'
+      };
+      matched++;
+    }
+    saveDB(DB);
+    msgEl.innerHTML = `<div class="msg ok">Applied to ${matched} learner(s).${unmatched.length ? ` ${unmatched.length} admission number(s) didn't match anyone in this grade: ${unmatched.slice(0,10).map(escapeHtml).join(', ')}${unmatched.length>10?', …':''}` : ''}</div>`;
+    fileInput.value = '';
+    loadFinanceFeesSummary();
+  };
+  reader.onerror = function(){ msgEl.innerHTML = '<div class="msg err">Could not read that file.</div>'; };
+  reader.readAsText(file);
+}
+
+/* ---------- Finance: payments, receipts, fee-reminder SMS ---------- */
+function financePayTabHTML(school){
+  if(!school.classes.length) return '';
+  return `<div class="card"><h2>🧾 Record Payment &amp; Receipts</h2>
+  <p class="small">Uses the Grade and Exam/Term selected above. Saving a payment reduces the learner's balance automatically and opens a printable receipt.</p>
+  <div class="row">
+    <div style="flex:2"><label>Learner</label><select id="payLearner"></select></div>
+    <div><label>Amount (KES)</label><input id="payAmt" type="number" min="1"></div>
+    <div><label>Method</label><select id="payMethod"><option>M-Pesa</option><option>Cash</option><option>Bank</option><option>Cheque</option></select></div>
+    <div><label>Reference / Code</label><input id="payRef" placeholder="e.g. QAB1C2D3E4"></div>
+    <div><label>Date</label><input id="payDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div style="align-self:flex-end"><button onclick="recordPayment()">💾 Save &amp; Receipt</button></div>
+  </div>
+  <div id="payMsg"></div><div id="payHistory" style="margin-top:12px"></div></div>
+  <div class="card no-print"><h2>💬 Fee Reminder SMS</h2>
+  <p class="small">Sends a personalised SMS to the parents of learners who still owe fees in the selected grade/term. Uses your school's SMS credits.</p>
+  <div class="row"><div><label>School SMS PIN</label><input id="smsPin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" value="${escapeHtml(smsPinMem[school.code]||'')}" oninput="smsPinMem['${school.code}']=this.value.trim()"></div>
+  <div><label>Only owing more than (KES)</label><input id="remMin" type="number" min="0" value="0" oninput="previewFeeReminders()"></div></div>
+  <label style="margin-top:8px">Message <span class="small">— use {name}, {balance}, {next}</span></label>
+  <textarea id="remText" rows="3" oninput="previewFeeReminders()">Dear Parent, {name}'s fee balance is KES {balance}. Next term fee: KES {next}. Kindly clear at your earliest convenience. - ${escapeHtml(school.name)}</textarea>
+  <div id="remPreview" class="small" style="margin:6px 0"></div>
+  <div class="flexbtns"><button class="gold" onclick="sendFeeReminders()">📤 Send Reminders</button></div><div id="remMsg"></div></div>`;
+}
+function feeCtx(){
+  const school = currentSchool(); const exam = school.exams.find(e=>e.id===(qs('#ffExam')||{}).value);
+  return {school, exam, recs: exam ? (school.fees[exam.id]||{}) : {}, learners: exam ? studentsForExam(school, exam) : []};
+}
+function refreshPayCard(){
+  const sel = qs('#payLearner'); if(!sel) return;
+  const {school, exam, recs, learners} = feeCtx();
+  sel.innerHTML = learners.map(l=>{ const b=(recs[l.id]||{}).balance; return `<option value="${l.id}">${escapeHtml((l.adm?l.adm+' · ':'')+l.name)}${b!=null&&b!==''?' — bal '+Number(b).toLocaleString():''}</option>`; }).join('') || '<option value="">No learners</option>';
+  const pays = exam ? school.payments.filter(p=>p.examId===exam.id).sort((a,b)=>b.ts-a.ts) : [];
+  const live = pays.filter(p=>!p.void), total = live.reduce((t,p)=>t+p.amount,0);
+  const nm = id => (school.students.find(x=>x.id===id)||{}).name || '—';
+  qs('#payHistory').innerHTML = `<p class="small"><b>${live.length}</b> payment(s) this term · Collected: <b>KES ${total.toLocaleString()}</b></p>` + (pays.length ? `<table><tr><th>Receipt</th><th>Date</th><th>Learner</th><th>Amount</th><th>Method</th><th>Ref</th><th></th></tr>
+  ${pays.slice(0,50).map(p=>`<tr style="${p.void?'opacity:.5;text-decoration:line-through':''}"><td>${escapeHtml(p.receiptNo)}</td><td>${escapeHtml(p.date)}</td><td style="text-align:left">${escapeHtml(nm(p.studentId))}</td><td>${p.amount.toLocaleString()}</td><td>${escapeHtml(p.method)}</td><td>${escapeHtml(p.ref||'-')}</td>
+  <td>${p.void?'Voided':`<button class="ghost" onclick="printReceipt('${p.id}')">🖨</button> <button class="danger" onclick="voidPayment('${p.id}')">Void</button>`}</td></tr>`).join('')}</table>` : '');
+  previewFeeReminders();
+}
+function recordPayment(){
+  const {school, exam, recs} = feeCtx(); const msg = qs('#payMsg');
+  const sid = qs('#payLearner').value, amount = Number(qs('#payAmt').value);
+  if(!exam || !sid){ msg.innerHTML='<div class="msg err">Pick a grade, term and learner first.</div>'; return; }
+  if(!(amount>0)){ msg.innerHTML='<div class="msg err">Enter a valid amount.</div>'; return; }
+  const method = qs('#payMethod').value, ref = qs('#payRef').value.trim();
+  if(method==='M-Pesa' && ref && school.payments.some(p=>!p.void && p.ref && p.ref.toLowerCase()===ref.toLowerCase())){ msg.innerHTML='<div class="msg err">That reference code was already recorded.</div>'; return; }
+  const fi = currentFinance();
+  const n = school.payments.reduce((m,p)=>Math.max(m,Number(String(p.receiptNo).replace(/\D/g,''))||0),0)+1;
+  const pay = {id:uid('pay_'), receiptNo:'RCT-'+String(n).padStart(5,'0'), examId:exam.id, studentId:sid, amount, method, ref, date:qs('#payDate').value||new Date().toISOString().slice(0,10), by:fi?fi.name:'DOS/HOI', ts:Date.now()};
+  if(!school.fees[exam.id]) school.fees[exam.id] = {};
+  const rec = school.fees[exam.id][sid] || (school.fees[exam.id][sid] = {});
+  pay.balanceAfter = (Number(rec.balance)||0) - amount;
+  rec.balance = pay.balanceAfter; rec.updatedAt = Date.now(); rec.updatedBy = pay.by;
+  school.payments.push(pay); saveDB(DB);
+  qs('#payAmt').value=''; qs('#payRef').value='';
+  toast('Payment recorded'); loadFinanceFeesSummary(); printReceipt(pay.id);
+}
+function voidPayment(id){
+  const school = currentSchool(); const p = school.payments.find(x=>x.id===id); if(!p||p.void) return;
+  if(!confirm(`Void ${p.receiptNo}? The KES ${p.amount.toLocaleString()} will be added back to the learner's balance.`)) return;
+  const rec = (school.fees[p.examId]||{})[p.studentId];
+  if(rec){ rec.balance = (Number(rec.balance)||0) + p.amount; rec.updatedAt = Date.now(); }
+  p.void = true; p.voidBy = (currentFinance()||{}).name || 'DOS/HOI'; saveDB(DB); toast('Payment voided'); loadFinanceFeesSummary();
+}
+function printReceipt(id){
+  const school = currentSchool(); const p = school.payments.find(x=>x.id===id); if(!p) return;
+  const st = school.students.find(x=>x.id===p.studentId)||{}; const exam = school.exams.find(e=>e.id===p.examId)||{};
+  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  const row=(a,b)=>`<tr><td style="color:#555;width:38%">${a}</td><td><b>${b}</b></td></tr>`;
+  w.document.write(`<html><head><title>${escapeHtml(p.receiptNo)}</title><style>body{font-family:Arial,sans-serif;max-width:420px;margin:20px auto;padding:18px;border:2px solid #123a63;border-radius:8px;font-size:13px}h2{margin:0;color:#123a63;text-align:center}.c{text-align:center;color:#555;margin:2px 0}table{width:100%;border-collapse:collapse;margin-top:10px}td{padding:6px 4px;border-bottom:1px dotted #bbb}.amt{font-size:20px;text-align:center;margin:12px 0;color:#1f8a4c}</style></head><body>
+  <h2>${escapeHtml(school.name)}</h2><p class="c">${escapeHtml([school.address,school.phone].filter(Boolean).join(' · '))}</p><p class="c"><b>FEE PAYMENT RECEIPT</b></p>
+  <div class="amt"><b>KES ${p.amount.toLocaleString()}</b></div>
+  <table>${row('Receipt No.',escapeHtml(p.receiptNo))}${row('Date',escapeHtml(p.date))}${row('Learner',escapeHtml(st.name||'-'))}${row('Adm No.',escapeHtml(st.adm||'-'))}${row('Term',escapeHtml((exam.name||'')+' '+(exam.term||'')+' '+(exam.year||'')))}${row('Method',escapeHtml(p.method))}${row('Reference',escapeHtml(p.ref||'-'))}${row('Balance after payment','KES '+p.balanceAfter.toLocaleString())}${row('Received by',escapeHtml(p.by))}</table>
+  <p class="c" style="margin-top:14px">Thank you. Keep this receipt for your records.</p></body></html>`);
+  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+}
+function feeReminderItems(){
+  const {school, exam, recs, learners} = feeCtx();
+  const min = Number((qs('#remMin')||{}).value)||0, tpl = ((qs('#remText')||{}).value||'');
+  const items = learners.filter(l=>Number((recs[l.id]||{}).balance)>min).map(l=>{
+    const r = recs[l.id];
+    return {phone:l.parentPhone, message: tpl.replace(/\{name\}/g,l.name).replace(/\{balance\}/g,Number(r.balance).toLocaleString()).replace(/\{next\}/g,r.nextTermFee!=null?Number(r.nextTermFee).toLocaleString():'-')};
+  });
+  return {school, items, built: buildSmsRecipients(items.filter(i=>i.phone))};
+}
+function previewFeeReminders(){
+  const el = qs('#remPreview'); if(!el) return;
+  const {items, built} = feeReminderItems();
+  const credits = built.recipients.reduce((t,r)=>t+smsSegments(r.message),0);
+  el.innerHTML = `${items.length} learner(s) owing · <b>${built.recipients.length}</b> parent(s) reachable · ≈ ${credits} credit(s)${built.invalid+(items.length-items.filter(i=>i.phone).length)?` · ${built.invalid+(items.length-items.filter(i=>i.phone).length)} without a valid parent phone (skipped)`:''}`;
+}
+function sendFeeReminders(){
+  if(smsSending){ toast('A send is already in progress','err'); return; }
+  if(!hasSmsConfig()){ qs('#remMsg').innerHTML='<div class="msg err">SMS is not set up on this deployment.</div>'; return; }
+  if(!smsPinGate('remMsg')) return;
+  const {school, built} = feeReminderItems(); const exam = feeCtx().exam;
+  if(!built.recipients.length){ qs('#remMsg').innerHTML='<div class="msg err">No owing learner has a valid parent phone number.</div>'; return; }
+  const credits = built.recipients.reduce((t,r)=>t+smsSegments(r.message),0);
+  if(credits > (school.smsCredits||0)){ qs('#remMsg').innerHTML=`<div class="msg err">Not enough SMS credit: need ${credits}, have ${school.smsCredits||0}. Ask your DOS/HOI to top up.</div>`; return; }
+  if(!confirm(`Send fee reminders to ${built.recipients.length} parent(s) for about ${credits} credit(s)?`)) return;
+  sendSmsBatch(school, built.recipients, {type:'Fee Reminder', audience: exam?exam.name:'Fees'}, 'remMsg');
+}
+function renderFinance(){
+  const school = currentSchool();
+  const fi = currentFinance();
+  if(!fi){ logout(); setTimeout(()=>toast('Your finance account is no longer available','err'),50); return; }
+  const welcome = `<div class="card no-print"><h2>💰 Welcome, ${escapeHtml(fi.name)}</h2>
+  <p class="small">Import and review fee balances, print arrears lists, record payments and receipts, send fee reminders, and view learner report forms. You don't have access to marks entry or school setup.</p>
+  </div>`;
+  app.innerHTML = welcome + financeFeesTabHTML(school) + financePayTabHTML(school) + tplReportsPicker(school) + tplFinanceAccount(fi);
+  if(school.classes.length){ loadFinanceFeesSummary(); fillRepExams(); fillRepLearners(); }
+}
+
 /* ============================= REPORTS ============================= */
 function tplReportsPicker(school){
   const firstClassId = school.classes[0].id;
@@ -5722,7 +6186,13 @@ function buildReportHTML(school, sid, examId){
     ? `<div><b>Attendance:</b> ${daysPresent} of ${exam.totalDays} days (${Math.round(daysPresent/exam.totalDays*100)}%)</div>` : '';
   const closeLine = exam.termCloseDate ? `<div><b>Term Closes:</b> ${new Date(exam.termCloseDate).toLocaleDateString()}</div>` : '';
   const nextTermLine = exam.nextTermDate ? `<div><b>Next Term Opens:</b> ${new Date(exam.nextTermDate).toLocaleDateString()}</div>` : '';
-  const metaLine = (attendanceLine || closeLine || nextTermLine) ? `<div class="rc-meta">${attendanceLine}${closeLine}${nextTermLine}</div>` : '';
+  // Fees balance/next-term-fee: purely informational, set by the Finance Portal (bulk CSV
+  // import or manual entry) against this exact exam/term — left off entirely for a learner
+  // with no fee record yet, rather than printing a misleading "KES 0".
+  const feeRec = (school.fees[examId]||{})[sid];
+  const feesLine = (feeRec && (feeRec.balance!=null || feeRec.nextTermFee!=null))
+    ? `<div>${feeRec.balance!=null?`<b>Fees Balance:</b> KES ${Number(feeRec.balance).toLocaleString()}`:''}${(feeRec.balance!=null && feeRec.nextTermFee!=null)?' &nbsp;·&nbsp; ':''}${feeRec.nextTermFee!=null?`<b>Next Term Fee:</b> KES ${Number(feeRec.nextTermFee).toLocaleString()}`:''}</div>` : '';
+  const metaLine = (attendanceLine || closeLine || nextTermLine || feesLine) ? `<div class="rc-meta">${attendanceLine}${closeLine}${nextTermLine}${feesLine}</div>` : '';
   // Grading key legend — the class's own custom scale if it has one, else the school default —
   // so EE/ME/AE/BE (or whatever levels a school has renamed them to) are explained right on
   // the report rather than assumed knowledge for parents.
@@ -6622,7 +7092,7 @@ async function sendSmsBatch(school, recipients, meta, msgElId){
     pushSmsLog(school, {id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, recipients:recipients.length, credits:data.creditsUsed||0, ok:true, sent:data.sent, failed:data.failed, failedNumbers, recipientsSnapshot:failedRecipients});
     saveDB(DB);
     toast(`Sent to ${data.sent==null?recipients.length:data.sent} parent(s)${data.failed?`, ${data.failed} failed`:''}`);
-    renderDOS();
+    if(session && session.role==='finance'){ if(msgEl) msgEl.innerHTML=`<div class="msg ok">Sent to ${data.sent==null?recipients.length:data.sent} parent(s)${data.failed?`, ${data.failed} failed`:''}.</div>`; } else renderDOS();
   }catch(err){
     const timedOut = err && err.name==='AbortError';
     const errText = timedOut
