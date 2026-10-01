@@ -3544,8 +3544,8 @@ function ttTeacherShare(){const s=currentSchool(),t=currentTeacher();let x=`*${s
 
 /* ============================= EXAM TIMETABLE (DOS/HOI + Teacher portal) =============================
    school.timetable.exams = [x]. x = {id,name,label,start,end (ISO dates),days:[1..7],skip:[ISO],
-     sess:[{l,s,e}], maxDay,heavyDay,maxPar,inv,invDay,avoidOwn,notes, classIds, excl:{'cid|aid':1},
-     rules:{areaId:{inc,mins,core,n,pref,after,before,fix,fixS}}, cells:{classId:{ISO:{s0:{a,n,inv[],l}|{a,cont:1}}}}, published}
+     sess:[{l,s,e}], maxDay,heavyDay,maxPar,inv,invDay,ownMode('avoid'|'never'|'allow'),notes, invT:{teacherId:{out,why,max,own('yes'|'no'),away:[{d,si}]}}, classIds, excl:{'cid|aid':1},
+     rules:{areaId:{inc,mins,core,n,full(1 = whole day, nothing else for that class),pref,after,before,fix,fixS}}, cells:{classId:{ISO:{s0:{a,n,inv[],l}|{a,cont:1}}}}, published}
    Papers are placed per class (no class sits 2 papers in one session), honouring each learning area's "not before",
    "must be done by" and fixed date/session, then invigilators are allocated fairly. */
 let exUI={id:'',tab:'setup',view:'class',cls:''};
@@ -3557,67 +3557,83 @@ const exFmt=iso=>{const d=exDate(iso);return TT_D[exDow(iso)]+' '+String(d.getDa
 const exFmtL=iso=>{const d=exDate(iso);return TT_DF[exDow(iso)]+', '+d.getDate()+' '+EX_MON[d.getMonth()]+' '+d.getFullYear();};
 function exNorm(x){const D={name:'Exams',label:'',start:'',end:'',maxDay:2,heavyDay:1,maxPar:0,inv:1,invDay:3,report:15,avoidOwn:true,published:false,genAt:0,
   notes:'Learners must be seated 15 minutes before each paper starts. Mobile phones and unauthorised materials are not allowed in the exam room.'};
+  if(!x.ownMode)x.ownMode=(x.avoidOwn===false)?'allow':'avoid';
   Object.keys(D).forEach(k=>{if(x[k]===undefined||x[k]===null)x[k]=D[k];});
   if(!Array.isArray(x.sess)||!x.sess.length)x.sess=[{l:'Period 1',s:'08:00',e:'10:30'},{l:'Period 2',s:'11:00',e:'13:30'}];
-  ['rules','cells','excl'].forEach(k=>{if(!x[k]||typeof x[k]!=='object')x[k]={};});
-  ['classIds','skip'].forEach(k=>{if(!Array.isArray(x[k]))x[k]=[];});if(!Array.isArray(x.days)||!x.days.length)x.days=[1,2,3,4,5];return x;}
+  ['rules','cells','excl','invT'].forEach(k=>{if(!x[k]||typeof x[k]!=='object')x[k]={};});
+  ['classIds','skip'].forEach(k=>{if(!Array.isArray(x[k]))x[k]=[];});if(!Array.isArray(x.days)||!x.days.length)x.days=[1,2,3,4,5];x.avoidOwn=x.ownMode!=='allow';return x;}
 const exFind=id=>{const x=ttData(currentSchool()).exams.find(q=>q.id===id);return x?exNorm(x):null;};
 function exSave(){ttData(currentSchool()).stamp=Date.now();saveDB(DB);}
 const exRedraw=()=>redrawKeepingState(renderDOS);
 const exDef=name=>/math|english|kiswahili|science/i.test(name||'')?{mins:90,core:1}:{mins:60,core:0};
-function exR(s,x,aid){const a=s.learningAreas.find(q=>q.id===aid)||{name:''};return Object.assign({inc:1,n:1,pref:'',after:'',before:'',fix:'',fixS:''},exDef(a.name),x.rules[aid]||{});}
+function exR(s,x,aid){const a=s.learningAreas.find(q=>q.id===aid)||{name:''};const r=Object.assign({inc:1,n:1,full:0,pref:'',after:'',before:'',fix:'',fixS:''},exDef(a.name),x.rules[aid]||{});if(r.full)r.mins=0;return r;}
 const exAreas=(s,x,c)=>areasForClass(s,c).filter(a=>exR(s,x,a.id).inc!==0&&!x.excl[c+'|'+a.id]);
 function exDays(x){const out=[];if(!x.start||!x.end)return out;const e=exDate(x.end);let d=exDate(x.start),n=0;while(d<=e&&n<150){const iso=exIso(d);if(x.days.includes(exDow(iso))&&!x.skip.includes(iso))out.push(iso);d.setDate(d.getDate()+1);n++;}return out;}
 const exSlot=(x,si)=>x.sess[si]||{l:'',s:'08:00',e:'10:00'};
-function exTime(x,si,n,mins){const a=hm(exSlot(x,si).s),end=hm(exSlot(x,si+(n>1?1:0)).e),m=+mins||0;return [a,m>0?Math.min(a+m,end):end];}
+function exTime(x,si,n,mins){const a=hm(exSlot(x,si).s),end=hm(exSlot(x,si+(n>1?n-1:0)).e),m=+mins||0;return [a,m>0?Math.min(a+m,end):end];}
 function exWeeks(days){const g=[];days.forEach(d=>{const dt=exDate(d),mon=new Date(dt);mon.setDate(dt.getDate()-((dt.getDay()||7)-1));const k=exIso(mon);let w=g[g.length-1];if(!w||w.k!==k){w={k,d:[]};g.push(w);}w.d.push(d);});return g.map(w=>w.d);}
+// ---- invigilator selection (who may invigilate, away dates, own-subject rule) ----
+const exOwnPol=(x,tid)=>{const o=((x.invT||{})[tid]||{}).own;if(o==='yes')return 'yes';if(o==='no')return 'no';return x.ownMode==='never'?'no':x.ownMode==='allow'?'yes':'last';};
+const exInvCfg=(x,tid)=>(x.invT[tid]=x.invT[tid]||{});
+const exInvOn=(x,tid)=>!((x.invT||{})[tid]||{}).out;
+const exInvMax=(x,tid)=>+(((x.invT||{})[tid]||{}).max)||0;
+function exAway(x,tid,d,si,n){return (((x.invT||{})[tid]||{}).away||[]).some(q=>q.d===d&&(q.si===''||q.si==null||(+q.si>=si&&+q.si<si+(n||1))));}
+function exInvProblem(s,x,tid,c,a,d,si,n){const cf=(x.invT||{})[tid]||{};
+  if(cf.out)return {k:'out',l:'is marked as not invigilating'+(cf.why?' ('+cf.why+')':'')};
+  if((((ttData(s).tconf||{})[tid]||{}).off||[]).includes(exDow(d)))return {k:'off',l:'is marked unavailable on '+TT_DF[exDow(d)]};
+  if(exAway(x,tid,d,si,n))return {k:'away',l:'is away on '+exFmt(d)+(cf.why?' ('+cf.why+')':'')};
+  if(a&&ttTeach(s,c,a).includes(tid)&&exOwnPol(x,tid)==='no')return {k:'own',l:'is not allowed to invigilate their own subject'};
+  return null;}
+function exInvTag(s,x,tid,c,a,d,si,n){const p=exInvProblem(s,x,tid,c,a,d,si,n);if(p)return ' — '+({out:'not invigilating',off:'off that day',away:'away',own:'own subject'})[p.k];
+  if(a&&ttTeach(s,c,a).includes(tid)&&exOwnPol(x,tid)==='last')return ' — teaches this subject';return '';}
 // ---- generator ----
 function exAttempt(s,x,days,keep){const S=x.sess.length,cells={},un=[],par={};let pen=0;
-  const cap=Math.min(x.maxPar>0?x.maxPar:99,x.inv>0&&s.teachers.length?Math.max(1,Math.floor(s.teachers.length/x.inv)):99);
+  const cap=Math.min(x.maxPar>0?x.maxPar:99,x.inv>0&&s.teachers.length?Math.max(1,Math.floor(Math.max(1,s.teachers.filter(t=>exInvOn(x,t.id)).length)/x.inv)):99);
   const put=(c,d,si,v)=>{(cells[c]=cells[c]||{});(cells[c][d]=cells[c][d]||{})['s'+si]=v;par[d+'|'+si]=(par[d+'|'+si]||0)+1;};
   if(keep)Object.keys(x.cells).forEach(c=>{if(!x.classIds.includes(c))return;Object.keys(x.cells[c]).forEach(d=>{if(!days.includes(d))return;Object.keys(x.cells[c][d]).forEach(k=>{const v=x.cells[c][d][k],si=+k.slice(1);if(v&&v.l&&si<S)put(c,d,si,JSON.parse(JSON.stringify(v)));});});});
   const placed=(c,a)=>Object.values(cells[c]||{}).some(dd=>Object.values(dd).some(v=>v&&v.a===a&&!v.cont));
-  const items=[];x.classIds.forEach(c=>exAreas(s,x,c).forEach(a=>{if(placed(c,a.id))return;const r=exR(s,x,a.id);items.push({c,a:a.id,r,n:+r.n===2?2:1});}));
+  const items=[];x.classIds.forEach(c=>exAreas(s,x,c).forEach(a=>{if(placed(c,a.id))return;const r=exR(s,x,a.id);items.push({c,a:a.id,r,n:(r.full&&S>1)?S:(+r.n===2?2:1)});}));
   const range=it=>{let lo=0,hi=days.length-1;if(it.r.fix){const i=days.indexOf(it.r.fix);return i<0?null:[i,i];}
     if(it.r.after){const i=days.findIndex(d=>d>=it.r.after);lo=i<0?days.length:i;}
     if(it.r.before){let i=-1;days.forEach((d,j)=>{if(d<=it.r.before)i=j;});hi=i;}return lo>hi?null:[lo,hi];};
-  items.forEach(it=>{it.g=range(it);it.k=(it.r.fix?-3000:0)+(it.g?(it.g[1]-it.g[0]):999)*4-(it.n===2?50:0)-(it.r.core?20:0)+Math.random()*6;});
+  items.forEach(it=>{it.g=range(it);it.k=(it.r.fix?-3000:0)+(it.g?(it.g[1]-it.g[0]):999)*4-(it.n>1?50:0)-(it.r.full?60:0)-(it.r.core?20:0)+Math.random()*6;});
   items.sort((a,b)=>a.k-b.k);
   items.forEach(it=>{if(!it.g){un.push(Object.assign(it,{why:it.r.fix?'its fixed date is not an exam day':'no exam day between its "not before" and "must be done by" dates'}));return;}
     const c=it.c;let b=null;
-    for(let di=it.g[0];di<=it.g[1];di++){const d=days[di],dd=(cells[c]||{})[d]||{},cn=Object.values(dd).filter(v=>v&&!v.cont).length;if(cn>=x.maxDay)continue;
+    for(let di=it.g[0];di<=it.g[1];di++){const d=days[di],dd=(cells[c]||{})[d]||{},cn=Object.values(dd).filter(v=>v&&!v.cont).length;if(cn>=x.maxDay||(it.r.full&&cn>0))continue;
       if(it.r.core&&Object.values(dd).filter(v=>v&&!v.cont&&exR(s,x,v.a).core).length>=x.heavyDay)continue;
-      for(let si=0;si+it.n<=S;si++){if(it.r.fixS!==''&&it.r.fixS!=null&&+it.r.fixS!==si)continue;
+      for(let si=0;si+it.n<=S;si++){if(!it.r.full&&it.r.fixS!==''&&it.r.fixS!=null&&+it.r.fixS!==si)continue;
         let ok=true;for(let z=0;z<it.n;z++)if(dd['s'+(si+z)]||(par[d+'|'+(si+z)]||0)>=cap){ok=false;break;}if(!ok)continue;
         let sc=cn*8+Math.random()*2.5;for(let z=0;z<it.n;z++)sc+=(par[d+'|'+(si+z)]||0)*1.2;
         [di-1,di+1].forEach(j=>{if(j<0||j>=days.length)return;Object.values((cells[c]||{})[days[j]]||{}).forEach(v=>{if(v&&!v.cont){sc+=1;if(it.r.core&&exR(s,x,v.a).core)sc+=5;}});});
         if(it.r.pref==='am'&&si>=S/2)sc+=6;if(it.r.pref==='pm'&&si<S/2)sc+=6;if(it.r.core&&si===0)sc-=1;
         if(!b||sc<b.sc)b={sc,d,si};}}
     if(!b){un.push(Object.assign(it,{why:'no free session within its allowed dates (limits too tight)'}));return;}
-    pen+=b.sc;put(c,b.d,b.si,{a:it.a,n:it.n});if(it.n===2)put(c,b.d,b.si+1,{a:it.a,cont:1});});
+    pen+=b.sc;put(c,b.d,b.si,{a:it.a,n:it.n});for(let z=1;z<it.n;z++)put(c,b.d,b.si+z,{a:it.a,cont:1});});
   return {cells,un,pen};}
 function exInvig(s,x,cells,keep){const tc=ttData(s).tconf||{},tot={},byDay={},busy={},need=x.inv|0,papers=[];
   Object.keys(cells).forEach(c=>Object.keys(cells[c]).forEach(d=>Object.keys(cells[c][d]).forEach(k=>{const v=cells[c][d][k];if(v&&!v.cont)papers.push({c,d,si:+k.slice(1),v});})));
   papers.sort((p,q)=>p.d<q.d?-1:p.d>q.d?1:p.si-q.si);
   const mark=(t,d,si,n)=>{for(let z=0;z<n;z++)busy[t+'|'+d+'|'+(si+z)]=1;tot[t]=(tot[t]||0)+1;byDay[t+'|'+d]=(byDay[t+'|'+d]||0)+1;};
   papers.forEach(p=>{if(keep&&p.v.l&&p.v.inv&&p.v.inv.length)p.v.inv.forEach(t=>mark(t,p.d,p.si,p.v.n||1));else p.v.inv=[];});
-  papers.forEach(p=>{const have=(p.v.inv||[]).length;if(have>=need)return;const own=x.avoidOwn?ttTeach(s,p.c,p.v.a):[],ct=((s.classTeachers||{})[p.c]||'').trim().toLowerCase(),n=p.v.n||1,dow=exDow(p.d);
-    const base=s.teachers.filter(t=>{if((p.v.inv||[]).includes(t.id))return false;if(((tc[t.id]||{}).off||[]).includes(dow))return false;if((byDay[t.id+'|'+p.d]||0)>=x.invDay)return false;for(let z=0;z<n;z++)if(busy[t.id+'|'+p.d+'|'+(p.si+z)])return false;return true;})
-      .map(t=>({t,o:own.includes(t.id),sc:(tot[t.id]||0)*3+(byDay[t.id+'|'+p.d]||0)*2-(ct&&(t.name||'').trim().toLowerCase()===ct?4:0)-((t.assignments||[]).some(a=>a.classId===p.c)?1.5:0)+Math.random()}));
+  papers.forEach(p=>{const have=(p.v.inv||[]).length;if(have>=need)return;const own=ttTeach(s,p.c,p.v.a),ct=((s.classTeachers||{})[p.c]||'').trim().toLowerCase(),n=p.v.n||1,dow=exDow(p.d);
+    const base=s.teachers.filter(t=>{if((p.v.inv||[]).includes(t.id))return false;if(!exInvOn(x,t.id)||exAway(x,t.id,p.d,p.si,n))return false;{const mx=exInvMax(x,t.id);if(mx&&(tot[t.id]||0)>=mx)return false;}if(own.includes(t.id)&&exOwnPol(x,t.id)==='no')return false;if(((tc[t.id]||{}).off||[]).includes(dow))return false;if((byDay[t.id+'|'+p.d]||0)>=x.invDay)return false;for(let z=0;z<n;z++)if(busy[t.id+'|'+p.d+'|'+(p.si+z)])return false;return true;})
+      .map(t=>({t,o:own.includes(t.id)&&exOwnPol(x,t.id)==='last',sc:(tot[t.id]||0)*3+(byDay[t.id+'|'+p.d]||0)*2-(ct&&(t.name||'').trim().toLowerCase()===ct?4:0)-((t.assignments||[]).some(a=>a.classId===p.c)?1.5:0)+Math.random()}));
     const cand=base.filter(o=>!o.o).sort((a,b)=>a.sc-b.sc).concat(base.filter(o=>o.o).sort((a,b)=>a.sc-b.sc));   // own-subject teachers only as a last resort
     for(let i=have;i<need&&cand.length;i++){const t=cand.shift().t;(p.v.inv=p.v.inv||[]).push(t.id);mark(t.id,p.d,p.si,n);}});}
 function exGen(s,x,keep){const days=exDays(x);let best=null;
   for(let k=0;k<60;k++){const r=exAttempt(s,x,days,keep);if(!best||r.un.length<best.un.length||(r.un.length===best.un.length&&r.pen<best.pen))best=r;if(!best.un.length&&k>=20)break;}
   exInvig(s,x,best.cells,keep);return best;}
 // ---- health check ----
-function exIssues(s,x){const out=[],days=exDays(x),ds=new Set(days),tc=ttData(s).tconf||{},par={},tsl={};let exp=0,got=0;
+function exIssues(s,x){const out=[],days=exDays(x),ds=new Set(days),tc=ttData(s).tconf||{},par={},tsl={},dc={};let exp=0,got=0;
   x.classIds.forEach(c=>{const have={};Object.keys(x.cells[c]||{}).forEach(d=>Object.keys(x.cells[c][d]).forEach(k=>{const v=x.cells[c][d][k];if(!v)return;par[d+'|'+k]=(par[d+'|'+k]||0)+1;if(v.cont)return;(have[v.a]=have[v.a]||[]).push({d,v});
-      (v.inv||[]).forEach(t=>{const key=t+'|'+d+'|'+k;tsl[key]=(tsl[key]||0)+1;if(((tc[t]||{}).off||[]).includes(exDow(d)))out.push(`${ttTn(s,t)} is on duty ${exFmt(d)} but marked unavailable that day`);if(x.avoidOwn&&ttTeach(s,c,v.a).includes(t))out.push(`${ttTn(s,t)} invigilates their own subject (${ttAn(s,v.a)}, ${ttCn(s,c)})`);});
+      (v.inv||[]).forEach(t=>{const key=t+'|'+d+'|'+k;tsl[key]=(tsl[key]||0)+1;dc[t]=(dc[t]||0)+1;const pr=exInvProblem(s,x,t,c,v.a,d,+k.slice(1),v.n||1);if(pr)out.push(`${ttTn(s,t)} ${pr.l}, but is invigilating ${exFmt(d)} (${ttCn(s,c)} · ${ttAn(s,v.a)})`);else if(ttTeach(s,c,v.a).includes(t)&&exOwnPol(x,t)==='last')out.push(`${ttTn(s,t)} invigilates their own subject (${ttAn(s,v.a)}, ${ttCn(s,c)}) — no other teacher was free`);});
       if((v.inv||[]).length<x.inv)out.push(`${ttCn(s,c)} · ${ttAn(s,v.a)} (${exFmt(d)}): ${x.inv-(v.inv||[]).length} invigilator(s) still needed`);}));
     exAreas(s,x,c).forEach(a=>{exp++;const h=have[a.id];if(!h){out.push(`${ttCn(s,c)} · ${a.name}: not scheduled`);return;}got++;const r=exR(s,x,a.id),d=h[0].d,w=`${ttCn(s,c)} · ${a.name}`;
       if(r.before&&d>r.before)out.push(`${w}: ${exFmt(d)} is after its deadline (${exFmt(r.before)})`);if(r.after&&d<r.after)out.push(`${w}: ${exFmt(d)} is before its start date (${exFmt(r.after)})`);
       if(r.fix&&d!==r.fix)out.push(`${w}: not on its fixed date (${exFmt(r.fix)})`);if(!ds.has(d))out.push(`${w}: ${exFmt(d)} is not an exam day`);});
-    Object.keys(x.cells[c]||{}).forEach(d=>{const vs=Object.values(x.cells[c][d]).filter(v=>v&&!v.cont);if(vs.length>x.maxDay)out.push(`${ttCn(s,c)}: ${vs.length} papers on ${exFmt(d)} (limit ${x.maxDay})`);const hv=vs.filter(v=>exR(s,x,v.a).core).length;if(hv>x.heavyDay)out.push(`${ttCn(s,c)}: ${hv} core papers on ${exFmt(d)} (limit ${x.heavyDay})`);});});
+    Object.keys(x.cells[c]||{}).forEach(d=>{const vs=Object.values(x.cells[c][d]).filter(v=>v&&!v.cont);if(vs.length>x.maxDay)out.push(`${ttCn(s,c)}: ${vs.length} papers on ${exFmt(d)} (limit ${x.maxDay})`);if(vs.length>1&&vs.some(v=>exR(s,x,v.a).full))out.push(`${ttCn(s,c)}: a whole-day paper on ${exFmt(d)} shares the day with another paper`);const hv=vs.filter(v=>exR(s,x,v.a).core).length;if(hv>x.heavyDay)out.push(`${ttCn(s,c)}: ${hv} core papers on ${exFmt(d)} (limit ${x.heavyDay})`);});});
+  Object.keys(dc).forEach(t=>{const m=exInvMax(x,t);if(m&&dc[t]>m)out.push(`${ttTn(s,t)} has ${dc[t]} invigilation duties (limit ${m})`);});
   Object.keys(tsl).forEach(k=>{if(tsl[k]>1){const p=k.split('|');out.push(`${ttTn(s,p[0])} is invigilating 2 papers at once on ${exFmt(p[1])} (${exSlot(x,+p[2].slice(1)).l})`);}});
   if(x.maxPar>0)Object.keys(par).forEach(k=>{if(par[k]>x.maxPar){const p=k.split('|');out.push(`${par[k]} classes sit at once on ${exFmt(p[0])} (${exSlot(x,+p[1].slice(1)).l}) — limit ${x.maxPar}`);}});
   return {list:[...new Set(out)],exp,got};}
@@ -3680,7 +3696,7 @@ function tplExTt(s){const L=ttData(s).exams;L.forEach(exNorm);const x=L.find(q=>
   <div class="row no-print"><div><label>Exam timetable</label><select onchange="exUI.id=this.value;renderDOS()">${L.map(q=>`<option value="${q.id}" ${q.id===exUI.id?'selected':''}>${escapeHtml(q.name)}</option>`).join('')||'<option>— none yet —</option>'}</select></div>
   <div><label>Based on an exam in Exams (optional)</label><select id="exBase"><option value="">— start blank —</option>${base.map(o=>`<option value="${o.i}">${escapeHtml(o.e.name)} · ${escapeHtml(o.e.term)} ${o.e.year}</option>`).join('')}</select></div>
   <div><label>Name</label><input id="exNewName" placeholder="e.g. Term 3 End-Term Exams"></div><div style="align-self:flex-end"><button onclick="exAdd()">+ Create</button></div></div>
-  ${x?`<div class="no-print">${ttTabs(exUI.tab,[['setup','⚙️ Setup'],['papers','📚 Papers &amp; deadlines'],['table','🗓 Timetable'],['inv','👀 Invigilation']],'exTabBtn')}${exUI.tab==='papers'?exTabPapers(s,x):exUI.tab==='table'?'':exUI.tab==='inv'?'':exTabSetup(s,x)}</div>${exUI.tab==='table'?exTabTable(s,x):exUI.tab==='inv'?exTabInv(s,x):''}<div class="flexbtns no-print" style="margin-top:12px"><button class="danger" onclick="exDel('${x.id}')">Delete this exam timetable</button></div>`:'<p class="small">Create your first exam timetable above.</p>'}</div>`;}
+  ${x?`<div class="no-print">${ttTabs(exUI.tab,[['setup','⚙️ Setup'],['papers','📚 Papers &amp; deadlines'],['invset','✅ Choose invigilators'],['table','🗓 Timetable'],['inv','👀 Invigilation']],'exTabBtn')}${exUI.tab==='papers'?exTabPapers(s,x):exUI.tab==='invset'?exTabInvSet(s,x):exUI.tab==='table'?'':exUI.tab==='inv'?'':exTabSetup(s,x)}</div>${exUI.tab==='table'?exTabTable(s,x):exUI.tab==='inv'?exTabInv(s,x):''}<div class="flexbtns no-print" style="margin-top:12px"><button class="danger" onclick="exDel('${x.id}')">Delete this exam timetable</button></div>`:'<p class="small">Create your first exam timetable above.</p>'}</div>`;}
 function exSaveBar(s,x){const t=ttData(s),cloud=!!(s.syncConfig&&s.syncConfig.enabled),has=Object.keys(x.cells).length,f=ms=>new Date(ms).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
   return `<div class="no-print small" style="background:#eef4fb;border-radius:8px;padding:8px 10px;margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:220px">💾 <b>${has?'Generated timetable is saved':'Nothing generated yet'}</b> — every change saves automatically in this school's data on this device${cloud?' and syncs to the cloud':' (turn on Sync to share it across devices)'}.${t.stamp?' Last saved: '+f(t.stamp)+'.':''}${x.genAt?' Generated: '+f(x.genAt)+'.':''}</span><button class="ghost" onclick="exBackup('${x.id}')">⬇ Backup file</button><button class="ghost" onclick="document.getElementById('exRestoreF').click()">⬆ Restore</button><input type="file" id="exRestoreF" accept=".json" style="display:none" onchange="exRestore(this)"></div>`;}
 function exBackup(id){const s=currentSchool(),x=exFind(id);if(!x)return;const b=new Blob([JSON.stringify({kind:'exam-timetable',v:1,school:s.name,savedAt:Date.now(),exam:x})],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=(x.name||'exam-timetable').replace(/[^\w-]+/g,'_')+'.json';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
@@ -3693,17 +3709,22 @@ function exTabSetup(s,x){const days=exDays(x),S=x.sess.length,cl=exCls(s,x),mx=M
   <label style="margin-top:8px">No-exam dates (public holiday, sports day…)</label><div class="flexbtns" style="align-items:center">${x.skip.slice().sort().map(d=>`<span class="chip">${exFmt(d)} <a style="cursor:pointer;color:#b23b3b" onclick="exDelSkip('${id}','${d}')">✕</a></span>`).join('')}<input type="date" id="exSkip" style="max-width:170px"><button class="ghost" onclick="exAddSkip('${id}')">+ Add</button></div>
   <h3 style="margin:12px 0 4px">Periods on each exam day</h3><div class="ttw"><table><tr><th>Name</th><th>Starts</th><th>Ends</th><th></th></tr>${x.sess.map((q,i)=>`<tr><td><input value="${escapeHtml(q.l)}" onchange="exSess('${id}',${i},'l',this.value)"></td><td><input type="time" value="${q.s}" onchange="exSess('${id}',${i},'s',this.value)"></td><td><input type="time" value="${q.e}" onchange="exSess('${id}',${i},'e',this.value)"></td><td>${S>1?`<button class="danger" onclick="exSessDel('${id}',${i})">✕</button>`:''}</td></tr>`).join('')}</table></div>${S<4?`<button class="ghost" style="margin-top:6px" onclick="exSessAdd('${id}')">+ Add period</button>`:''}
   <h3 style="margin:12px 0 4px">Limits</h3><div class="row">${num('maxDay',1,4,'Max papers per class per day')}${num('heavyDay',1,3,'Max core papers per class per day')}${num('maxPar',0,40,'Max classes sitting at once (0 = no limit)')}${num('inv',0,4,'Invigilators per paper')}${num('invDay',1,6,'Max duties per teacher per day')}${num('report',0,60,'Be seated (minutes before paper)')}</div>
-  <label class="chip" style="cursor:pointer;margin-top:8px"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.avoidOwn?'checked':''} onchange="exSet('${id}','avoidOwn',this.checked)">Teachers should not invigilate their own subject</label>
+  <p class="small" style="margin-top:8px">👀 Choose <b>which teachers invigilate</b>, their unavailable dates, and whether teachers may invigilate <b>their own subjects</b> in the <a style="cursor:pointer;color:#123a63;font-weight:700" onclick="exTabBtn('invset')">Choose invigilators</a> tab.</p>
   <label style="margin-top:8px">Notes printed under each timetable</label><textarea rows="2" onchange="exSet('${id}','notes',this.value)">${escapeHtml(x.notes)}</textarea>
   <h3 style="margin:12px 0 4px">Classes sitting these exams</h3><div class="flexbtns">${s.classes.map(c=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.classIds.includes(c.id)?'checked':''} onchange="exCl('${id}','${c.id}',this.checked)">${escapeHtml(c.name)}</label>`).join('')}<button class="ghost" onclick="exClAll('${id}')">Select all</button></div>
-  <p class="small" style="margin-top:10px">${days.length} exam day(s) × ${S} session(s) = <b>${days.length*S}</b> slots per class. Busiest class has <b>${mx}</b> papers.</p>${mx>per&&days.length?`<p style="color:#b23b3b"><b>⚠ Not enough room:</b> ${mx} papers but only ${per} can fit per class with these limits — add days, a session, or raise "Max papers per class per day".</p>`:''}`;}
+  <p class="small" style="margin-top:10px">${days.length} exam day(s) × ${S} session(s) = <b>${days.length*S}</b> slots per class. Busiest class has <b>${mx}</b> papers.</p>${mx>per&&days.length?`<p style="color:#b23b3b"><b>⚠ Not enough room:</b> ${mx} papers but only ${per} can fit per class with these limits — add days, a session, or raise "Max papers per class per day".</p>`:''}${exFullWarn(s,x)}`;}
+function exFullWarn(s,x){const days=exDays(x),S=x.sess.length;if(!days.length)return '';let nf=0,worst=null;
+  exCls(s,x).forEach(c=>{const as=exAreas(s,x,c.id),f=as.filter(a=>exR(s,x,a.id).full).length,o=as.filter(a=>!exR(s,x,a.id).full).reduce((t,a)=>t+(+exR(s,x,a.id).n===2?2:1),0);nf+=f;
+    const need=f+Math.ceil(o/Math.max(1,Math.min(x.maxDay,S)));if(f&&need>days.length&&(!worst||need>worst.need))worst={c,need};});
+  if(!nf)return '';return `<p class="small">🗓 ${nf} whole-day paper${nf>1?'s':''} (class × subject) — each takes a full exam day for that class.</p>${worst?`<p style="color:#b23b3b"><b>⚠ Not enough days:</b> ${escapeHtml(worst.c.name)} needs about ${worst.need} exam days with its whole-day papers but only ${days.length} are set — add days or sessions.</p>`:''}`;}
 function exTabPapers(s,x){const id=x.id,cl=exCls(s,x),areas=s.learningAreas.filter(a=>cl.some(c=>a.classIds.includes(c.id))),S=x.sess.length,dt=(k,r,a)=>`<input type="date" value="${r[k]||''}" style="min-width:130px" onchange="exRule('${id}','${a.id}','${k}',this.value)">`;
   if(!areas.length)return '<p class="small">Choose the classes in Setup first.</p>';
-  return `<p class="small"><b>Must be done by</b> = the paper has to be sat on or before that date. <b>Not before</b> = earliest date. <b>Fixed date/session</b> forces an exact slot. <b>Core</b> papers are kept to the daily core limit and spread apart. Set these, then press Generate on the Timetable tab.</p>
-  <div class="ttw"><table><tr><th>Include</th><th>Learning area</th><th>Classes</th><th>Paper (min)</th><th>Core</th><th>Sessions</th><th>Prefer</th><th>Not before</th><th>Must be done by</th><th>Fixed date</th><th>Fixed session</th></tr>${areas.map(a=>{const r=exR(s,x,a.id);return `<tr><td><input type="checkbox" style="width:auto" ${r.inc!==0?'checked':''} onchange="exRule('${id}','${a.id}','inc',this.checked?1:0)"></td><td style="text-align:left"><b>${escapeHtml(a.name)}</b></td>
+  return `<p class="small"><b>Must be done by</b> = the paper has to be sat on or before that date. <b>Not before</b> = earliest date. <b>Whole day</b> (e.g. a practical) takes every session of the day, so that class sits nothing else that day — other classes are not affected. <b>Fixed date/session</b> forces an exact slot. <b>Core</b> papers are kept to the daily core limit and spread apart. Set these, then press Generate on the Timetable tab.</p>
+  <div class="ttw"><table><tr><th>Include</th><th>Learning area</th><th>Classes</th><th>Paper (min)</th><th>Core</th><th>Sessions</th><th>Whole day</th><th>Prefer</th><th>Not before</th><th>Must be done by</th><th>Fixed date</th><th>Fixed session</th></tr>${areas.map(a=>{const r=exR(s,x,a.id);return `<tr><td><input type="checkbox" style="width:auto" ${r.inc!==0?'checked':''} onchange="exRule('${id}','${a.id}','inc',this.checked?1:0)"></td><td style="text-align:left"><b>${escapeHtml(a.name)}</b></td>
     <td style="text-align:left">${cl.filter(c=>a.classIds.includes(c.id)).map(c=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:3px" ${x.excl[c.id+'|'+a.id]?'':'checked'} onchange="exExcl('${id}','${c.id}','${a.id}',this.checked)">${escapeHtml(c.name.replace(/^grade\s*/i,'G'))}</label>`).join('')}</td>
-    <td><input type="number" min="15" max="240" step="5" value="${r.mins}" style="width:70px" onchange="exRule('${id}','${a.id}','mins',+this.value)"></td><td><input type="checkbox" style="width:auto" ${r.core?'checked':''} onchange="exRule('${id}','${a.id}','core',this.checked?1:0)"></td>
-    <td><select onchange="exRule('${id}','${a.id}','n',+this.value)"><option value="1" ${+r.n!==2?'selected':''}>1</option>${S>1?`<option value="2" ${+r.n===2?'selected':''}>2</option>`:''}</select></td>
+    <td><input type="number" min="15" max="240" step="5" value="${(x.rules[a.id]||{}).mins??exDef(a.name).mins}" ${r.full?'disabled':''} style="width:70px" onchange="exRule('${id}','${a.id}','mins',+this.value)"></td><td><input type="checkbox" style="width:auto" ${r.core?'checked':''} onchange="exRule('${id}','${a.id}','core',this.checked?1:0)"></td>
+    <td><select ${r.full?'disabled':''} onchange="exRule('${id}','${a.id}','n',+this.value)"><option value="1" ${+r.n!==2?'selected':''}>1</option>${S>1?`<option value="2" ${+r.n===2?'selected':''}>2</option>`:''}</select></td>
+    <td><input type="checkbox" style="width:auto" ${r.full?'checked':''} title="Takes the whole exam day — no other paper for that class on that day" onchange="exRule('${id}','${a.id}','full',this.checked?1:0);exRedraw()"></td>
     <td><select onchange="exRule('${id}','${a.id}','pref',this.value)"><option value="">Any</option><option value="am" ${r.pref==='am'?'selected':''}>Morning</option><option value="pm" ${r.pref==='pm'?'selected':''}>Afternoon</option></select></td>
     <td>${dt('after',r,a)}</td><td>${dt('before',r,a)}</td><td>${dt('fix',r,a)}</td>
     <td><select onchange="exRule('${id}','${a.id}','fixS',this.value)"><option value="">Any</option>${x.sess.map((q,i)=>`<option value="${i}" ${String(r.fixS)===String(i)?'selected':''}>${escapeHtml(q.l)}</option>`).join('')}</select></td></tr>`;}).join('')}</table></div>`;}
@@ -3715,8 +3736,61 @@ function exTabTable(s,x){const id=x.id,has=Object.keys(x.cells).length,iss=has?e
   <p class="small no-print">Tap a paper to change it, move it, set invigilators or 🔒 lock it.</p>${exUI.view==='master'?exGridMaster(s,x,exDays(x),{edit:true,inv:true,sh:true}):exGridClass(s,x,c,{edit:true,inv:true})}`:'<p class="small">Nothing generated yet — set the dates in Setup and the papers in Papers &amp; deadlines, then press Generate.</p>'}`;}
 function exTabInv(s,x){const id=x.id,rows=s.teachers.map(t=>({t,n:exDuties(s,x,t.id).length})).filter(r=>r.n).sort((a,b)=>b.n-a.n);
   if(!Object.keys(x.cells).length)return '<p class="small">Generate the timetable first.</p>';
-  return `<div class="flexbtns no-print" style="align-items:flex-end">${ttPaper()}<button class="gold" onclick="exPrint('${id}','roster')">🖨 Print roster</button><button class="ghost" onclick="exPrint('${id}','teachers')">🖨 Each teacher's duties</button></div>
+  return `<div class="flexbtns no-print" style="align-items:flex-end">${ttPaper()}<button class="ghost" onclick="exTabBtn('invset')">✅ Choose invigilators</button><button class="gold" onclick="exPrint('${id}','roster')">🖨 Print roster</button><button class="ghost" onclick="exPrint('${id}','teachers')">🖨 Each teacher's duties</button></div>
   <p class="small no-print">${rows.length} teacher(s) on duty, ${rows.reduce((a,r)=>a+r.n,0)} duties in total${rows.length?` (from ${Math.min(...rows.map(r=>r.n))} to ${Math.max(...rows.map(r=>r.n))} each)`:''}. To change someone, tap the paper on the Timetable tab.</p>${exGridRoster(s,x,exDays(x),false)}`;}
+// ---- Choose invigilators tab ----
+function exInvChips(s,x,t){const cf=(x.invT||{})[t.id]||{},ch=[],c=(txt,st)=>`<span class="chip"${st?` style="${st}"`:''}>${txt}</span>`;
+  if(cf.out)ch.push(c('Not invigilating','background:#fbe3e3;color:#b23b3b'));
+  if(cf.why)ch.push(c('📝 '+escapeHtml(cf.why)));
+  if(cf.own==='yes')ch.push(c('own subject OK'));if(cf.own==='no')ch.push(c('no own subject'));
+  if(+cf.max)ch.push(c('max '+(+cf.max)+' duties'));
+  const na=(cf.away||[]).length;if(na)ch.push(c('away '+na+(na>1?' times':' time')));
+  if(Object.keys(x.cells).length&&!cf.out){const n=exDuties(s,x,t.id).length;ch.push(c(n+(n===1?' duty':' duties'),'background:#e9f7ef;color:#1b6b3a'));}
+  return ch.join('');}
+function exInvSumHtml(s,x){const days=exDays(x),S=x.sess.length,sel=s.teachers.filter(t=>exInvOn(x,t.id)),tcf=ttData(s).tconf||{},
+  papers=exCls(s,x).reduce((a,c)=>a+exAreas(s,x,c.id).length,0),need=papers*(x.inv|0),per=Math.min(x.invDay,S);
+  const cap=sel.reduce((a,t)=>{const off=(tcf[t.id]||{}).off||[];let c=days.filter(d=>!off.includes(exDow(d))).length*per;
+    (((x.invT||{})[t.id]||{}).away||[]).forEach(q=>{if(days.includes(q.d))c-=(q.si===''||q.si==null)?per:1;});c=Math.max(0,c);const m=exInvMax(x,t.id);return a+(m?Math.min(m,c):c);},0);
+  let h=`<b>${sel.length} of ${s.teachers.length}</b> teachers will invigilate.`;
+  if(!(x.inv>0))h+=` <span style="color:#b23b3b">Invigilators per paper is 0 — set it in Setup.</span>`;
+  else if(papers&&days.length){h+=` About <b>${need}</b> duties are needed (${papers} papers × ${x.inv}) — roughly <b>${sel.length?(need/sel.length).toFixed(1):'—'}</b> each.`;
+    if(!sel.length)h+=` <span style="color:#b23b3b">⚠ Select at least one teacher.</span>`;
+    else if(need>cap)h+=` <span style="color:#b23b3b">⚠ These teachers can cover only about ${cap} duties with the current limits — select more teachers, lower their limits, or raise "Max duties per teacher per day" in Setup.</span>`;}
+  return h;}
+function exTabInvSet(s,x){const id=x.id,ts=s.teachers.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  if(!ts.length)return '<p class="small">Add teachers first, then choose who invigilates.</p>';
+  const opt=(v,l)=>`<option value="${v}" ${x.ownMode===v?'selected':''}>${l}</option>`;
+  return `<p class="small">Tick the teachers who will invigilate. Untick anyone with other commitments (marking, trips, part-time, admin duties). Tap <b>Details</b> to give a reason, set dates they are away, limit their total duties, or set whether they may invigilate their own subject. Then press <b>Generate</b> on the Timetable tab.</p>
+  <label>Can teachers invigilate their own subjects?</label><select onchange="exOwnMode('${id}',this.value)">${opt('avoid','Avoid — only when no other teacher is free')}${opt('never','No — never invigilate their own subject')}${opt('allow','Yes — allowed, no restriction')}</select>
+  <p class="small" style="margin-top:4px">A teacher's own subject means a paper in a class and learning area they are assigned to teach. You can override this for one teacher under Details.</p>
+  <div id="exInvSum" class="small" style="background:#eef4fb;border-radius:8px;padding:8px 10px;margin:8px 0">${exInvSumHtml(s,x)}</div>
+  <div class="flexbtns" style="align-items:center"><button class="ghost" onclick="exInvAll('${id}',true)">Select all</button><button class="ghost" onclick="exInvAll('${id}',false)">Clear all</button><input id="exInvQ" placeholder="Search teacher…" style="max-width:200px" oninput="exInvFilter(this.value)"></div>
+  ${ts.map(t=>{const on=exInvOn(x,t.id);return `<div class="card exivRow" id="exiv_${t.id}" data-n="${escapeHtml((t.name||'').toLowerCase())}" style="padding:8px 10px;margin:6px 0;opacity:${on?1:.6}"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <label style="display:flex;align-items:center;gap:8px;flex:1;min-width:170px;cursor:pointer;margin:0"><input type="checkbox" style="width:auto" ${on?'checked':''} onchange="exInvOnSet('${id}','${t.id}',this.checked)"><b>${escapeHtml(t.name)}</b></label>
+    <span id="exivC_${t.id}">${exInvChips(s,x,t)}</span><button class="ghost" onclick="exInvTog('${t.id}')">Details</button></div>
+    <div id="exivD_${t.id}" style="display:none;margin-top:8px">${exInvBody(s,x,t)}</div></div>`;}).join('')}`;}
+function exInvBody(s,x,t){const id=x.id,tid=t.id,cf=(x.invT||{})[tid]||{},tcf=(ttData(s).tconf||{})[tid]||{},days=exDays(x),
+  teaches=(t.assignments||[]).map(a=>ttAn(s,a.areaId)+' ('+ttCn(s,a.classId)+')'),offD=(tcf.off||[]).map(d=>TT_D[d]).join(', '),
+  so=(v,l)=>`<option value="${v}" ${(cf.own||'')===v?'selected':''}>${l}</option>`;
+  return `<div class="row"><div><label>Reason / commitment (optional)</label><input value="${escapeHtml(cf.why||'')}" placeholder="e.g. Marking national exams, part-time" onchange="exInvF('${id}','${tid}','why',this.value.trim())"></div>
+  <div><label>Own subject</label><select onchange="exInvF('${id}','${tid}','own',this.value)">${so('','Follow school setting')}${so('yes','May invigilate own subject')}${so('no','Never own subject')}</select></div>
+  <div><label>Max duties in total (0 = no limit)</label><input type="number" min="0" max="99" value="${+cf.max||0}" onchange="exInvF('${id}','${tid}','max',Math.max(0,+this.value||0))"></div></div>
+  <label style="margin-top:8px">Not available on</label><div class="flexbtns" style="align-items:center">${(cf.away||[]).map((q,i)=>`<span class="chip">${exFmt(q.d)}${q.si===''||q.si==null?' · all day':' · '+escapeHtml(exSlot(x,+q.si).l)} <a style="cursor:pointer;color:#b23b3b" onclick="exInvDelAway('${id}','${tid}',${i})">✕</a></span>`).join('')||'<span class="small">No dates blocked.</span>'}</div>
+  ${days.length?`<div class="row"><div><select id="exivAD_${tid}">${days.map(d=>`<option value="${d}">${exFmt(d)}</option>`).join('')}</select></div><div><select id="exivAS_${tid}"><option value="">All day</option>${x.sess.map((q,i)=>`<option value="${i}">${escapeHtml(q.l)}</option>`).join('')}</select></div><div style="align-self:flex-end"><button class="ghost" onclick="exInvAddAway('${id}','${tid}')">+ Block</button></div></div>`:'<p class="small">Set the exam dates in Setup to block specific days.</p>'}
+  <p class="small">${teaches.length?'<b>Teaches:</b> '+escapeHtml(teaches.join(', ')):'No subjects assigned yet.'}${offD?' · <b>Off on</b> '+offD+' (from Timetable Setup)':''}</p>`;}
+function exInvTog(tid){const d=qs('#exivD_'+tid);if(d)d.style.display=d.style.display==='none'?'block':'none';}
+function exInvRef(tid){const s=currentSchool(),x=exFind(exUI.id),t=s.teachers.find(q=>q.id===tid);if(!x||!t)return;const c=qs('#exivC_'+tid);if(c)c.innerHTML=exInvChips(s,x,t);
+  const r=qs('#exiv_'+tid);if(r)r.style.opacity=exInvOn(x,tid)?1:.6;const m=qs('#exInvSum');if(m)m.innerHTML=exInvSumHtml(s,x);}
+function exInvFilter(q){q=(q||'').trim().toLowerCase();document.querySelectorAll('.exivRow').forEach(r=>{r.style.display=!q||(r.dataset.n||'').includes(q)?'':'none';});}
+function exInvOnSet(id,tid,on){const x=exFind(id),cf=exInvCfg(x,tid);if(on)delete cf.out;else cf.out=1;exSave();exInvRef(tid);if(Object.keys(x.cells).length)toast('Saved — press Generate to re-allocate invigilators');}
+function exInvF(id,tid,k,v){const x=exFind(id),cf=exInvCfg(x,tid);if(v===''||v===0||v==null)delete cf[k];else cf[k]=v;exSave();exInvRef(tid);}
+function exInvAll(id,on){const x=exFind(id);currentSchool().teachers.forEach(t=>{const cf=exInvCfg(x,t.id);if(on)delete cf.out;else cf.out=1;});exSave();exRedraw();}
+function exOwnMode(id,v){const x=exFind(id);x.ownMode=v;x.avoidOwn=v!=='allow';exSave();exRedraw();}
+function exInvAddAway(id,tid){const s=currentSchool(),x=exFind(id),d=(qs('#exivAD_'+tid)||{}).value,sv=(qs('#exivAS_'+tid)||{}).value;if(!d){toast('Choose a date','err');return;}
+  const cf=exInvCfg(x,tid),a=cf.away=cf.away||[],si=sv===''?'':+sv;if(!a.some(q=>q.d===d&&q.si===si))a.push({d,si});a.sort((p,q)=>p.d<q.d?-1:p.d>q.d?1:0);exSave();
+  const b=qs('#exivD_'+tid),t=s.teachers.find(q=>q.id===tid);if(b&&t)b.innerHTML=exInvBody(s,x,t);exInvRef(tid);}
+function exInvDelAway(id,tid,i){const s=currentSchool(),x=exFind(id),cf=exInvCfg(x,tid);(cf.away||[]).splice(i,1);if(!(cf.away||[]).length)delete cf.away;exSave();
+  const b=qs('#exivD_'+tid),t=s.teachers.find(q=>q.id===tid);if(b&&t)b.innerHTML=exInvBody(s,x,t);exInvRef(tid);}
 // ---- actions ----
 function exAdd(){const s=currentSchool(),sel=(qs('#exBase')||{}).value,nm=((qs('#exNewName')||{}).value||'').trim(),L=ttData(s).exams,b=(sel!==''&&sel!=null)?s.exams[+sel]:null,name=nm||(b?b.name:'');
   if(!name){toast('Enter a name, e.g. Term 3 End-Term Exams','err');return;}
@@ -3744,21 +3818,24 @@ function exEdit(xid,c,d,si){const s=currentSchool(),x=exFind(xid);let v=((x.cell
   exmCtx={xid,c,d,si};const S=x.sess.length,cnt=Math.max(x.inv,1),inv=v.inv||[],o=document.createElement('div');o.id='exModal';o.style.cssText='position:fixed;inset:0;background:rgba(9,30,55,.55);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;';
   o.innerHTML=`<div class="card" style="max-width:420px;width:100%;max-height:90vh;overflow:auto"><h2 style="margin-top:0">${escapeHtml(ttCn(s,c))} · ${exFmt(d)} · ${escapeHtml(exSlot(x,si).l)}</h2>
   <label>Learning area</label><select id="exmA"><option value="">— No paper —</option>${areasForClass(s,c).map(a=>`<option value="${a.id}" ${v.a===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join('')}</select>
-  ${si+1<S?`<label class="chip" style="cursor:pointer;margin-top:8px"><input type="checkbox" id="exm2" style="width:auto;display:inline-block;margin-right:4px" ${v.n>1?'checked':''}>Takes 2 sessions</label>`:''}
-  ${Array.from({length:cnt},(_,i)=>`<label>Invigilator ${i+1}</label><select class="exmI"><option value="">— none —</option>${s.teachers.map(t=>`<option value="${t.id}" ${inv[i]===t.id?'selected':''}>${escapeHtml(t.name)}</option>`).join('')}</select>`).join('')}
+  ${si+1<S?`<label style="margin-top:8px">Sessions used</label><select id="exmN">${Array.from({length:S-si},(_,k)=>`<option value="${k+1}" ${(v.n||1)===k+1?'selected':''}>${k+1} session${k?'s':''}${si===0&&k+1===S?' — whole day':''}</option>`).join('')}</select>`:''}
+  ${Array.from({length:cnt},(_,i)=>`<label>Invigilator ${i+1}</label><select class="exmI"><option value="">— none —</option>${s.teachers.map(t=>`<option value="${t.id}" ${inv[i]===t.id?'selected':''}>${escapeHtml(t.name+exInvTag(s,x,t.id,c,v.a,d,si,v.n||1))}</option>`).join('')}</select>`).join('')}
   <label class="chip" style="cursor:pointer;margin-top:8px"><input type="checkbox" id="exmL" style="width:auto;display:inline-block;margin-right:4px" ${v.l?'checked':''}>🔒 Lock (kept when re-generating)</label>
   <div class="flexbtns" style="margin-top:12px"><button onclick="exmSave()">Save</button><button class="ghost" onclick="exmClose()">Cancel</button></div><hr>
   <label>Move this paper to</label><div class="row"><div><select id="exmD">${exDays(x).map(dd=>`<option value="${dd}" ${dd===d?'selected':''}>${exFmt(dd)}</option>`).join('')}</select></div><div><select id="exmS">${x.sess.map((q,i)=>`<option value="${i}" ${i===si?'selected':''}>${escapeHtml(q.l)}</option>`).join('')}</select></div><div><button class="ghost" onclick="exmMove()">Move / swap</button></div></div></div>`;
   document.body.appendChild(o);}
 function exmClose(){const m=qs('#exModal');if(m)m.remove();}
-function exmSave(){const {xid,c,d,si}=exmCtx,x=exFind(xid),S=x.sess.length,a=qs('#exmA').value;x.cells[c]=x.cells[c]||{};const dd=x.cells[c][d]=x.cells[c][d]||{},old=dd['s'+si],own=!!(old&&!old.cont&&old.n>1),two=!!(a&&(qs('#exm2')||{}).checked&&si+1<S),nx=dd['s'+(si+1)];
-  if(two&&nx&&!(own&&nx.cont)){toast('The next session already has a paper — clear it first','err');return;}
-  if(own)delete dd['s'+(si+1)];delete dd['s'+si];
-  if(a){const inv=[...new Set([...document.querySelectorAll('.exmI')].map(e=>e.value).filter(Boolean))],l=qs('#exmL').checked?1:0;dd['s'+si]={a,n:two?2:1,inv,l};if(two)dd['s'+(si+1)]={a,cont:1,l};}
+function exmSave(){const {xid,c,d,si}=exmCtx,x=exFind(xid),S=x.sess.length,a=qs('#exmA').value;
+  if(a){const s0=currentSchool(),n0=+((qs('#exmN')||{}).value)||1,bad=[...new Set([...document.querySelectorAll('.exmI')].map(e=>e.value).filter(Boolean))].map(t=>{const g=exInvProblem(s0,x,t,c,a,d,si,n0);return g?ttTn(s0,t)+' '+g.l:'';}).filter(Boolean);
+    if(bad.length&&!confirm('Please check:\n\n'+bad.join('\n')+'\n\nAssign anyway?'))return;}
+  x.cells[c]=x.cells[c]||{};const dd=x.cells[c][d]=x.cells[c][d]||{},old=dd['s'+si],own=!!(old&&!old.cont&&old.n>1),nn=a?(+((qs('#exmN')||{}).value)||1):1,on=own?old.n:1;
+  for(let z=1;z<nn;z++){const q=dd['s'+(si+z)];if(q&&!(own&&z<on&&q.cont)){toast('A later session already has a paper — clear it first','err');return;}}
+  for(let z=0;z<on;z++)delete dd['s'+(si+z)];
+  if(a){const inv=[...new Set([...document.querySelectorAll('.exmI')].map(e=>e.value).filter(Boolean))],l=qs('#exmL').checked?1:0;dd['s'+si]={a,n:nn,inv,l};for(let z=1;z<nn;z++)dd['s'+(si+z)]={a,cont:1,l};}
   if(!Object.keys(dd).length)delete x.cells[c][d];exSave();exmClose();exRedraw();}
 function exmMove(){const {xid,c,d,si}=exmCtx,x=exFind(xid),d2=qs('#exmD').value,s2=+qs('#exmS').value;if(d2===d&&s2===si){toast('Choose a different date or session','err');return;}
   const cc=x.cells[c]=x.cells[c]||{},A=cc[d]=cc[d]||{},B=cc[d2]=cc[d2]||{},v=A['s'+si];if(!v||v.cont){toast('Save a paper here first','err');return;}const w=B['s'+s2],n=v.n||1;
-  if(n>1){if(s2+1>=x.sess.length||w||B['s'+(s2+1)]){toast('A 2-session paper needs two free sessions','err');return;}delete A['s'+si];delete A['s'+(si+1)];B['s'+s2]=v;B['s'+(s2+1)]={a:v.a,cont:1,l:v.l};}
+  if(n>1){let ok=s2+n<=x.sess.length;for(let z=0;ok&&z<n;z++)if(B['s'+(s2+z)])ok=false;if(!ok){toast('A '+n+'-session paper needs '+n+' free sessions in a row','err');return;}for(let z=0;z<n;z++)delete A['s'+(si+z)];B['s'+s2]=v;for(let z=1;z<n;z++)B['s'+(s2+z)]={a:v.a,cont:1,l:v.l};}
   else{if(w&&(w.cont||w.n>1)){toast('Cannot swap with a 2-session paper','err');return;}if(w)A['s'+si]=w;else delete A['s'+si];B['s'+s2]=v;}
   if(!Object.keys(A).length)delete cc[d];exSave();exmClose();exRedraw();}
 // ---- Teacher portal ----
