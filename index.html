@@ -214,11 +214,13 @@ canvas{max-width:100%;}
      A report with too much content still shrinks to fit via fitReportCardsToPage(); this
      flex layout only ever adds space, it never causes overflow. */
   .report-card{page-break-inside:avoid;break-inside:avoid;border-width:1px;transform-origin:top left;
-    height:259mm;display:flex;flex-direction:column;box-sizing:border-box;margin:0;box-shadow:none;}
+    height:280mm;display:flex;flex-direction:column;box-sizing:border-box;margin:0;box-shadow:none;}
+  /* No trailing blank page: the very last report must not force a page break after itself. */
+  .report-card.print-only-block:has(+ .no-print:last-child){page-break-after:auto;break-after:auto;}
   .report-card .rc-body{flex:1;display:flex;flex-direction:column;box-sizing:border-box;}
   .rc-body{padding:11px 14px 10px;}
   .report-card table{font-size:11px;}
-  .report-card th,.report-card td{padding:3.5px 5px;}
+  .report-card .rc-table th,.report-card .rc-table td{padding:var(--rc-pad,3.5px) 5px;}
   .report-card .report-header h2{font-size:18px;margin:1px 0;}
   .report-card .report-header p{margin:1px 0;font-size:12px;}
   .rc-doctitle{font-size:11.5px;}
@@ -227,7 +229,7 @@ canvas{max-width:100%;}
   .rc-info-grid{font-size:12px;padding:7px 11px;}
   .rc-overall-box .rc-grade{font-size:19px;}
   .rc-overall-box .rc-sub{font-size:10.5px;}
-  .report-card canvas{display:block;width:100% !important;max-width:100%;max-height:120px;height:120px !important;}
+  .report-card canvas{display:block;width:100% !important;max-width:100%;max-height:var(--rc-ch,120px);height:var(--rc-ch,120px) !important;}
   .rc-remark{font-size:11.5px;padding:6px 9px;}
   .rc-chart-label{font-size:12px;}
   /* margin-top:auto turns these into flexible spacers inside the .rc-body flex column: any
@@ -501,6 +503,11 @@ function ensureSchoolShape(s){
     if(typeof t.canApproveResults !== 'boolean') t.canApproveResults = false; // approve/disapprove exam results
     if(typeof t.canApproveEditRequests !== 'boolean') t.canApproveEditRequests = false; // decide other teachers' pending edit requests
     if(typeof t.canManageEntry !== 'boolean') t.canManageEntry = false; // open/close the entry period
+    // gender ('M'/'F'/'' — optional, left blank if the DOS/HOI never sets it) and
+    // farFromSchool are only used by the Duty Rota generator (pairing/alternating gender
+    // fairly, and going easy on — or excluding — a teacher who commutes a long way).
+    if(typeof t.gender !== 'string') t.gender = '';
+    if(typeof t.farFromSchool !== 'boolean') t.farFromSchool = false;
   });
   // Same idea for exams: every mark-entry and report screen does exam.maxMarksByArea[id]
   // with no guard, which throws outright if maxMarksByArea is missing entirely.
@@ -540,6 +547,9 @@ function ensureSchoolShape(s){
   // force-logged-out too, same as a suspended school) until it's turned back on — separate
   // from and on top of the per-exam parentVisible toggle above.
   if(typeof s.parentPortalEnabled !== 'boolean') s.parentPortalEnabled = true;
+  // Duty Rota: school.dutyRotas = [x] (see the Duty Rota section for shape). A school that
+  // existed before this feature simply has none yet.
+  if(!Array.isArray(s.dutyRotas)) s.dutyRotas = [];
   return s;
 }
 function migrateDB(db){
@@ -1171,7 +1181,7 @@ async function refreshAllSchoolsFromCloud(silent){
 const DOS_TAB_DEPS = {
   classes:['classes','classTeachers','students'], areas:['learningAreas','classes'], grading:['gradingSystem','classes'],
   students:['students','classes'], teachers:['teachers','classes','learningAreas','classTeachers'], assignments:['assignments','classes'],
-  tt:['timetable','classes','teachers','learningAreas'], ttsetup:['timetable','classes','teachers','learningAreas'], ttrem:['timetable','classes','teachers','learningAreas']
+  tt:['timetable','classes','teachers','learningAreas'], ttsetup:['timetable','classes','teachers','learningAreas'], ttrem:['timetable','classes','teachers','learningAreas'], ttwork:['timetable','classes','teachers','learningAreas'], extt:['timetable','classes','teachers','learningAreas','exams'], duty:['teachers','dutyRotas']
 };
 let _lastInputAt = 0, _pendingRedraw = null, _redrawTimer = null;
 ['input','keydown'].forEach(ev=>document.addEventListener(ev, ()=>{ _lastInputAt = Date.now(); }, true));
@@ -1222,7 +1232,7 @@ function softRefresh(changed){
     const _t = currentTeacher();
     if(!_t){ logout(); setTimeout(()=>toast('Your teacher account is no longer available','err'),50); return; }
     if(teacherSig(currentSchool(), _t)!==_teacherSig){ calmRedraw(renderTeacher); toast('Your access was updated by the DOS/HOI'); return; }
-    if(teacherTab==='timetable' || teacherTab==='dashboard'){ calmRedraw(renderTeacher); return; }
+    if(teacherTab==='timetable' || teacherTab==='examtt' || teacherTab==='dashboard'){ calmRedraw(renderTeacher); return; }
     try{ renderTeacherApprovals(); }catch(e){}
     softRefreshMarksGrid('#marksGridArea', ()=>({examId: qs('#tExam')&&qs('#tExam').value, areaId: qs('#tArea')&&qs('#tArea').value, classId: qs('#tClass')&&qs('#tClass').value}), loadMarksGrid);
   } else if(session.role==='dos'){
@@ -3107,14 +3117,14 @@ function showLink(code, role){
            load:{classId:{areaId:n}}, rules:{areaId:{max,dbl,per[],nolast,pref}}, cells:{classId:{d1:{p1:{a,t,l}}}}, published}
    Keys are 'd1'/'p3' (not bare numbers) so Firebase never turns them into arrays. Every section is generated and
    saved on its own, but teacher clashes are checked across sections. */
-(function(){const st=document.createElement('style');st.textContent='.ttg{border-collapse:collapse;width:100%;font-size:12px}.ttg th,.ttg td{border:1px solid #cdd8e4;padding:5px;text-align:center;vertical-align:middle}.ttg th{background:#123a63;color:#fff}.ttg td.tb{background:#f4e7c5;font-weight:700;font-size:11px}.ttg td.tc{min-width:74px}.ttg.ed td.tc{cursor:pointer}.ttg.ed td.tc:hover{background:#eef4fb}.ttg td.bad{background:#fde3e1}.ttg td.lk{box-shadow:inset 0 0 0 2px #d9a441}.ttg .ta{display:block;font-size:10px;color:#6a7c8f}.ttg th .ta{color:#fff}.ttw{overflow-x:auto}#ttPrintArea{display:none}@media print{body.ttprinting>*:not(#ttPrintArea){display:none!important}body.ttprinting #ttPrintArea{display:block}}';document.head.appendChild(st);})();
+(function(){const st=document.createElement('style');st.textContent='.ttg{border-collapse:collapse;width:100%;font-size:12px}.ttg th,.ttg td{border:1px solid #cdd8e4;padding:5px;text-align:center;vertical-align:middle}.ttg th{background:#123a63;color:#fff}.ttg th.dy{text-align:left;white-space:nowrap}.ttg th.tbh{background:#8a6d1f;width:3.4em;padding:2px}.ttg td.tb{background:#f4e7c5;font-weight:700;width:3.4em;padding:2px}.ttg .vt{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;letter-spacing:.05em;font-size:.9em}.ttg td.tt{background:#eef4fb;font-weight:700}#ttPrintArea .ttw.ns{flex:none;overflow:visible}#ttPrintArea .ttw.ns>table{position:static;height:auto;table-layout:auto}.ttg td.nw{outline:3px solid #d9a441;outline-offset:-3px;font-weight:700}.ttg th.dy.today{background:#d9a441;color:#123a63}.ttg td.tc{min-width:74px}.ttg.ed td.tc{cursor:pointer}.ttg.ed td.tc:hover{background:#eef4fb}.ttg td.bad{background:#fde3e1}.ttg td.lk{box-shadow:inset 0 0 0 2px #d9a441}.ttg .ta{display:block;font-size:10px;color:#6a7c8f}.ttg th .ta{color:#fff}.ttw{overflow-x:auto}#ttPrintArea{display:none}\n#ttPrintArea .ttpage{width:var(--ttw,277mm);height:var(--tth,187mm);display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;break-after:page;page-break-after:always;color:#000}#ttPrintArea .ttpage:last-child{break-after:auto;page-break-after:auto}\n#ttPrintArea .tthd{display:flex;align-items:center;gap:10px;border-bottom:2px solid #123a63;padding-bottom:4px;margin-bottom:6px}#ttPrintArea .ttlogo{height:14mm;width:auto}#ttPrintArea .tthn{flex:1}#ttPrintArea .tts{font-size:17px;font-weight:800;color:#123a63;text-transform:uppercase}#ttPrintArea .tttt{text-align:right}#ttPrintArea .ttt{font-size:15px;font-weight:800}#ttPrintArea .ttm{font-size:10px;color:#444}\n#ttPrintArea .ttbd{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px}#ttPrintArea .ttw{flex:1;min-height:0;position:relative;overflow:hidden}#ttPrintArea .ttw>table{position:absolute;top:0;left:0;width:100%;height:100%;table-layout:fixed}#ttPrintArea .ttg td,#ttPrintArea .ttg th{padding:2px;overflow:hidden;word-break:break-word}#ttPrintArea .ttg td.tc{min-width:0}#ttPrintArea .ttg .ta{font-size:.82em}\n#ttPrintArea .ttkey{font-size:9px;line-height:1.35;border-top:1px solid #cdd8e4;padding-top:3px}#ttPrintArea .ttft{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;font-size:9px;border-top:1px solid #999;margin-top:4px;padding-top:3px}\n#ttPrintArea.bw .ttg th,#ttPrintArea.bw .ttg td,#ttPrintArea.bw .ttg td.tb,#ttPrintArea.bw .ttg th.tbh,#ttPrintArea.bw .ttg td.tt,#ttPrintArea.bw .ttg td.tc,#ttPrintArea.bw .ttg th.dy{background:#fff!important;color:#000!important;border:1px solid #000!important;box-shadow:none!important;outline:0!important}#ttPrintArea.bw .ttg th{font-weight:800;border-bottom:2px solid #000!important}#ttPrintArea.bw .ttg .ta,#ttPrintArea.bw .ttg th .ta{color:#000!important}#ttPrintArea.bw .tts,#ttPrintArea.bw .ttt,#ttPrintArea.bw .ttm{color:#000!important}#ttPrintArea.bw .tthd{border-bottom:2px solid #000}#ttPrintArea.bw .ttlogo{display:none}#ttPrintArea.bw .ttkey,#ttPrintArea.bw .ttft{border-color:#000}@media print{body.ttprinting>*:not(#ttPrintArea){display:none!important}body.ttprinting #ttPrintArea{display:block}}';document.head.appendChild(st);})();
 const TT_D=['','Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const TT_LV={pre:'Pre-Primary',lower:'Lower Primary (Gr 1-3)',upper:'Upper Primary (Gr 4-6)',junior:'Junior School (Gr 7-9)',senior:'Senior School (Gr 10-12)',custom:'Other / Custom classes'};
-let ttUI={sec:'',tab:'classes',rem:'',rtab:'classes',view:'class',cls:'',tch:'',day:1};
+let ttUI={orient:'landscape',sec:'',tab:'classes',rem:'',rtab:'classes',view:'class',cls:'',tch:'',day:1};
 const hm=x=>{const m=String(x||'08:00').split(':');return (+m[0]||0)*60+(+m[1]||0);};
 const fm=n=>String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');
 const ttOv=(l,s,e)=>(l||[]).some(x=>s<x[1]&&e>x[0]);
-function ttData(s){if(!s.timetable||typeof s.timetable!=='object')s.timetable={};const t=s.timetable;if(!Array.isArray(t.sections))t.sections=[];if(!Array.isArray(t.remedials))t.remedials=[];return t;}
+function ttData(s){if(!s.timetable||typeof s.timetable!=='object')s.timetable={};const t=s.timetable;if(!Array.isArray(t.sections))t.sections=[];if(!Array.isArray(t.remedials))t.remedials=[];if(!Array.isArray(t.exams))t.exams=[];if(!t.tconf||typeof t.tconf!=='object')t.tconf={};return t;}
 function ttSave(){ttData(currentSchool()).stamp=Date.now();saveDB(DB);}
 function ttRedraw(){redrawKeepingState(renderDOS);}
 function ttNorm(p){p.days=p.days||[];p.breaks=p.breaks||[];p.classIds=p.classIds||[];p.load=p.load||{};p.rules=p.rules||{};p.cells=p.cells||{};return p;}
@@ -3136,7 +3146,7 @@ function ttSync(s){const t=ttData(s);let ch=false;const ids=new Set(s.classes.ma
   if(ch)ttSave();return t;}
 const TT_DEF=[[/math/i,5],[/english/i,5],[/kiswahili|kenyan sign|ksl/i,4],[/science/i,4],[/social|\bcre\b|\bire\b|\bhre\b|religio|christian|islamic/i,3],[/agri|nutrition|business|pre.?tech|creative|art|music|home/i,3],[/\bpe\b|physical|sport|games|health/i,2]];
 const ttDef=n=>{for(const [r,v] of TT_DEF)if(r.test(n))return v;return 2;};
-const R=(p,a)=>Object.assign({max:2,dbl:0,per:[],nolast:false,pref:''},p.rules[a]||{});
+const R=(p,a)=>Object.assign({max:2,dbl:0,dmode:'block',per:[],nolast:false,pref:''},p.rules[a]||{});
 function ttSlots(p){let t=hm(p.start);const L=[],B=[];for(let i=1;i<=p.lessons;i++){L.push({n:i,s:t,e:t+ +p.mins});t+=+p.mins;const b=p.breaks.find(x=>+x.after===i);if(b&&i<p.lessons){B.push({after:i,label:b.label||'Break',s:t,e:t+ +b.mins});t+=+b.mins;}}return {L,B};}
 function ttRows(p){const {L,B}=ttSlots(p);return L.map(l=>({t:'L',n:l.n,s:l.s,e:l.e})).concat(B.map(b=>({t:'B',label:b.label,s:b.s,e:b.e}))).sort((a,b)=>a.s-b.s);}
 const ttTeach=(s,c,a)=>s.teachers.filter(t=>(t.assignments||[]).some(x=>x.classId===c&&x.areaId===a)).map(t=>t.id);
@@ -3149,22 +3159,34 @@ function ttGen(s,p,keep){ttNorm(p);const {L,B}=ttSlots(p),N=L.length,days=p.days
   for(let at=0;at<40;at++){const r=ttAttempt(s,p,L,B,N,days,cls,ext,keep);if(!best||r.un.length<best.un.length||(r.un.length===best.un.length&&r.pen<best.pen))best=r;if(!best.un.length&&at>=4)break;}return best;}
 function ttAttempt(s,p,L,B,N,days,cls,ext,keep){const cells={},busy={},placed={};let pen=0;
   const bz=(t,dk)=>{const o=busy[t]||(busy[t]={});return o[dk]||(o[dk]=[]);};
+  const tcf=ttData(s).tconf||{},offD=(t,dk)=>!!(t&&tcf[t]&&(tcf[t].off||[]).includes(+dk.slice(1))),dayN=(t,dk)=>((busy[t]&&busy[t][dk])||[]).length+((ext[t]&&ext[t][dk])||[]).length,capOk=(t,dk,z)=>!t||!tcf[t]||!(+tcf[t].max)||dayN(t,dk)+z<=+tcf[t].max;
   const free=(t,dk,sl)=>!t||(!ttOv(ext[t]&&ext[t][dk],sl.s,sl.e)&&!ttOv(busy[t]&&busy[t][dk],sl.s,sl.e));
   const day=(c,dk)=>(cells[c]&&cells[c][dk])||{};
   const put=(c,dk,pk,v)=>{const cc=cells[c]||(cells[c]={});(cc[dk]||(cc[dk]={}))[pk]=v;if(v.t){const sl=L[+pk.slice(1)-1];bz(v.t,dk).push([sl.s,sl.e]);}};
   const cnt=(c,a,dk)=>Object.values(day(c,dk)).filter(v=>v.a===a).length;
   const tl=t=>Object.values(busy[t]||{}).reduce((x,y)=>x+y.length,0);
   if(keep)cls.forEach(c=>Object.keys(p.cells[c]||{}).forEach(dk=>Object.keys(p.cells[c][dk]||{}).forEach(pk=>{const v=p.cells[c][dk][pk];if(v&&v.l&&v.a&&L[+pk.slice(1)-1]&&days.includes(+dk.slice(1))){put(c,dk,pk,{a:v.a,t:v.t||'',l:1});placed[c+'|'+v.a]=(placed[c+'|'+v.a]||0)+1;}})));
-  const items=[];cls.forEach(c=>{const ld=p.load[c]||{};areasForClass(s,c).forEach(a=>{const need=(+ld[a.id]||0)-(placed[c+'|'+a.id]||0);if(need<=0)return;const d=Math.min(+R(p,a.id).dbl||0,need>>1);for(let i=0;i<d;i++)items.push({c,a:a.id,z:2});for(let i=0;i<need-2*d;i++)items.push({c,a:a.id,z:1});});});
+  const items=[];cls.forEach(c=>{const ld=p.load[c]||{};areasForClass(s,c).forEach(a=>{const need=(+ld[a.id]||0)-(placed[c+'|'+a.id]||0);if(need<=0)return;const d=Math.min(+R(p,a.id).dbl||0,need>>1);for(let i=0;i<d;i++)items.push({c,a:a.id,z:2,sp:R(p,a.id).dmode==='split'?1:0});for(let i=0;i<need-2*d;i++)items.push({c,a:a.id,z:1});});});
   items.forEach(it=>{const r=R(p,it.a);it.k=(it.z===2?-100:0)+(r.per.length?r.per.length*2:N*2)+Math.random()*4;});items.sort((x,y)=>x.k-y.k);
   const un=[];
   items.forEach(it=>{const r=R(p,it.a),ts=ttTeach(s,it.c,it.a);let bc=null;
-    days.forEach(d=>{const dk='d'+d,same=cnt(it.c,it.a,dk);if(same+it.z>Math.max(+r.max||2,it.z))return;const dl=Object.keys(day(it.c,dk)).length;
+    if(it.sp){let b2=null;days.forEach(d=>{const dk='d'+d,same=cnt(it.c,it.a,dk);if(same+2>Math.max(+r.max||2,2))return;const dl=Object.keys(day(it.c,dk)).length,dd=day(it.c,dk);
+      for(let n1=1;n1<N;n1++)for(let n2=n1+1;n2<=N;n2++){
+        if(!(n2-n1>=2||B.some(b=>b.after===n1)))continue;
+        if(r.per.length&&!(r.per.includes(n1)&&r.per.includes(n2)))continue;
+        if(r.nolast&&n2===N)continue;if(dd['p'+n1]||dd['p'+n2])continue;
+        let tid='';if(ts.length){const f=ts.filter(t=>!offD(t,dk)&&capOk(t,dk,2)&&free(t,dk,L[n1-1])&&free(t,dk,L[n2-1]));if(!f.length)continue;f.sort((a,b)=>tl(a)-tl(b));tid=f[0];}
+        let sc=(n1+n2)*.3+dl*1.5+same*4-Math.min(n2-n1,4)*.4+Math.random()*2;
+        if(r.pref==='morning'&&n1>N/2)sc+=6;if(r.pref==='afternoon'&&n2<=N/2)sc+=6;
+        [d-1,d+1].forEach(x=>{if(cnt(it.c,it.a,'d'+x)>0)sc+=1.5;});
+        if(!b2||sc<b2.sc)b2={sc,dk,n1,n2,tid};}});
+    if(!b2){un.push(it);return;}pen+=b2.sc;put(it.c,b2.dk,'p'+b2.n1,{a:it.a,t:b2.tid});put(it.c,b2.dk,'p'+b2.n2,{a:it.a,t:b2.tid});return;}
+        days.forEach(d=>{const dk='d'+d,same=cnt(it.c,it.a,dk);if(same+it.z>Math.max(+r.max||2,it.z))return;const dl=Object.keys(day(it.c,dk)).length;
       for(let n=1;n<=N-(it.z-1);n++){
         if(r.per.length&&!(r.per.includes(n)&&(it.z===1||r.per.includes(n+1))))continue;
         if(r.nolast&&n+it.z-1===N)continue;if(it.z===2&&B.some(b=>b.after===n))continue;
         let ok=true;for(let z=0;z<it.z;z++)if(day(it.c,dk)['p'+(n+z)])ok=false;if(!ok)continue;
-        let tid='';if(ts.length){const f=ts.filter(t=>{for(let z=0;z<it.z;z++)if(!free(t,dk,L[n+z-1]))return false;return true;});if(!f.length)continue;f.sort((a,b)=>tl(a)-tl(b));tid=f[0];}
+        let tid='';if(ts.length){const f=ts.filter(t=>{if(offD(t,dk)||!capOk(t,dk,it.z))return false;for(let z=0;z<it.z;z++)if(!free(t,dk,L[n+z-1]))return false;return true;});if(!f.length)continue;f.sort((a,b)=>tl(a)-tl(b));tid=f[0];}
         let sc=n*.6+dl*1.5+same*4+Math.random()*2;
         if(r.pref==='morning'&&n>N/2)sc+=6;if(r.pref==='afternoon'&&n<=N/2)sc+=6;
         [d-1,d+1].forEach(x=>{if(cnt(it.c,it.a,'d'+x)>0)sc+=1.5;});
@@ -3178,20 +3200,58 @@ function ttIssues(s,p){ttNorm(p);const out=[],bad={},L=ttSlots(p).L,ext=ttExt(s,
     Object.keys(p.cells[c]||{}).forEach(dk=>{const m={};Object.keys(p.cells[c][dk]||{}).forEach(pk=>{const v=p.cells[c][dk][pk],sl=L[+pk.slice(1)-1];if(!v||!v.a)return;m[v.a]=(m[v.a]||0)+1;if(v.t&&sl){const k=v.t+'|'+dk;(mine[k]=mine[k]||[]).push({c,pk,s:sl.s,e:sl.e});}});
       Object.keys(m).forEach(a=>{const r=R(p,a);if(m[a]>Math.max(+r.max||2,r.dbl?2:1))out.push(`${ttCn(s,c)} · ${ttAn(s,a)}: ${m[a]} lessons on ${TT_D[+dk.slice(1)]} (limit ${r.max})`);});});});
   Object.keys(mine).forEach(k=>{const [tid,dk]=k.split('|');mine[k].forEach((x,i)=>{if(mine[k].some((y,j)=>j!==i&&x.s<y.e&&x.e>y.s)||ttOv(ext[tid]&&ext[tid][dk],x.s,x.e))bad[x.c+'|'+dk+'|'+x.pk]=1;});});
+  const tcf=ttData(s).tconf||{};Object.keys(mine).forEach(k=>{const [tid,dk]=k.split('|'),c=tcf[tid],d=+dk.slice(1);if(!c)return;if((c.off||[]).includes(d))out.push(`${ttTn(s,tid)} is scheduled on ${TT_D[d]} but marked unavailable that day`);if(+c.max&&mine[k].length>+c.max)out.push(`${ttTn(s,tid)}: ${mine[k].length} lessons on ${TT_D[d]} (limit ${c.max})`);});
   const nb=Object.keys(bad).length;if(nb)out.unshift(`${nb} lesson(s) where a teacher is double-booked (shaded red)`);return {list:[...new Set(out)],bad};}
 // ---- Grids ----
-function ttClassGrid(s,p,cid,bad,edit){const rows=ttRows(p),days=p.days.slice().sort();
-  return `<div class="ttw"><table class="ttg ${edit?'ed':''}"><tr><th>Time</th>${days.map(d=>`<th>${TT_D[d]}</th>`).join('')}</tr>`+rows.map(r=>r.t==='B'?`<tr><td class="tb" colspan="${days.length+1}">${escapeHtml(r.label)} · ${fm(r.s)}–${fm(r.e)}</td></tr>`:
-    `<tr><td><b>${r.n}</b><span class="ta">${fm(r.s)}–${fm(r.e)}</span></td>${days.map(d=>{const v=((p.cells[cid]||{})['d'+d]||{})['p'+r.n];return `<td class="tc ${bad&&bad[cid+'|d'+d+'|p'+r.n]?'bad':''} ${v&&v.l?'lk':''}" ${edit?`onclick="ttEdit('${p.id}','${cid}',${d},${r.n})"`:''}>${v?`<b>${escapeHtml(ttAn(s,v.a))}</b><span class="ta">${escapeHtml(ttTn(s,v.t))}${v.l?' 🔒':''}</span>`:'<span class="ta">—</span>'}</td>`;}).join('')}</tr>`).join('')+'</table></div>';}
-function ttMaster(s,p,d,bad,edit){const L=ttSlots(p).L;return `<div class="ttw"><table class="ttg ${edit?'ed':''}"><tr><th>Class</th>${L.map(l=>`<th>${l.n}<span class="ta">${fm(l.s)}</span></th>`).join('')}</tr>`+p.classIds.map(c=>`<tr><td><b>${escapeHtml(ttCn(s,c))}</b></td>${L.map(l=>{const v=((p.cells[c]||{})['d'+d]||{})['p'+l.n];return `<td class="tc ${bad&&bad[c+'|d'+d+'|p'+l.n]?'bad':''}" ${edit?`onclick="ttEdit('${p.id}','${c}',${d},${l.n})"`:''}>${v?`${escapeHtml(ttAn(s,v.a))}<span class="ta">${escapeHtml(ttTn(s,v.t))}</span>`:'<span class="ta">—</span>'}</td>`;}).join('')}</tr>`).join('')+'</table></div>';}
+const TT_DF=['','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+// Font size for printed grids: shrinks as the number of columns/rows grows so the table always fits one A4 page.
+function ttFs(cols,rows){let f=cols<=7?13:cols<=10?12:cols<=13?11:cols<=17?10:cols<=22?9:8;if(rows>10)f--;if(rows>16)f--;if(ttUI.orient==='portrait')f--;return Math.max(f,7);}
+const ttCol=a=>{let h=0;String(a).split('').forEach(ch=>{h=(h*31+ch.charCodeAt(0))%360;});return `hsl(${h},65%,91%)`;};
+const ttTd=(d,fit)=>(!fit&&d===(new Date().getDay()||7))?' today':'';
+const ttTbl=(inner,cls,fit,cols,rows)=>`<div class="ttw"><table class="ttg ${cls||''}"${fit?` style="font-size:${ttFs(cols,rows)}px"`:''}>${inner}</table></div>`;
+const ttShort=n=>{const w=String(n||'').replace(/\b(mr|mrs|ms|miss|dr|madam|sir|tr|teacher)\b\.?/ig,'').trim().split(/\s+/).filter(Boolean);return w.length>1?w[0][0].toUpperCase()+'. '+w[w.length-1]:(w[0]||'');};
+// Class timetable: DAYS down the side, LESSONS (with times) and BREAKS across the top.
+function ttClassGrid(s,p,cid,bad,edit,fit){const cols=ttRows(p),days=p.days.slice().sort((a,b)=>a-b),nd=days.length;
+  const head=`<tr><th class="dy">Day</th>${cols.map(c=>c.t==='B'?`<th class="tbh">${fm(c.s)}<span class="ta">${fm(c.e)}</span></th>`:`<th>Lesson ${c.n}<span class="ta">${fm(c.s)}–${fm(c.e)}</span></th>`).join('')}</tr>`;
+  const body=days.map((d,i)=>`<tr><th class="dy${ttTd(d,fit)}">${TT_DF[d]}</th>${cols.map(c=>{if(c.t==='B')return i===0?`<td class="tb" rowspan="${nd}"><span class="vt">${escapeHtml(c.label)}</span></td>`:'';
+    const v=((p.cells[cid]||{})['d'+d]||{})['p'+c.n],tn=v?(v.t?ttTn(s,v.t):(edit?'⚠ no teacher':'')):'';
+    return `<td class="tc ${bad&&bad[cid+'|d'+d+'|p'+c.n]?'bad':''} ${edit&&v&&v.l?'lk':''}"${v&&!(bad&&bad[cid+'|d'+d+'|p'+c.n])?` style="background:${ttCol(v.a)}"`:''} ${edit?`onclick="ttEdit('${p.id}','${cid}',${d},${c.n})"`:''}>${v?`<b>${escapeHtml(ttAn(s,v.a))}</b><span class="ta">${escapeHtml(tn)}${edit&&v.l?' 🔒':''}</span>`:'<span class="ta">—</span>'}</td>`;}).join('')}</tr>`).join('');
+  return ttTbl(head+body,edit?'ed':'',fit,cols.length+1,nd+1);}
+// Master timetable for ONE day: classes down the side, lessons across.
+function ttMaster(s,p,d,bad,edit,fit){const cols=ttRows(p),n=p.classIds.length;
+  const head=`<tr><th class="dy">Class</th>${cols.map(c=>c.t==='B'?`<th class="tbh">${fm(c.s)}<span class="ta">${fm(c.e)}</span></th>`:`<th>${c.n}<span class="ta">${fm(c.s)}–${fm(c.e)}</span></th>`).join('')}</tr>`;
+  const body=p.classIds.map((cid,i)=>`<tr><th class="dy">${escapeHtml(ttCn(s,cid))}</th>${cols.map(c=>{if(c.t==='B')return i===0?`<td class="tb" rowspan="${n}"><span class="vt">${escapeHtml(c.label)}</span></td>`:'';
+    const v=((p.cells[cid]||{})['d'+d]||{})['p'+c.n],tn=v&&v.t?(fit?ttShort(ttTn(s,v.t)):ttTn(s,v.t)):(v&&edit?'⚠ no teacher':'');
+    return `<td class="tc ${bad&&bad[cid+'|d'+d+'|p'+c.n]?'bad':''}"${v&&!(bad&&bad[cid+'|d'+d+'|p'+c.n])?` style="background:${ttCol(v.a)}"`:''} ${edit?`onclick="ttEdit('${p.id}','${cid}',${d},${c.n})"`:''}>${v?`<b>${escapeHtml(ttAn(s,v.a))}</b><span class="ta">${escapeHtml(tn)}</span>`:'<span class="ta">—</span>'}</td>`;}).join('')}</tr>`).join('');
+  return ttTbl(head+body,edit?'ed':'',fit,cols.length+1,n+1);}
 function ttItems(s,tid,plans){const it=[];plans.forEach(p=>{ttNorm(p);const L=ttSlots(p).L;Object.keys(p.cells).forEach(c=>Object.keys(p.cells[c]||{}).forEach(dk=>Object.keys(p.cells[c][dk]||{}).forEach(pk=>{const v=p.cells[c][dk][pk],sl=L[+pk.slice(1)-1];if(v&&v.t===tid&&sl)it.push({d:+dk.slice(1),s:sl.s,e:sl.e,c,a:v.a});})));});return it;}
-function ttTeacherGrid(s,tid,plans){const it=ttItems(s,tid,plans);if(!it.length)return '<p class="small">No lessons scheduled.</p>';
-  const days=[...new Set([1,2,3,4,5].concat(it.map(i=>i.d)))].sort(),iv=[...new Set(it.map(i=>i.s+'-'+i.e))].sort((a,b)=>parseInt(a)-parseInt(b));
-  return `<div class="ttw"><table class="ttg"><tr><th>Time</th>${days.map(d=>`<th>${TT_D[d]}</th>`).join('')}</tr>`+iv.map(k=>{const [a,b]=k.split('-').map(Number);return `<tr><td>${fm(a)}–${fm(b)}</td>${days.map(d=>{const x=it.filter(i=>i.d===d&&i.s===a&&i.e===b);return `<td class="tc">${x.map(i=>`<b>${escapeHtml(ttCn(s,i.c))}</b><span class="ta">${escapeHtml(ttAn(s,i.a))}</span>`).join('')||'<span class="ta">—</span>'}</td>`;}).join('')}</tr>`;}).join('')+'</table></div>';}
-function ttPrintHTML(html){let a=qs('#ttPrintArea');if(!a){a=document.createElement('div');a.id='ttPrintArea';document.body.appendChild(a);}a.innerHTML=html;
-  const pg=document.createElement('style');pg.id='ttPg';pg.textContent='@page{size:A4 landscape;margin:10mm}';document.head.appendChild(pg);document.body.classList.add('ttprinting');
+// Teacher timetable: DAYS down the side, lesson TIMES across, with a daily total.
+function ttTeacherGrid(s,tid,plans,fit){const it=ttItems(s,tid,plans);if(!it.length)return '<p class="small">No lessons scheduled.</p>';
+  const days=[...new Set([1,2,3,4,5].concat(it.map(i=>i.d)))].sort((a,b)=>a-b),iv=[...new Set(it.map(i=>i.s+'-'+i.e))].sort((a,b)=>parseInt(a)-parseInt(b));
+  const nw={d:new Date().getDay()||7,m:new Date().getHours()*60+new Date().getMinutes()};
+  const head=`<tr><th class="dy">Day</th>${iv.map(k=>{const [a,b]=k.split('-').map(Number);return `<th>${fm(a)}<span class="ta">${fm(b)}</span></th>`;}).join('')}<th class="tth">Lessons</th></tr>`;
+  const body=days.map(d=>`<tr><th class="dy${ttTd(d,fit)}">${TT_DF[d]}</th>${iv.map(k=>{const [a,b]=k.split('-').map(Number),x=it.filter(i=>i.d===d&&i.s===a&&i.e===b);
+    return `<td class="tc${!fit&&d===nw.d&&nw.m>=a&&nw.m<b?' nw':''}"${x.length?` style="background:${ttCol(x[0].a)}"`:''}>${x.map(i=>`<b>${escapeHtml(ttCn(s,i.c))}</b><span class="ta">${escapeHtml(ttAn(s,i.a))}</span>`).join('')||'<span class="ta">—</span>'}</td>`;}).join('')}<td class="tt">${it.filter(i=>i.d===d).length}</td></tr>`).join('');
+  return ttTbl(head+body,'',fit,iv.length+2,days.length+1);}
+// ---- Printing: every page is one A4 sheet (landscape by default) that the table stretches to fill ----
+function ttPrintHTML(html){let a=qs('#ttPrintArea');if(!a){a=document.createElement('div');a.id='ttPrintArea';document.body.appendChild(a);}
+  const pt=ttUI.orient==='portrait';a.style.setProperty('--ttw',pt?'190mm':'277mm');a.style.setProperty('--tth',pt?'273mm':'187mm');a.classList.toggle('bw',ttInk()==='bw');a.innerHTML=html;
+  const old=document.getElementById('ttPg');if(old)old.remove();const pg=document.createElement('style');pg.id='ttPg';pg.textContent=`@page{size:A4 ${pt?'portrait':'landscape'};margin:10mm}`;document.head.appendChild(pg);document.body.classList.add('ttprinting');
   window.addEventListener('afterprint',()=>{document.body.classList.remove('ttprinting');pg.remove();a.innerHTML='';},{once:true});window.print();}
-const ttHd=(s,t,sub)=>`<div class="print-only-block"><h2 style="margin:0">${escapeHtml(s.name)}</h2><div style="margin-bottom:8px"><b>${t}</b>${sub?' — '+sub:''}</div>`;
+const ttSub=p=>[p.name,p.label,p.from?'From '+p.from+(p.to?' to '+p.to:''):''].filter(Boolean).map(escapeHtml).join(' · ');
+function ttPage(s,title,sub,body,foot){const d=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  return `<div class="ttpage"><div class="tthd">${s.logo?`<img class="ttlogo" src="${s.logo}" alt="">`:''}<div class="tthn"><div class="tts">${escapeHtml(s.name)}</div>${s.motto?`<div class="ttm"><i>${escapeHtml(s.motto)}</i></div>`:''}<div class="ttm">${[s.address,s.phone,s.email].filter(Boolean).map(escapeHtml).join(' · ')}</div></div><div class="tttt"><div class="ttt">${title}</div><div class="ttm">${sub||''}</div></div></div>
+  <div class="ttbd">${body}${foot?`<div class="ttkey">${foot}</div>`:''}</div>
+  <div class="ttft"><span>Printed: ${d}</span><span>Prepared by (DOS/HOI): ______________________</span><span>${escapeHtml(s.hoiName||'Head of Institution')}${s.hoiSignature?` <img src="${s.hoiSignature}" style="height:20px;vertical-align:middle">`:' Sign: ______________'}</span></div></div>`;}
+function ttKey(s,p,c){const m={};Object.keys(p.cells[c]||{}).forEach(dk=>Object.values(p.cells[c][dk]||{}).forEach(v=>{if(!v||!v.a)return;const k=v.a+'|'+(v.t||'');m[k]=(m[k]||0)+1;}));
+  const it=Object.keys(m).map(k=>{const [a,t]=k.split('|');return {a,t,n:m[k]};}).sort((x,y)=>ttAn(s,x.a).localeCompare(ttAn(s,y.a)));
+  return it.length?'<b>Key:</b> '+it.map(x=>`${escapeHtml(ttAn(s,x.a))} — ${x.t?escapeHtml(ttTn(s,x.t)):'—'} (${x.n}/wk)`).join(' &nbsp;•&nbsp; '):'';}
+function ttPgClass(s,p,c){const ct=(s.classTeachers||{})[c],n=s.students.filter(x=>x.classId===c).length;
+  return ttPage(s,'Class Timetable: '+escapeHtml(ttCn(s,c)),ttSub(p)+(ct?' · Class teacher: '+escapeHtml(ct):'')+(n?' · Learners: '+n:''),ttClassGrid(s,p,c,null,false,true),ttKey(s,p,c));}
+function ttPgMasterDay(s,p,d){return ttPage(s,'Master Timetable — '+TT_DF[d],ttSub(p)+' · '+p.classIds.length+' classes',ttMaster(s,p,d,null,false,true),'');}
+function ttPgMaster(s,p){return p.days.slice().sort((a,b)=>a-b).map(d=>ttPgMasterDay(s,p,d)).join('');}
+function ttPgTeacher(s,t,plans,sub){const it=ttItems(s,t.id,plans),cl=[...new Set(it.map(i=>ttCn(s,i.c)))];
+  return ttPage(s,'Teacher Timetable: '+escapeHtml(t.name),sub,ttTeacherGrid(s,t.id,plans,true),`<b>Lessons per week:</b> ${it.length}${cl.length?' &nbsp;•&nbsp; <b>Classes:</b> '+cl.map(escapeHtml).join(', '):''}`);}
 // ---- Setters ----
 function ttSet(id,k,v){const p=ttFind(id);if(!p)return;p[k]=v;ttSave();ttRedraw();}
 function ttDay(id,d,on){const p=ttFind(id);p.days=on?[...new Set(p.days.concat(d))].sort():p.days.filter(x=>x!==d);ttSave();ttRedraw();}
@@ -3248,7 +3308,12 @@ function ttTabClasses(s,p){const t=ttData(s),bases=[...new Set(p.classIds.map(c=
 function ttTabRemClasses(s,p){return `<div class="row"><div><label>Programme name</label><input value="${escapeHtml(p.name)}" onchange="ttSet('${p.id}','name',this.value)"></div><div><label>From (optional)</label><input type="date" value="${p.from||''}" onchange="ttSet('${p.id}','from',this.value)"></div><div><label>To (optional)</label><input type="date" value="${p.to||''}" onchange="ttSet('${p.id}','to',this.value)"></div></div>
   <label>Classes attending</label><div>${s.classes.map(c=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${p.classIds.includes(c.id)?'checked':''} onchange="ttRemCls('${p.id}','${c.id}',this.checked)">${escapeHtml(c.name)}</label>`).join(' ')||'<span class="small">Add grades first.</span>'}</div>
   <label class="chip" style="cursor:pointer;margin-top:8px"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${p.avoid?'checked':''} onchange="ttSet('${p.id}','avoid',this.checked)">Avoid clashes with the normal timetable (for remedial held during term)</label>`;}
-function ttTabBell(s,p){const {L}=ttSlots(p);return `<div class="row"><div><label>First lesson starts</label><input type="time" value="${p.start}" onchange="ttSet('${p.id}','start',this.value)"></div><div><label>Lesson length (min)</label><input type="number" min="15" max="120" value="${p.mins}" onchange="ttSet('${p.id}','mins',+this.value)"></div><div><label>Lessons per day</label><input type="number" min="1" max="14" value="${p.lessons}" onchange="ttSet('${p.id}','lessons',+this.value)"></div></div>
+function ttPreset(id,k){const p=ttFind(id),P={before:{days:[1,2,3,4,5],start:'06:00',mins:30,lessons:2,breaks:[]},after:{days:[1,2,3,4,5],start:'16:00',mins:40,lessons:2,breaks:[]},wkend:{days:[6],start:'09:00',mins:40,lessons:4,breaks:[{after:2,mins:15,label:'Break'}]},hol:{days:[1,2,3,4,5],start:'08:00',mins:40,lessons:5,breaks:[{after:2,mins:20,label:'Tea Break'}]}}[k];
+  Object.assign(p,JSON.parse(JSON.stringify(P)));ttSave();ttRedraw();toast('Days & times set — press Generate on the Timetable tab to rebuild');}
+function ttEnd(id,v){const p=ttFind(id),e=hm(v),old=p.lessons;if(e<=hm(p.start)){toast('End time must be after the start time','err');return;}
+  let n=0;for(let i=1;i<=14;i++){p.lessons=i;const L=ttSlots(p).L;if(L[L.length-1].e<=e)n=i;else break;}
+  if(!n){p.lessons=old;toast('Not enough time for one '+p.mins+'-minute lesson','err');return;}p.lessons=n;ttSave();ttRedraw();toast(n+' lesson(s) fit between '+p.start+' and '+v);}
+function ttTabBell(s,p){const {L}=ttSlots(p);return `${p.kind==='rem'?`<div class="small">Quick set — any time of day, weekdays or weekends:</div><div class="flexbtns" style="margin-bottom:8px"><button class="ghost" onclick="ttPreset('${p.id}','before')">🌅 Before school · Mon–Fri 6:00–7:00</button><button class="ghost" onclick="ttPreset('${p.id}','after')">🌆 After school · Mon–Fri 16:00–17:20</button><button class="ghost" onclick="ttPreset('${p.id}','wkend')">📅 Saturday morning</button><button class="ghost" onclick="ttPreset('${p.id}','hol')">🏖 Holiday · Mon–Fri</button></div>`:''}<div class="row"><div><label>Label on printouts</label><input value="${escapeHtml(p.label||'')}" placeholder="e.g. Term 3, 2026" onchange="ttSet('${p.id}','label',this.value)"></div><div><label>First lesson starts</label><input type="time" value="${p.start}" onchange="ttSet('${p.id}','start',this.value)"></div><div><label>Lesson length (min)</label><input type="number" min="10" max="120" value="${p.mins}" onchange="ttSet('${p.id}','mins',+this.value)"></div><div><label>Lessons per day</label><input type="number" min="1" max="14" value="${p.lessons}" onchange="ttSet('${p.id}','lessons',+this.value)"></div>${p.kind==='rem'?`<div><label>Session ends (auto-fits lessons)</label><input type="time" value="${fm(L.length?L[L.length-1].e:hm(p.start))}" onchange="ttEnd('${p.id}',this.value)"></div>`:''}</div>
   <label>Days</label><div>${[1,2,3,4,5,6,7].map(d=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${p.days.includes(d)?'checked':''} onchange="ttDay('${p.id}',${d},this.checked)">${TT_D[d]}</label>`).join(' ')}</div>
   <label style="margin-top:8px">Breaks</label><table><tr><th>After lesson</th><th>Minutes</th><th>Name</th><th></th></tr>${p.breaks.map((b,i)=>`<tr><td><input type="number" min="1" value="${b.after}" onchange="ttBrk('${p.id}',${i},'after',+this.value)"></td><td><input type="number" min="5" value="${b.mins}" onchange="ttBrk('${p.id}',${i},'mins',+this.value)"></td><td><input value="${escapeHtml(b.label||'')}" onchange="ttBrk('${p.id}',${i},'label',this.value)"></td><td><button class="danger" onclick="ttBrkDel('${p.id}',${i})">✕</button></td></tr>`).join('')}</table>
   <button class="ghost" onclick="ttBrkAdd('${p.id}')">+ Add break</button><p class="small">Day runs ${L.length?fm(L[0].s)+' – '+fm(L[L.length-1].e):'—'}.</p>`;}
@@ -3257,8 +3322,8 @@ function ttTabLoad(s,p){const areas=ttAreas(s,p),cap=p.days.length*p.lessons;
   <div class="ttw"><table><tr><th>Learning area</th>${p.classIds.map(c=>`<th>${escapeHtml(ttCn(s,c))}</th>`).join('')}</tr>${areas.map(a=>`<tr><td>${escapeHtml(a.name)}</td>${p.classIds.map(c=>areasForClass(s,c).some(x=>x.id===a.id)?`<td><input type="number" min="0" max="20" style="width:64px" value="${(p.load[c]||{})[a.id]??''}" onchange="ttLoad('${p.id}','${c}','${a.id}',this.value)"></td>`:'<td>—</td>').join('')}</tr>`).join('')}
   <tr><th>Total / ${cap}</th>${p.classIds.map(c=>{const sum=Object.values(p.load[c]||{}).reduce((x,y)=>x+(+y||0),0);return `<th style="${sum>cap?'background:#d1473f':''}">${sum}</th>`;}).join('')}</tr></table></div>${p.classIds.length?'':'<p class="small">Add classes first.</p>'}`;}
 function ttTabRules(s,p){const chip='class="chip" style="cursor:pointer"',cb='style="width:auto;display:inline-block;margin-right:4px"';
-  return `<p class="small">Conditions per learning area. <b>Max per day</b> caps how often it appears in one day; <b>periods allowed</b> = lesson numbers it may use (none ticked = any).</p>`+ttAreas(s,p).map(a=>{const r=R(p,a.id);return `<details class="card" style="margin:6px 0;padding:8px 12px"><summary><b>${escapeHtml(a.name)}</b> <span class="small">· max ${r.max}/day${r.dbl?` · ${r.dbl} double(s)`:''}${r.per.length?' · periods '+r.per.join(','):''}${r.pref?' · '+r.pref:''}${r.nolast?' · not last':''}</span></summary>
-  <div class="row"><div><label>Max lessons per day</label><input type="number" min="1" max="6" value="${r.max}" onchange="ttRule('${p.id}','${a.id}','max',+this.value)"></div><div><label>Double lessons / week</label><input type="number" min="0" max="5" value="${r.dbl}" onchange="ttRule('${p.id}','${a.id}','dbl',+this.value)"></div><div><label>Best time of day</label><select onchange="ttRule('${p.id}','${a.id}','pref',this.value)"><option value="" ${!r.pref?'selected':''}>Any</option><option value="morning" ${r.pref==='morning'?'selected':''}>Morning (first half)</option><option value="afternoon" ${r.pref==='afternoon'?'selected':''}>Afternoon (second half)</option></select></div></div>
+  return `<p class="small">Conditions per learning area. <b>Max per day</b> caps how often it appears in one day; <b>periods allowed</b> = lesson numbers it may use (none ticked = any).</p>`+ttAreas(s,p).map(a=>{const r=R(p,a.id);return `<details class="card" style="margin:6px 0;padding:8px 12px"><summary><b>${escapeHtml(a.name)}</b> <span class="small">· max ${r.max}/day${r.dbl?` · ${r.dbl} double(s)${r.dmode==='split'?' (separate)':''}`:''}${r.per.length?' · periods '+r.per.join(','):''}${r.pref?' · '+r.pref:''}${r.nolast?' · not last':''}</span></summary>
+  <div class="row"><div><label>Max lessons per day</label><input type="number" min="1" max="6" value="${r.max}" onchange="ttRule('${p.id}','${a.id}','max',+this.value)"></div><div><label>Double lessons / week</label><input type="number" min="0" max="5" value="${r.dbl}" onchange="ttRule('${p.id}','${a.id}','dbl',+this.value)"></div><div><label>Doubles are</label><select onchange="ttRule('${p.id}','${a.id}','dmode',this.value)"><option value="block" ${r.dmode!=='split'?'selected':''}>Back-to-back (one block)</option><option value="split" ${r.dmode==='split'?'selected':''}>Same day, separate (not back-to-back)</option></select></div><div><label>Best time of day</label><select onchange="ttRule('${p.id}','${a.id}','pref',this.value)"><option value="" ${!r.pref?'selected':''}>Any</option><option value="morning" ${r.pref==='morning'?'selected':''}>Morning (first half)</option><option value="afternoon" ${r.pref==='afternoon'?'selected':''}>Afternoon (second half)</option></select></div></div>
   <label>Periods allowed</label><div>${Array.from({length:p.lessons},(_,i)=>i+1).map(n=>`<label ${chip}><input type="checkbox" ${cb} ${r.per.includes(n)?'checked':''} onchange="ttRulePer('${p.id}','${a.id}',${n},this.checked)">${n}</label>`).join(' ')}</div>
   <label ${chip}><input type="checkbox" ${cb} ${r.nolast?'checked':''} onchange="ttRule('${p.id}','${a.id}','nolast',this.checked)">Never the last lesson of the day</label></details>`;}).join('')||'<p class="small">Add classes first.</p>';}
 function ttViewer(s,p){const cid=p.classIds.includes(ttUI.cls)?ttUI.cls:p.classIds[0];ttUI.cls=cid;const ds=p.days.slice().sort();if(!ds.includes(ttUI.day))ttUI.day=ds[0];
@@ -3270,38 +3335,434 @@ function ttViewer(s,p){const cid=p.classIds.includes(ttUI.cls)?ttUI.cls:p.classI
   ${has?`<details class="card no-print" style="margin:8px 0;padding:8px 12px" ${iss.list.length?'open':''}><summary><b>${iss.list.length?'⚠️ '+iss.list.length+' thing(s) to check':'✅ No problems found'}</b></summary><ul class="small">${iss.list.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></details>`:'<p class="small no-print">Press Generate to build the timetable, then tap any lesson to change, lock or swap it.</p>'}
   <div class="row no-print"><div><label>View</label>${sel(ttUI.view,[['class','One class'],['master','All classes (one day)'],['teacher','One teacher']],"ttUI.view=this.value;renderDOS()")}</div>
   ${ttUI.view==='class'?`<div><label>Class</label>${sel(cid,p.classIds.map(c=>[c,ttCn(s,c)]),"ttUI.cls=this.value;renderDOS()")}</div>`:ttUI.view==='master'?`<div><label>Day</label>${sel(ttUI.day,ds.map(d=>[d,TT_D[d]]),"ttUI.day=+this.value;renderDOS()")}</div>`:`<div><label>Teacher</label>${sel(ttUI.tch,s.teachers.map(t=>[t.id,t.name]),"ttUI.tch=this.value;renderDOS()")}</div>`}</div>
-  <div class="flexbtns no-print"><button class="gold" onclick="ttPrint('${p.id}','one')">🖨 Print this view</button><button class="ghost" onclick="ttPrint('${p.id}','classes')">🖨 All classes</button><button class="ghost" onclick="ttPrint('${p.id}','teachers')">🖨 All teachers</button></div>
+  <div class="flexbtns no-print" style="align-items:flex-end">${ttPaper()}<button class="gold" onclick="ttPrint('${p.id}','one')">🖨 Print this view</button><button class="ghost" onclick="ttPrint('${p.id}','master')">🖨 Master (all classes)</button>${p.kind==='rem'?'':`<button class="ghost" onclick="ttPrint('${p.id}','school')">🖨 Whole-school master</button>`}<button class="ghost" onclick="ttPrint('${p.id}','classes')">🖨 Each class</button><button class="ghost" onclick="ttPrint('${p.id}','teachers')">🖨 Each teacher</button></div>
   <div style="margin-top:8px">${ttView(s,p,iss.bad,true)}</div>`;}
 function ttView(s,p,bad,edit){if(ttUI.view==='master')return `<h3 style="margin:6px 0">${TT_D[ttUI.day]} — all classes</h3>`+ttMaster(s,p,ttUI.day,bad,edit);
   if(ttUI.view==='teacher')return `<h3 style="margin:6px 0">${escapeHtml(ttTn(s,ttUI.tch))}</h3>`+ttTeacherGrid(s,ttUI.tch,[p]);return `<h3 style="margin:6px 0">${escapeHtml(ttCn(s,ttUI.cls))}</h3>`+ttClassGrid(s,p,ttUI.cls,bad,edit);}
-function ttPrint(id,mode){const s=currentSchool(),p=ttFind(id),sub=escapeHtml(p.name)+(p.from?` (${p.from}${p.to?' to '+p.to:''})`:'');let h='';
-  if(mode==='classes')h=p.classIds.map(c=>ttHd(s,'Class timetable: '+escapeHtml(ttCn(s,c)),sub)+ttClassGrid(s,p,c,null,false)+'</div>').join('');
-  else if(mode==='teachers')h=s.teachers.filter(t=>ttItems(s,t.id,[p]).length).map(t=>ttHd(s,'Teacher timetable: '+escapeHtml(t.name),sub)+ttTeacherGrid(s,t.id,[p])+'</div>').join('');
-  else h=ttHd(s,'Timetable',sub)+ttView(s,p,null,false)+'</div>';if(!h){toast('Nothing to print yet','err');return;}ttPrintHTML(h);}
-function ttPlanTab(s,p,tab){return tab==='classes'?(p.kind==='rem'?ttTabRemClasses(s,p):ttTabClasses(s,p)):tab==='bell'?ttTabBell(s,p):tab==='load'?ttTabLoad(s,p):tab==='rules'?ttTabRules(s,p):ttViewer(s,p);}
+function ttPrint(id,mode){const s=currentSchool(),p=ttFind(id);let h='';
+  if(!Object.keys(p.cells).length){toast('Nothing to print yet — generate the timetable first','err');return;}
+  if(mode==='classes')h=p.classIds.map(c=>ttPgClass(s,p,c)).join('');
+  else if(mode==='teachers')h=s.teachers.filter(t=>ttItems(s,t.id,[p]).length).map(t=>ttPgTeacher(s,t,[p],ttSub(p))).join('');
+  else if(mode==='master')h=ttPgMaster(s,p);
+  else if(mode==='school')h=ttData(s).sections.map(q=>{ttNorm(q);return Object.keys(q.cells).length?ttPgMaster(s,q):'';}).join('');
+  else if(ttUI.view==='master')h=ttPgMasterDay(s,p,ttUI.day);
+  else if(ttUI.view==='teacher'){const t=s.teachers.find(x=>x.id===ttUI.tch);h=t?ttPgTeacher(s,t,[p],ttSub(p)):'';}
+  else h=ttPgClass(s,p,ttUI.cls);
+  if(!h){toast('Nothing to print yet','err');return;}ttPrintHTML(h);}
+function ttPlanTab(s,p,tab){return tab==='classes'?(p.kind==='rem'?ttTabRemClasses(s,p):ttTabClasses(s,p)):tab==='bell'?ttTabBell(s,p):tab==='load'?ttTabLoad(s,p):tab==='rules'?ttTabRules(s,p):tab==='tch'?ttTabTeachers(s,p):ttViewer(s,p);}
 function tplTtSetup(s){const t=ttSync(s),p=t.sections.find(x=>x.id===ttUI.sec);if(ttUI.tab==='view')ttUI.tab='classes';
   return `<div class="card"><h2>⚙️ Timetable Setup</h2><p class="small">Each section (Upper Primary, Junior, Senior…) has its own bell times, lessons per week and subject rules, and is saved and generated separately — so generating Senior School never disturbs Junior. Sections are detected from the grades you've added.</p>
   <div class="row"><div><label>Section</label><select onchange="ttUI.sec=this.value;ttUI.tab='classes';renderDOS()">${t.sections.map(x=>`<option value="${x.id}" ${x.id===ttUI.sec?'selected':''}>${escapeHtml(x.name)} (${x.classIds.length})</option>`).join('')}</select></div><div><label>New custom section</label><input id="ttNewSec" placeholder="e.g. Boarding Seniors"></div><div style="align-self:flex-end"><button class="ghost" onclick="ttAddSec()">+ Add section</button></div></div>
-  ${p?`<div class="row"><div><label>Section name</label><input value="${escapeHtml(p.name)}" onchange="ttSet('${p.id}','name',this.value)"></div>${p.lv==='user'?`<div style="align-self:flex-end"><button class="danger" onclick="ttDelSec('${p.id}')">Delete section</button></div>`:''}</div>`+ttTabs(ttUI.tab,[['classes','🏷 Classes'],['bell','⏰ Bell times'],['load','🔢 Lessons/week'],['rules','📏 Subject rules']],'ttTabSet')+ttPlanTab(s,p,ttUI.tab):'<p class="small">No grades yet — add them under Grades, or create a custom section above.</p>'}</div>`;}
+  ${p?`<div class="row"><div><label>Section name</label><input value="${escapeHtml(p.name)}" onchange="ttSet('${p.id}','name',this.value)"></div>${p.lv==='user'?`<div style="align-self:flex-end"><button class="danger" onclick="ttDelSec('${p.id}')">Delete section</button></div>`:''}</div>`+ttTabs(ttUI.tab,[['classes','🏷 Classes'],['bell','⏰ Bell times'],['load','🔢 Lessons/week'],['rules','📏 Subject rules'],['tch','👩‍🏫 Teacher limits']],'ttTabSet')+ttPlanTab(s,p,ttUI.tab):'<p class="small">No grades yet — add them under Grades, or create a custom section above.</p>'}</div>`;}
 function tplTt(s){const t=ttSync(s),p=t.sections.find(x=>x.id===ttUI.sec);
   return `<div class="card"><h2 class="no-print">🗓 Timetables</h2><div class="row no-print"><div><label>Section</label><select onchange="ttUI.sec=this.value;renderDOS()">${t.sections.map(x=>`<option value="${x.id}" ${x.id===ttUI.sec?'selected':''}>${escapeHtml(x.name)}</option>`).join('')}</select></div></div>
   ${p?ttViewer(s,p):'<p class="small">Add grades first, then set up your section under Timetable Setup.</p>'}<p class="small no-print">Set bell times, lessons per week and subject rules under <b>Timetable Setup</b>.</p></div>`;}
 function tplTtRem(s){const t=ttData(s);t.remedials.forEach(ttNorm);const p=t.remedials.find(x=>x.id===ttUI.rem)||t.remedials[0];if(p)ttUI.rem=p.id;
   return `<div class="card"><h2>🔁 Remedial Timetables</h2><p class="small">Independent of the normal weekly timetable: choose any days (including Saturday and Sunday), any classes and its own times. Saved separately, never changes the main timetable.</p>
   <div class="row"><div><label>Programme</label><select onchange="ttUI.rem=this.value;renderDOS()">${t.remedials.map(x=>`<option value="${x.id}" ${x.id===ttUI.rem?'selected':''}>${escapeHtml(x.name)}</option>`).join('')||'<option>— none yet —</option>'}</select></div><div><label>New programme</label><input id="ttNewRem" placeholder="e.g. April Holiday Remedial"></div><div style="align-self:flex-end"><button onclick="ttAddRem()">+ Create</button></div></div>
-  ${p?`<div class="flexbtns" style="margin-top:6px"><button class="danger" onclick="ttDelRem('${p.id}')">Delete this programme</button></div>`+ttTabs(ttUI.rtab,[['classes','🏷 Classes'],['bell','⏰ Days & times'],['load','🔢 Sessions/week'],['rules','📏 Rules'],['view','🗓 Timetable']],'ttRTabSet')+ttPlanTab(s,p,ttUI.rtab):''}</div>`;}
+  ${p?`<div class="flexbtns" style="margin-top:6px"><button class="danger" onclick="ttDelRem('${p.id}')">Delete this programme</button></div>`+ttTabs(ttUI.rtab,[['classes','🏷 Classes'],['bell','⏰ Days & times'],['load','🔢 Sessions/week'],['rules','📏 Rules'],['tch','👩‍🏫 Teacher limits'],['view','🗓 Timetable']],'ttRTabSet')+ttPlanTab(s,p,ttUI.rtab):''}</div>`;}
 // ---- Teacher portal ----
 function ttTeacherPlans(s,rem){const t=ttData(s);return (rem?t.remedials:t.sections).filter(p=>p.published);}
-function ttTodayCard(s,t){const d=new Date().getDay()||7,it=ttItems(s,t.id,ttTeacherPlans(s,false)).filter(i=>i.d===d).sort((a,b)=>a.s-b.s);if(!it.length)return '';
-  return `<div class="card no-print"><b>🗓 Today (${TT_D[d]})</b><table style="margin-top:6px">${it.map(i=>`<tr><td>${fm(i.s)}–${fm(i.e)}</td><td>${escapeHtml(ttCn(s,i.c))}</td><td>${escapeHtml(ttAn(s,i.a))}</td></tr>`).join('')}</table></div>`;}
+function ttTodayCard(s,t){const nm=new Date().getHours()*60+new Date().getMinutes();const d=new Date().getDay()||7,iso=new Date().toLocaleDateString('en-CA'),
+  rem=ttTeacherPlans(s,true).filter(p=>(!p.from||iso>=p.from)&&(!p.to||iso<=p.to));
+  const it=ttItems(s,t.id,ttTeacherPlans(s,false)).map(i=>Object.assign(i,{r:0})).concat(ttItems(s,t.id,rem).map(i=>Object.assign(i,{r:1}))).filter(i=>i.d===d).sort((a,b)=>a.s-b.s);if(!it.length)return '';
+  return `<div class="card no-print"><b>🗓 Today (${TT_DF[d]})</b><table style="margin-top:6px">${it.map(i=>`<tr style="${i.s<=nm&&nm<i.e?'background:#fff4d6;font-weight:700':''}"><td>${i.s<=nm&&nm<i.e?'▶ ':''}${fm(i.s)}–${fm(i.e)}</td><td>${escapeHtml(ttCn(s,i.c))}</td><td>${escapeHtml(ttAn(s,i.a))}${i.r?' <span class="chip">🔁 Remedial</span>':''}</td></tr>`).join('')}</table></div>`;}
 function tplTeacherTt(s,t){const main=ttTeacherPlans(s,false),rem=ttTeacherPlans(s,true),cls=teacherClassIds(s,t);
-  return `<div class="card"><h2 class="no-print">🗓 My Timetable</h2>${main.length?`<div class="flexbtns no-print"><button class="gold" onclick="ttTeacherPrint()">🖨 Print my timetable</button></div><h3 style="margin:8px 0 4px">${escapeHtml(t.name)} — weekly timetable</h3>${ttTeacherGrid(s,t.id,main)}`:'<p class="small">Your timetable has not been published yet. Your DOS/HOI will make it available here.</p>'}
+  return `<div class="card"><h2 class="no-print">🗓 My Timetable</h2>${main.length?`<div class="flexbtns no-print" style="align-items:flex-end">${ttPaper()}<button class="gold" onclick="ttTeacherPrint()">🖨 Print my timetable (A4)</button><button class="ghost" onclick="ttTeacherShare()">📤 Share (WhatsApp)</button></div><h3 style="margin:8px 0 4px">${escapeHtml(t.name)} — weekly timetable</h3>${ttTeacherGrid(s,t.id,main)}`:'<p class="small">Your timetable has not been published yet. Your DOS/HOI will make it available here.</p>'}
   ${rem.map(p=>`<h3 style="margin:14px 0 4px">🔁 ${escapeHtml(p.name)}${p.from?` <span class="small">(${p.from}${p.to?' to '+p.to:''})</span>`:''}</h3>${ttTeacherGrid(s,t.id,[p])}`).join('')}
   ${main.length&&cls.length?`<div class="no-print" style="margin-top:14px"><label>View a class timetable</label><select onchange="ttTeacherClass(this.value)"><option value="">— choose class —</option>${cls.map(c=>`<option value="${c}">${escapeHtml(ttCn(s,c))}</option>`).join('')}</select><div id="ttTCls"></div></div>`:''}</div>`;}
 function ttTeacherClass(cid){const s=currentSchool(),p=ttTeacherPlans(s,false).find(x=>x.classIds.includes(cid)),a=qs('#ttTCls');if(!a)return;a.innerHTML=p&&cid?ttClassGrid(s,p,cid,null,false):'';}
-function ttTeacherPrint(){const s=currentSchool(),t=currentTeacher();let h=ttHd(s,'Teacher timetable: '+escapeHtml(t.name),'')+ttTeacherGrid(s,t.id,ttTeacherPlans(s,false))+'</div>';
-  ttTeacherPlans(s,true).forEach(p=>{h+=ttHd(s,'Remedial: '+escapeHtml(p.name),p.from?p.from+(p.to?' to '+p.to:''):'')+ttTeacherGrid(s,t.id,[p])+'</div>';});ttPrintHTML(h);}
+function ttInk(){if(!ttUI.ink)ttUI.ink=(typeof storageGet==='function'&&storageGet('cbc_tt_ink'))||'color';return ttUI.ink;}
+function ttSetInk(v){ttUI.ink=v;if(typeof storageSet==='function')storageSet('cbc_tt_ink',v);}
+const ttPaper=()=>`<div style="min-width:170px"><label>Paper</label><select onchange="ttUI.orient=this.value"><option value="landscape" ${ttUI.orient!=='portrait'?'selected':''}>A4 Landscape (default)</option><option value="portrait" ${ttUI.orient==='portrait'?'selected':''}>A4 Portrait</option></select></div><div style="min-width:190px"><label>Print style</label><select onchange="ttSetInk(this.value)"><option value="color" ${ttInk()!=='bw'?'selected':''}>Colour (with graphics)</option><option value="bw" ${ttInk()==='bw'?'selected':''}>Black &amp; white (clean, no graphics)</option></select></div>`;
+function ttTeacherPrint(){const s=currentSchool(),t=currentTeacher(),main=ttTeacherPlans(s,false);let h='';
+  if(main.length&&ttItems(s,t.id,main).length)h+=ttPgTeacher(s,t,main,'Weekly timetable'+[...new Set(main.map(p=>p.label).filter(Boolean))].map(x=>' · '+escapeHtml(x)).join(''));
+  ttTeacherPlans(s,true).forEach(p=>{if(ttItems(s,t.id,[p]).length)h+=ttPgTeacher(s,t,[p],'Remedial: '+ttSub(p));});
+  if(!h){toast('Nothing to print yet','err');return;}ttPrintHTML(h);}
 
+// ---- Teacher limits (unavailable days, max lessons per day) ----
+function ttTabTeachers(s,p){const t=ttData(s),ds=[1,2,3,4,5,6,7].filter(d=>p.days.includes(d)),ids=new Set(p.classIds),ts=s.teachers.filter(x=>(x.assignments||[]).some(a=>ids.has(a.classId)));
+  return `<p class="small">Tell the generator when a teacher cannot teach (part-time, off-campus, duty days) and the most lessons they should have in one day. These limits apply to <b>every</b> timetable, including remedial. Lessons already placed are not moved — press Generate again to apply.</p>
+  <div class="ttw"><table><tr><th>Teacher</th><th>Lessons / week</th>${ds.map(d=>`<th>Off ${TT_D[d]}</th>`).join('')}<th>Max / day</th></tr>${ts.map(x=>{const c=t.tconf[x.id]||{};return `<tr><td>${escapeHtml(x.name)}</td><td>${ttItems(s,x.id,t.sections).length}</td>${ds.map(d=>`<td><input type="checkbox" style="width:auto" ${(c.off||[]).includes(d)?'checked':''} onchange="ttTOff('${x.id}',${d},this.checked)"></td>`).join('')}<td><input type="number" min="0" max="14" style="width:64px" placeholder="—" value="${c.max||''}" onchange="ttTMax('${x.id}',this.value)"></td></tr>`;}).join('')||`<tr><td colspan="${ds.length+3}" class="small">No teachers are assigned to these classes yet (Teachers &amp; Permissions).</td></tr>`}</table></div>`;}
+function ttTOff(tid,d,on){const t=ttData(currentSchool()),c=t.tconf[tid]=t.tconf[tid]||{};c.off=on?[...new Set((c.off||[]).concat(d))].sort():(c.off||[]).filter(x=>x!==d);ttSave();toast('Saved — re-generate to apply');}
+function ttTMax(tid,v){const t=ttData(currentSchool()),c=t.tconf[tid]=t.tconf[tid]||{};c.max=Math.max(0,+v||0);ttSave();toast('Saved — re-generate to apply');}
+// ---- Teacher workload & timetable status (DOS/HOI) ----
+function ttWork(s){const t=ttData(s);return s.teachers.map(tc=>{const it=ttItems(s,tc.id,t.sections),per={};it.forEach(i=>{per[i.d]=(per[i.d]||0)+1;});const busy=Object.keys(per).sort((a,b)=>per[b]-per[a])[0];
+  return {t:tc,n:it.length,per,busy:busy?TT_D[+busy]+' ('+per[busy]+')':'—',rem:ttItems(s,tc.id,t.remedials).length,cl:[...new Set(it.map(i=>ttCn(s,i.c)))],cfg:t.tconf[tc.id]||{},as:(tc.assignments||[]).length};}).sort((a,b)=>b.n-a.n);}
+function ttWorkTable(s,fit){const rows=ttWork(s),ds=[1,2,3,4,5,6,7].filter(d=>d<=5||rows.some(r=>r.per[d]));
+  const head=`<tr><th class="dy">Teacher</th>${ds.map(d=>`<th>${TT_D[d]}</th>`).join('')}<th>Total / wk</th><th>Busiest day</th><th>Remedial / wk</th><th>Classes taught</th></tr>`;
+  const body=rows.map(r=>`<tr><th class="dy">${escapeHtml(r.t.name)}</th>${ds.map(d=>{const n=r.per[d]||0,off=(r.cfg.off||[]).includes(d),over=+r.cfg.max&&n>+r.cfg.max;return `<td class="${(off&&n)||over?'bad':''}">${off&&!n?'<span class="ta">off</span>':n||'—'}</td>`;}).join('')}<td class="tt">${r.n}</td><td>${r.busy}</td><td>${r.rem||'—'}</td><td style="text-align:left">${r.n?escapeHtml(r.cl.join(', ')):(r.as?'⚠ assigned but not on the timetable':'—')}</td></tr>`).join('');
+  return ttTbl(head+body,'',fit,ds.length+5,rows.length+1);}
+function ttPrintWork(){const s=currentSchool();ttPrintHTML(ttPage(s,'Teacher Workload','Lessons per teacher per day — all sections',ttWorkTable(s,true),'Red = lesson on a day the teacher is marked unavailable, or above their daily limit.'));}
+function tplTtWork(s){const t=ttSync(s),cnt=p=>{let n=0;Object.values(p.cells||{}).forEach(c=>Object.values(c).forEach(d=>{n+=Object.keys(d).length;}));return n;};
+  return `<div class="card"><h2>📊 Teacher Workload &amp; Status</h2><p class="small">Check every section's progress, then see how many lessons each teacher has each day.</p>
+  <table><tr><th>Section</th><th>Classes</th><th>Lessons placed</th><th>Checks</th><th>Teachers can see it</th><th>Generated</th><th></th></tr>${t.sections.map(p=>{const n=cnt(p),iss=n?ttIssues(s,p).list.length:0;return `<tr><td>${escapeHtml(p.name)}</td><td>${p.classIds.length}</td><td>${n||'—'}</td><td>${!n?'Not generated':iss?'⚠ '+iss+' to check':'✅ OK'}</td><td>${p.published?'✅ Yes':'No'}</td><td>${p.genAt?new Date(p.genAt).toLocaleDateString('en-GB'):'—'}</td><td><button class="ghost" onclick="ttUI.sec='${p.id}';gotoDosTab('tt')">Open</button></td></tr>`;}).join('')||'<tr><td colspan="7" class="small">No sections yet.</td></tr>'}</table>
+  <div class="flexbtns no-print" style="margin-top:10px;align-items:flex-end">${ttPaper()}<button class="gold" onclick="ttPrintWork()">🖨 Print workload (A4)</button></div>
+  <h3 style="margin:12px 0 4px">Lessons per teacher</h3>${s.teachers.length?ttWorkTable(s,false):'<p class="small">No teachers yet.</p>'}</div>`;}
+// ---- Teacher: share timetable as text (WhatsApp etc.) ----
+function ttTeacherShare(){const s=currentSchool(),t=currentTeacher();let x=`*${s.name}*\n*Timetable — ${t.name}*\n`,any=false;
+  const blk=(title,plans)=>{const it=ttItems(s,t.id,plans);if(!it.length)return;any=true;if(title)x+=`\n── ${title} ──\n`;[...new Set(it.map(i=>i.d))].sort((a,b)=>a-b).forEach(d=>{x+=`\n*${TT_DF[d]}*\n`;it.filter(i=>i.d===d).sort((a,b)=>a.s-b.s).forEach(i=>{x+=`${fm(i.s)}–${fm(i.e)}  ${ttCn(s,i.c)} · ${ttAn(s,i.a)}\n`;});});};
+  blk('',ttTeacherPlans(s,false));ttTeacherPlans(s,true).forEach(p=>blk('Remedial: '+p.name,[p]));
+  if(!any){toast('Nothing to share yet','err');return;}
+  if(navigator.share){navigator.share({title:'My timetable',text:x}).catch(()=>{});}else window.open('https://wa.me/?text='+encodeURIComponent(x),'_blank');}
+
+/* ============================= EXAM TIMETABLE (DOS/HOI + Teacher portal) =============================
+   school.timetable.exams = [x]. x = {id,name,label,start,end (ISO dates),days:[1..7],skip:[ISO],
+     sess:[{l,s,e}], maxDay,heavyDay,maxPar,inv,invDay,avoidOwn,notes, classIds, excl:{'cid|aid':1},
+     rules:{areaId:{inc,mins,core,n,pref,after,before,fix,fixS}}, cells:{classId:{ISO:{s0:{a,n,inv[],l}|{a,cont:1}}}}, published}
+   Papers are placed per class (no class sits 2 papers in one session), honouring each learning area's "not before",
+   "must be done by" and fixed date/session, then invigilators are allocated fairly. */
+let exUI={id:'',tab:'setup',view:'class',cls:''};
+const EX_MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const exDate=iso=>{const p=String(iso).split('-').map(Number);return new Date(p[0],(p[1]||1)-1,p[2]||1);};
+const exIso=dt=>dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+const exDow=iso=>exDate(iso).getDay()||7;
+const exFmt=iso=>{const d=exDate(iso);return TT_D[exDow(iso)]+' '+String(d.getDate()).padStart(2,'0')+' '+EX_MON[d.getMonth()];};
+const exFmtL=iso=>{const d=exDate(iso);return TT_DF[exDow(iso)]+', '+d.getDate()+' '+EX_MON[d.getMonth()]+' '+d.getFullYear();};
+function exNorm(x){const D={name:'Exams',label:'',start:'',end:'',maxDay:2,heavyDay:1,maxPar:0,inv:1,invDay:3,avoidOwn:true,published:false,genAt:0,
+  notes:'Learners must be seated 15 minutes before each paper starts. Mobile phones and unauthorised materials are not allowed in the exam room.'};
+  Object.keys(D).forEach(k=>{if(x[k]===undefined||x[k]===null)x[k]=D[k];});
+  if(!Array.isArray(x.sess)||!x.sess.length)x.sess=[{l:'Session 1',s:'08:00',e:'10:30'},{l:'Session 2',s:'11:00',e:'13:30'}];
+  ['rules','cells','excl'].forEach(k=>{if(!x[k]||typeof x[k]!=='object')x[k]={};});
+  ['classIds','skip'].forEach(k=>{if(!Array.isArray(x[k]))x[k]=[];});if(!Array.isArray(x.days)||!x.days.length)x.days=[1,2,3,4,5];return x;}
+const exFind=id=>{const x=ttData(currentSchool()).exams.find(q=>q.id===id);return x?exNorm(x):null;};
+function exSave(){ttData(currentSchool()).stamp=Date.now();saveDB(DB);}
+const exRedraw=()=>redrawKeepingState(renderDOS);
+const exDef=name=>/math|english|kiswahili|science/i.test(name||'')?{mins:90,core:1}:{mins:60,core:0};
+function exR(s,x,aid){const a=s.learningAreas.find(q=>q.id===aid)||{name:''};return Object.assign({inc:1,n:1,pref:'',after:'',before:'',fix:'',fixS:''},exDef(a.name),x.rules[aid]||{});}
+const exAreas=(s,x,c)=>areasForClass(s,c).filter(a=>exR(s,x,a.id).inc!==0&&!x.excl[c+'|'+a.id]);
+function exDays(x){const out=[];if(!x.start||!x.end)return out;const e=exDate(x.end);let d=exDate(x.start),n=0;while(d<=e&&n<150){const iso=exIso(d);if(x.days.includes(exDow(iso))&&!x.skip.includes(iso))out.push(iso);d.setDate(d.getDate()+1);n++;}return out;}
+const exSlot=(x,si)=>x.sess[si]||{l:'',s:'08:00',e:'10:00'};
+function exTime(x,si,n,mins){const a=hm(exSlot(x,si).s),end=hm(exSlot(x,si+(n>1?1:0)).e),m=+mins||0;return [a,m>0?Math.min(a+m,end):end];}
+function exWeeks(days){const g=[];days.forEach(d=>{const dt=exDate(d),mon=new Date(dt);mon.setDate(dt.getDate()-((dt.getDay()||7)-1));const k=exIso(mon);let w=g[g.length-1];if(!w||w.k!==k){w={k,d:[]};g.push(w);}w.d.push(d);});return g.map(w=>w.d);}
+// ---- generator ----
+function exAttempt(s,x,days,keep){const S=x.sess.length,cells={},un=[],par={};let pen=0;
+  const cap=Math.min(x.maxPar>0?x.maxPar:99,x.inv>0&&s.teachers.length?Math.max(1,Math.floor(s.teachers.length/x.inv)):99);
+  const put=(c,d,si,v)=>{(cells[c]=cells[c]||{});(cells[c][d]=cells[c][d]||{})['s'+si]=v;par[d+'|'+si]=(par[d+'|'+si]||0)+1;};
+  if(keep)Object.keys(x.cells).forEach(c=>{if(!x.classIds.includes(c))return;Object.keys(x.cells[c]).forEach(d=>{if(!days.includes(d))return;Object.keys(x.cells[c][d]).forEach(k=>{const v=x.cells[c][d][k],si=+k.slice(1);if(v&&v.l&&si<S)put(c,d,si,JSON.parse(JSON.stringify(v)));});});});
+  const placed=(c,a)=>Object.values(cells[c]||{}).some(dd=>Object.values(dd).some(v=>v&&v.a===a&&!v.cont));
+  const items=[];x.classIds.forEach(c=>exAreas(s,x,c).forEach(a=>{if(placed(c,a.id))return;const r=exR(s,x,a.id);items.push({c,a:a.id,r,n:+r.n===2?2:1});}));
+  const range=it=>{let lo=0,hi=days.length-1;if(it.r.fix){const i=days.indexOf(it.r.fix);return i<0?null:[i,i];}
+    if(it.r.after){const i=days.findIndex(d=>d>=it.r.after);lo=i<0?days.length:i;}
+    if(it.r.before){let i=-1;days.forEach((d,j)=>{if(d<=it.r.before)i=j;});hi=i;}return lo>hi?null:[lo,hi];};
+  items.forEach(it=>{it.g=range(it);it.k=(it.r.fix?-3000:0)+(it.g?(it.g[1]-it.g[0]):999)*4-(it.n===2?50:0)-(it.r.core?20:0)+Math.random()*6;});
+  items.sort((a,b)=>a.k-b.k);
+  items.forEach(it=>{if(!it.g){un.push(Object.assign(it,{why:it.r.fix?'its fixed date is not an exam day':'no exam day between its "not before" and "must be done by" dates'}));return;}
+    const c=it.c;let b=null;
+    for(let di=it.g[0];di<=it.g[1];di++){const d=days[di],dd=(cells[c]||{})[d]||{},cn=Object.values(dd).filter(v=>v&&!v.cont).length;if(cn>=x.maxDay)continue;
+      if(it.r.core&&Object.values(dd).filter(v=>v&&!v.cont&&exR(s,x,v.a).core).length>=x.heavyDay)continue;
+      for(let si=0;si+it.n<=S;si++){if(it.r.fixS!==''&&it.r.fixS!=null&&+it.r.fixS!==si)continue;
+        let ok=true;for(let z=0;z<it.n;z++)if(dd['s'+(si+z)]||(par[d+'|'+(si+z)]||0)>=cap){ok=false;break;}if(!ok)continue;
+        let sc=cn*8+Math.random()*2.5;for(let z=0;z<it.n;z++)sc+=(par[d+'|'+(si+z)]||0)*1.2;
+        [di-1,di+1].forEach(j=>{if(j<0||j>=days.length)return;Object.values((cells[c]||{})[days[j]]||{}).forEach(v=>{if(v&&!v.cont){sc+=1;if(it.r.core&&exR(s,x,v.a).core)sc+=5;}});});
+        if(it.r.pref==='am'&&si>=S/2)sc+=6;if(it.r.pref==='pm'&&si<S/2)sc+=6;if(it.r.core&&si===0)sc-=1;
+        if(!b||sc<b.sc)b={sc,d,si};}}
+    if(!b){un.push(Object.assign(it,{why:'no free session within its allowed dates (limits too tight)'}));return;}
+    pen+=b.sc;put(c,b.d,b.si,{a:it.a,n:it.n});if(it.n===2)put(c,b.d,b.si+1,{a:it.a,cont:1});});
+  return {cells,un,pen};}
+function exInvig(s,x,cells,keep){const tc=ttData(s).tconf||{},tot={},byDay={},busy={},need=x.inv|0,papers=[];
+  Object.keys(cells).forEach(c=>Object.keys(cells[c]).forEach(d=>Object.keys(cells[c][d]).forEach(k=>{const v=cells[c][d][k];if(v&&!v.cont)papers.push({c,d,si:+k.slice(1),v});})));
+  papers.sort((p,q)=>p.d<q.d?-1:p.d>q.d?1:p.si-q.si);
+  const mark=(t,d,si,n)=>{for(let z=0;z<n;z++)busy[t+'|'+d+'|'+(si+z)]=1;tot[t]=(tot[t]||0)+1;byDay[t+'|'+d]=(byDay[t+'|'+d]||0)+1;};
+  papers.forEach(p=>{if(keep&&p.v.l&&p.v.inv&&p.v.inv.length)p.v.inv.forEach(t=>mark(t,p.d,p.si,p.v.n||1));else p.v.inv=[];});
+  papers.forEach(p=>{const have=(p.v.inv||[]).length;if(have>=need)return;const own=x.avoidOwn?ttTeach(s,p.c,p.v.a):[],ct=((s.classTeachers||{})[p.c]||'').trim().toLowerCase(),n=p.v.n||1,dow=exDow(p.d);
+    const base=s.teachers.filter(t=>{if((p.v.inv||[]).includes(t.id))return false;if(((tc[t.id]||{}).off||[]).includes(dow))return false;if((byDay[t.id+'|'+p.d]||0)>=x.invDay)return false;for(let z=0;z<n;z++)if(busy[t.id+'|'+p.d+'|'+(p.si+z)])return false;return true;})
+      .map(t=>({t,o:own.includes(t.id),sc:(tot[t.id]||0)*3+(byDay[t.id+'|'+p.d]||0)*2-(ct&&(t.name||'').trim().toLowerCase()===ct?4:0)-((t.assignments||[]).some(a=>a.classId===p.c)?1.5:0)+Math.random()}));
+    const cand=base.filter(o=>!o.o).sort((a,b)=>a.sc-b.sc).concat(base.filter(o=>o.o).sort((a,b)=>a.sc-b.sc));   // own-subject teachers only as a last resort
+    for(let i=have;i<need&&cand.length;i++){const t=cand.shift().t;(p.v.inv=p.v.inv||[]).push(t.id);mark(t.id,p.d,p.si,n);}});}
+function exGen(s,x,keep){const days=exDays(x);let best=null;
+  for(let k=0;k<60;k++){const r=exAttempt(s,x,days,keep);if(!best||r.un.length<best.un.length||(r.un.length===best.un.length&&r.pen<best.pen))best=r;if(!best.un.length&&k>=20)break;}
+  exInvig(s,x,best.cells,keep);return best;}
+// ---- health check ----
+function exIssues(s,x){const out=[],days=exDays(x),ds=new Set(days),tc=ttData(s).tconf||{},par={},tsl={};let exp=0,got=0;
+  x.classIds.forEach(c=>{const have={};Object.keys(x.cells[c]||{}).forEach(d=>Object.keys(x.cells[c][d]).forEach(k=>{const v=x.cells[c][d][k];if(!v)return;par[d+'|'+k]=(par[d+'|'+k]||0)+1;if(v.cont)return;(have[v.a]=have[v.a]||[]).push({d,v});
+      (v.inv||[]).forEach(t=>{const key=t+'|'+d+'|'+k;tsl[key]=(tsl[key]||0)+1;if(((tc[t]||{}).off||[]).includes(exDow(d)))out.push(`${ttTn(s,t)} is on duty ${exFmt(d)} but marked unavailable that day`);if(x.avoidOwn&&ttTeach(s,c,v.a).includes(t))out.push(`${ttTn(s,t)} invigilates their own subject (${ttAn(s,v.a)}, ${ttCn(s,c)})`);});
+      if((v.inv||[]).length<x.inv)out.push(`${ttCn(s,c)} · ${ttAn(s,v.a)} (${exFmt(d)}): ${x.inv-(v.inv||[]).length} invigilator(s) still needed`);}));
+    exAreas(s,x,c).forEach(a=>{exp++;const h=have[a.id];if(!h){out.push(`${ttCn(s,c)} · ${a.name}: not scheduled`);return;}got++;const r=exR(s,x,a.id),d=h[0].d,w=`${ttCn(s,c)} · ${a.name}`;
+      if(r.before&&d>r.before)out.push(`${w}: ${exFmt(d)} is after its deadline (${exFmt(r.before)})`);if(r.after&&d<r.after)out.push(`${w}: ${exFmt(d)} is before its start date (${exFmt(r.after)})`);
+      if(r.fix&&d!==r.fix)out.push(`${w}: not on its fixed date (${exFmt(r.fix)})`);if(!ds.has(d))out.push(`${w}: ${exFmt(d)} is not an exam day`);});
+    Object.keys(x.cells[c]||{}).forEach(d=>{const vs=Object.values(x.cells[c][d]).filter(v=>v&&!v.cont);if(vs.length>x.maxDay)out.push(`${ttCn(s,c)}: ${vs.length} papers on ${exFmt(d)} (limit ${x.maxDay})`);const hv=vs.filter(v=>exR(s,x,v.a).core).length;if(hv>x.heavyDay)out.push(`${ttCn(s,c)}: ${hv} core papers on ${exFmt(d)} (limit ${x.heavyDay})`);});});
+  Object.keys(tsl).forEach(k=>{if(tsl[k]>1){const p=k.split('|');out.push(`${ttTn(s,p[0])} is invigilating 2 papers at once on ${exFmt(p[1])} (${exSlot(x,+p[2].slice(1)).l})`);}});
+  if(x.maxPar>0)Object.keys(par).forEach(k=>{if(par[k]>x.maxPar){const p=k.split('|');out.push(`${par[k]} classes sit at once on ${exFmt(p[0])} (${exSlot(x,+p[1].slice(1)).l}) — limit ${x.maxPar}`);}});
+  return {list:[...new Set(out)],exp,got};}
+// ---- grids ----
+function exTd(s,x,c,d,si,o){o=o||{};const v=((x.cells[c]||{})[d]||{})['s'+si],oc=o.edit?` onclick="exEdit('${x.id}','${c}','${d}',${si})"`:'';
+  if(!v)return `<td class="tc"${oc}><span class="ta">—</span></td>`;
+  if(v.cont)return `<td class="tc" style="background:${ttCol(v.a)}"${oc}><span class="ta">↑ continued</span></td>`;
+  const r=exR(s,x,v.a),tm=exTime(x,si,v.n||1,r.mins),inv=o.inv?(v.inv||[]).map(t=>ttTn(s,t)).filter(Boolean).map(n=>o.sh?ttShort(n):n):[];
+  return `<td class="tc${o.edit&&v.l?' lk':''}" style="background:${ttCol(v.a)}"${oc}><b>${escapeHtml(ttAn(s,v.a))}</b><span class="ta">${fm(tm[0])}–${fm(tm[1])}</span>${inv.length?`<span class="ta">👀 ${escapeHtml(inv.join(', '))}</span>`:(o.inv&&o.edit&&x.inv>0?'<span class="ta">⚠ no invigilator</span>':'')}${o.edit&&v.l?'<span class="ta">🔒</span>':''}</td>`;}
+const exCls=(s,x)=>s.classes.filter(c=>x.classIds.includes(c.id));
+function exGridClass(s,x,c,o){o=o||{};const days=exDays(x),S=x.sess.length;if(!days.length)return '<p class="small">Set the first/last exam day and exam days in Setup.</p>';
+  const head=`<tr><th class="dy">Date</th>${x.sess.map(q=>`<th>${escapeHtml(q.l)}<span class="ta">${q.s}–${q.e}</span></th>`).join('')}</tr>`;
+  const body=days.map(d=>`<tr><th class="dy">${exFmt(d)}</th>${x.sess.map((q,si)=>exTd(s,x,c,d,si,o)).join('')}</tr>`).join('');
+  return ttTbl(head+body,o.edit?'ed':'',o.fit,S+1,days.length+1);}
+function exGridMaster(s,x,dates,o){o=o||{};const S=x.sess.length,cl=exCls(s,x);if(!cl.length)return '<p class="small">No classes selected.</p>';
+  const h1=`<tr><th class="dy" rowspan="2">Class</th>${dates.map(d=>`<th colspan="${S}">${exFmt(d)}</th>`).join('')}</tr>`;
+  const h2=`<tr>${dates.map(()=>x.sess.map(q=>`<th>${escapeHtml(q.l)}<span class="ta">${q.s}</span></th>`).join('')).join('')}</tr>`;
+  const body=cl.map(c=>`<tr><th class="dy">${escapeHtml(c.name)}</th>${dates.map(d=>x.sess.map((q,si)=>exTd(s,x,c.id,d,si,o)).join('')).join('')}</tr>`).join('');
+  return ttTbl(h1+h2+body,o.edit?'ed':'',o.fit,dates.length*S+1,cl.length+2);}
+function exDuties(s,x,tid){const out=[];Object.keys(x.cells).forEach(c=>{if(!x.classIds.includes(c))return;Object.keys(x.cells[c]).forEach(d=>Object.keys(x.cells[c][d]).forEach(k=>{const v=x.cells[c][d][k];if(v&&!v.cont&&(v.inv||[]).includes(tid))out.push({d,si:+k.slice(1),c,a:v.a,n:v.n||1});}));});return out.sort((p,q)=>p.d<q.d?-1:p.d>q.d?1:p.si-q.si);}
+function exGridRoster(s,x,dates,fit){const S=x.sess.length,rows=s.teachers.map(t=>({t,du:exDuties(s,x,t.id)})).filter(r=>r.du.length);
+  if(!rows.length)return '<p class="small">No invigilators allocated yet — set "Invigilators per paper" in Setup, then generate.</p>';
+  const h1=`<tr><th class="dy" rowspan="2">Teacher</th>${dates.map(d=>`<th colspan="${S}">${exFmt(d)}</th>`).join('')}<th rowspan="2">Total</th></tr>`;
+  const h2=`<tr>${dates.map(()=>x.sess.map(q=>`<th>${escapeHtml(q.l)}<span class="ta">${q.s}</span></th>`).join('')).join('')}</tr>`;
+  const body=rows.map(r=>`<tr><th class="dy">${escapeHtml(r.t.name)}</th>${dates.map(d=>x.sess.map((q,si)=>{const m=r.du.filter(u=>u.d===d&&(u.si===si||(u.n>1&&u.si+1===si)));return `<td class="tc">${m.map(u=>`<b>${escapeHtml(ttCn(s,u.c))}</b><span class="ta">${escapeHtml(ttAn(s,u.a))}</span>`).join('')||'<span class="ta">—</span>'}</td>`;}).join('')).join('')}<td class="tt">${r.du.length}</td></tr>`).join('');
+  return ttTbl(h1+h2+body,'',fit,dates.length*S+2,rows.length+2);}
+function exDutyTable(s,x,tid,fit){const du=exDuties(s,x,tid);if(!du.length)return '<p class="small">No invigilation duties allocated to you for this exam timetable.</p>';
+  const head='<tr><th>Date</th><th>Session</th><th>Time</th><th>Class</th><th>Learning area</th></tr>';
+  const body=du.map(u=>{const tm=exTime(x,u.si,u.n,exR(s,x,u.a).mins);return `<tr><td style="text-align:left">${exFmtL(u.d)}</td><td>${escapeHtml(exSlot(x,u.si).l)}</td><td>${fm(tm[0])}–${fm(tm[1])}</td><td>${escapeHtml(ttCn(s,u.c))}</td><td>${escapeHtml(ttAn(s,u.a))}</td></tr>`;}).join('');
+  return `<div class="ttw${fit&&du.length<14?' ns':''}"><table class="ttg"${fit?' style="font-size:13px"':''}>${head+body}</table></div>`;}
+// ---- print pages ----
+const exSub=x=>[x.name,x.label,x.start&&x.end?exFmt(x.start)+' – '+exFmt(x.end)+' '+exDate(x.end).getFullYear():''].filter(Boolean).map(escapeHtml).join(' · ');
+const exNotes=x=>x.notes?'<b>Notes:</b> '+escapeHtml(x.notes):'';
+function exPgClass(s,x,c){const ct=(s.classTeachers||{})[c];return ttPage(s,'Exam Timetable: '+escapeHtml(ttCn(s,c)),exSub(x)+(ct?' · Class teacher: '+escapeHtml(ct):''),exGridClass(s,x,c,{fit:true}),exNotes(x));}
+function exPgMaster(s,x){const w=exWeeks(exDays(x));return w.map((ds,i)=>ttPage(s,'Master Exam Timetable'+(w.length>1?' — Week '+(i+1)+' of '+w.length:''),exSub(x),exGridMaster(s,x,ds,{fit:true,sh:true,inv:true}),exNotes(x))).join('');}
+function exPgRoster(s,x){const w=exWeeks(exDays(x));return w.map((ds,i)=>ttPage(s,'Invigilation Roster'+(w.length>1?' — Week '+(i+1)+' of '+w.length:''),exSub(x),exGridRoster(s,x,ds,true),'Each cell shows the class (and paper) the teacher invigilates in that session.')).join('');}
+function exPgTeacher(s,x,t){const du=exDuties(s,x,t.id);return ttPage(s,'Invigilation Duties: '+escapeHtml(t.name),exSub(x),exDutyTable(s,x,t.id,true),`<b>Total duties:</b> ${du.length} · Please be in the exam room 15 minutes before each paper starts.`);}
+function exPrint(id,mode){const s=currentSchool(),x=exFind(id);let h='';if(!Object.keys(x.cells).length){toast('Generate the exam timetable first','err');return;}
+  if(mode==='master')h=exPgMaster(s,x);else if(mode==='classes')h=exCls(s,x).map(k=>exPgClass(s,x,k.id)).join('');else if(mode==='roster')h=exPgRoster(s,x);
+  else if(mode==='teachers')h=s.teachers.filter(t=>exDuties(s,x,t.id).length).map(t=>exPgTeacher(s,x,t)).join('');
+  else h=exUI.view==='master'?exPgMaster(s,x):exPgClass(s,x,x.classIds.includes(exUI.cls)?exUI.cls:x.classIds[0]);
+  if(!h){toast('Nothing to print','err');return;}ttPrintHTML(h);}
+// ---- DOS/HOI screens ----
+function exTabBtn(k){exUI.tab=k;renderDOS();}
+function tplExTt(s){const L=ttData(s).exams;L.forEach(exNorm);const x=L.find(q=>q.id===exUI.id)||L[0];if(x)exUI.id=x.id;
+  const seen={},base=s.exams.map((e,i)=>({e,i})).filter(o=>{const k=o.e.name+'|'+o.e.term+'|'+o.e.year;if(seen[k])return false;seen[k]=1;return true;});
+  return `<div class="card"><h2 class="no-print">📝 Exam Timetable</h2><p class="small no-print">Plan the exam period: pick dates and sessions, set each paper's length and the date it <b>must be done by</b>, then generate. No class sits two papers at once, core papers are spread out, and invigilators are shared fairly.</p>
+  <div class="row no-print"><div><label>Exam timetable</label><select onchange="exUI.id=this.value;renderDOS()">${L.map(q=>`<option value="${q.id}" ${q.id===exUI.id?'selected':''}>${escapeHtml(q.name)}</option>`).join('')||'<option>— none yet —</option>'}</select></div>
+  <div><label>Based on an exam in Exams (optional)</label><select id="exBase"><option value="">— start blank —</option>${base.map(o=>`<option value="${o.i}">${escapeHtml(o.e.name)} · ${escapeHtml(o.e.term)} ${o.e.year}</option>`).join('')}</select></div>
+  <div><label>Name</label><input id="exNewName" placeholder="e.g. Term 3 End-Term Exams"></div><div style="align-self:flex-end"><button onclick="exAdd()">+ Create</button></div></div>
+  ${x?`<div class="no-print">${ttTabs(exUI.tab,[['setup','⚙️ Setup'],['papers','📚 Papers &amp; deadlines'],['table','🗓 Timetable'],['inv','👀 Invigilation']],'exTabBtn')}${exUI.tab==='papers'?exTabPapers(s,x):exUI.tab==='table'?'':exUI.tab==='inv'?'':exTabSetup(s,x)}</div>${exUI.tab==='table'?exTabTable(s,x):exUI.tab==='inv'?exTabInv(s,x):''}<div class="flexbtns no-print" style="margin-top:12px"><button class="danger" onclick="exDel('${x.id}')">Delete this exam timetable</button></div>`:'<p class="small">Create your first exam timetable above.</p>'}</div>`;}
+function exTabSetup(s,x){const days=exDays(x),S=x.sess.length,cl=exCls(s,x),mx=Math.max(0,...cl.map(c=>exAreas(s,x,c.id).length)),per=days.length*Math.min(x.maxDay,S),id=x.id;
+  const num=(k,mn,mxv,l)=>`<div><label>${l}</label><input type="number" min="${mn}" max="${mxv}" value="${x[k]}" onchange="exSet('${id}','${k}',Math.max(${mn},+this.value||0))"></div>`;
+  return `<div class="row"><div><label>Name</label><input value="${escapeHtml(x.name)}" onchange="exSet('${id}','name',this.value)"></div><div><label>Label on prints</label><input value="${escapeHtml(x.label)}" placeholder="e.g. Term 3, 2026" onchange="exSet('${id}','label',this.value)"></div><div><label>First exam day</label><input type="date" value="${x.start}" onchange="exSet('${id}','start',this.value)"></div><div><label>Last exam day</label><input type="date" value="${x.end}" onchange="exSet('${id}','end',this.value)"></div></div>
+  <label style="margin-top:8px">Exam days</label><div class="flexbtns">${[1,2,3,4,5,6,7].map(d=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.days.includes(d)?'checked':''} onchange="exDay('${id}',${d},this.checked)">${TT_DF[d]}</label>`).join('')}</div>
+  <label style="margin-top:8px">No-exam dates (public holiday, sports day…)</label><div class="flexbtns" style="align-items:center">${x.skip.slice().sort().map(d=>`<span class="chip">${exFmt(d)} <a style="cursor:pointer;color:#b23b3b" onclick="exDelSkip('${id}','${d}')">✕</a></span>`).join('')}<input type="date" id="exSkip" style="max-width:170px"><button class="ghost" onclick="exAddSkip('${id}')">+ Add</button></div>
+  <h3 style="margin:12px 0 4px">Sessions on each exam day</h3><div class="ttw"><table><tr><th>Name</th><th>Starts</th><th>Ends</th><th></th></tr>${x.sess.map((q,i)=>`<tr><td><input value="${escapeHtml(q.l)}" onchange="exSess('${id}',${i},'l',this.value)"></td><td><input type="time" value="${q.s}" onchange="exSess('${id}',${i},'s',this.value)"></td><td><input type="time" value="${q.e}" onchange="exSess('${id}',${i},'e',this.value)"></td><td>${S>1?`<button class="danger" onclick="exSessDel('${id}',${i})">✕</button>`:''}</td></tr>`).join('')}</table></div>${S<4?`<button class="ghost" style="margin-top:6px" onclick="exSessAdd('${id}')">+ Add session</button>`:''}
+  <h3 style="margin:12px 0 4px">Limits</h3><div class="row">${num('maxDay',1,4,'Max papers per class per day')}${num('heavyDay',1,3,'Max core papers per class per day')}${num('maxPar',0,40,'Max classes sitting at once (0 = no limit)')}${num('inv',0,4,'Invigilators per paper')}${num('invDay',1,6,'Max duties per teacher per day')}</div>
+  <label class="chip" style="cursor:pointer;margin-top:8px"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.avoidOwn?'checked':''} onchange="exSet('${id}','avoidOwn',this.checked)">Teachers should not invigilate their own subject</label>
+  <label style="margin-top:8px">Notes printed under each timetable</label><textarea rows="2" onchange="exSet('${id}','notes',this.value)">${escapeHtml(x.notes)}</textarea>
+  <h3 style="margin:12px 0 4px">Classes sitting these exams</h3><div class="flexbtns">${s.classes.map(c=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.classIds.includes(c.id)?'checked':''} onchange="exCl('${id}','${c.id}',this.checked)">${escapeHtml(c.name)}</label>`).join('')}<button class="ghost" onclick="exClAll('${id}')">Select all</button></div>
+  <p class="small" style="margin-top:10px">${days.length} exam day(s) × ${S} session(s) = <b>${days.length*S}</b> slots per class. Busiest class has <b>${mx}</b> papers.</p>${mx>per&&days.length?`<p style="color:#b23b3b"><b>⚠ Not enough room:</b> ${mx} papers but only ${per} can fit per class with these limits — add days, a session, or raise "Max papers per class per day".</p>`:''}`;}
+function exTabPapers(s,x){const id=x.id,cl=exCls(s,x),areas=s.learningAreas.filter(a=>cl.some(c=>a.classIds.includes(c.id))),S=x.sess.length,dt=(k,r,a)=>`<input type="date" value="${r[k]||''}" style="min-width:130px" onchange="exRule('${id}','${a.id}','${k}',this.value)">`;
+  if(!areas.length)return '<p class="small">Choose the classes in Setup first.</p>';
+  return `<p class="small"><b>Must be done by</b> = the paper has to be sat on or before that date. <b>Not before</b> = earliest date. <b>Fixed date/session</b> forces an exact slot. <b>Core</b> papers are kept to the daily core limit and spread apart. Set these, then press Generate on the Timetable tab.</p>
+  <div class="ttw"><table><tr><th>Include</th><th>Learning area</th><th>Classes</th><th>Paper (min)</th><th>Core</th><th>Sessions</th><th>Prefer</th><th>Not before</th><th>Must be done by</th><th>Fixed date</th><th>Fixed session</th></tr>${areas.map(a=>{const r=exR(s,x,a.id);return `<tr><td><input type="checkbox" style="width:auto" ${r.inc!==0?'checked':''} onchange="exRule('${id}','${a.id}','inc',this.checked?1:0)"></td><td style="text-align:left"><b>${escapeHtml(a.name)}</b></td>
+    <td style="text-align:left">${cl.filter(c=>a.classIds.includes(c.id)).map(c=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:3px" ${x.excl[c.id+'|'+a.id]?'':'checked'} onchange="exExcl('${id}','${c.id}','${a.id}',this.checked)">${escapeHtml(c.name.replace(/^grade\s*/i,'G'))}</label>`).join('')}</td>
+    <td><input type="number" min="15" max="240" step="5" value="${r.mins}" style="width:70px" onchange="exRule('${id}','${a.id}','mins',+this.value)"></td><td><input type="checkbox" style="width:auto" ${r.core?'checked':''} onchange="exRule('${id}','${a.id}','core',this.checked?1:0)"></td>
+    <td><select onchange="exRule('${id}','${a.id}','n',+this.value)"><option value="1" ${+r.n!==2?'selected':''}>1</option>${S>1?`<option value="2" ${+r.n===2?'selected':''}>2</option>`:''}</select></td>
+    <td><select onchange="exRule('${id}','${a.id}','pref',this.value)"><option value="">Any</option><option value="am" ${r.pref==='am'?'selected':''}>Morning</option><option value="pm" ${r.pref==='pm'?'selected':''}>Afternoon</option></select></td>
+    <td>${dt('after',r,a)}</td><td>${dt('before',r,a)}</td><td>${dt('fix',r,a)}</td>
+    <td><select onchange="exRule('${id}','${a.id}','fixS',this.value)"><option value="">Any</option>${x.sess.map((q,i)=>`<option value="${i}" ${String(r.fixS)===String(i)?'selected':''}>${escapeHtml(q.l)}</option>`).join('')}</select></td></tr>`;}).join('')}</table></div>`;}
+function exTabTable(s,x){const id=x.id,has=Object.keys(x.cells).length,iss=has?exIssues(s,x):null,cl=exCls(s,x),c=cl.some(k=>k.id===exUI.cls)?exUI.cls:(cl[0]||{}).id;exUI.cls=c;
+  const box=iss?(iss.list.length?`<div class="card no-print" style="background:#fff6e5"><b>⚠ ${iss.list.length} thing(s) to check</b> <span class="small">(${iss.got} of ${iss.exp} papers scheduled)</span><ul style="margin:6px 0 0 18px">${iss.list.slice(0,12).map(q=>`<li>${escapeHtml(q)}</li>`).join('')}${iss.list.length>12?`<li>…and ${iss.list.length-12} more</li>`:''}</ul></div>`:`<div class="card no-print" style="background:#e9f7ef">✅ All ${iss.exp} papers are scheduled — no clashes, every deadline is met.</div>`):'';
+  return `<div class="flexbtns no-print" style="align-items:center"><button class="gold" onclick="exGenerate('${id}')">🔄 Generate</button><label class="chip" style="cursor:pointer"><input type="checkbox" id="exKeep" style="width:auto;display:inline-block;margin-right:4px" checked>Keep 🔒 locked papers</label><button class="ghost" onclick="exClear('${id}')">Clear</button><label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.published?'checked':''} onchange="exSet('${id}','published',this.checked)">Visible in teachers' portal</label></div>${box}
+  ${has?`<div class="row no-print"><div><label>View</label><select onchange="exUI.view=this.value;renderDOS()"><option value="class" ${exUI.view!=='master'?'selected':''}>By class</option><option value="master" ${exUI.view==='master'?'selected':''}>Master (all classes)</option></select></div>${exUI.view!=='master'?`<div><label>Class</label><select onchange="exUI.cls=this.value;renderDOS()">${cl.map(k=>`<option value="${k.id}" ${k.id===c?'selected':''}>${escapeHtml(k.name)}</option>`).join('')}</select></div>`:''}</div>
+  <div class="flexbtns no-print" style="align-items:flex-end">${ttPaper()}<button class="gold" onclick="exPrint('${id}','one')">🖨 Print this view</button><button class="ghost" onclick="exPrint('${id}','master')">🖨 Master (all classes)</button><button class="ghost" onclick="exPrint('${id}','classes')">🖨 Each class</button><button class="ghost" onclick="exPrint('${id}','roster')">🖨 Invigilation roster</button><button class="ghost" onclick="exPrint('${id}','teachers')">🖨 Each teacher's duties</button></div>
+  <p class="small no-print">Tap a paper to change it, move it, set invigilators or 🔒 lock it.</p>${exUI.view==='master'?exGridMaster(s,x,exDays(x),{edit:true,inv:true,sh:true}):exGridClass(s,x,c,{edit:true,inv:true})}`:'<p class="small">Nothing generated yet — set the dates in Setup and the papers in Papers &amp; deadlines, then press Generate.</p>'}`;}
+function exTabInv(s,x){const id=x.id,rows=s.teachers.map(t=>({t,n:exDuties(s,x,t.id).length})).filter(r=>r.n).sort((a,b)=>b.n-a.n);
+  if(!Object.keys(x.cells).length)return '<p class="small">Generate the timetable first.</p>';
+  return `<div class="flexbtns no-print" style="align-items:flex-end">${ttPaper()}<button class="gold" onclick="exPrint('${id}','roster')">🖨 Print roster</button><button class="ghost" onclick="exPrint('${id}','teachers')">🖨 Each teacher's duties</button></div>
+  <p class="small no-print">${rows.length} teacher(s) on duty, ${rows.reduce((a,r)=>a+r.n,0)} duties in total${rows.length?` (from ${Math.min(...rows.map(r=>r.n))} to ${Math.max(...rows.map(r=>r.n))} each)`:''}. To change someone, tap the paper on the Timetable tab.</p>${exGridRoster(s,x,exDays(x),false)}`;}
+// ---- actions ----
+function exAdd(){const s=currentSchool(),sel=(qs('#exBase')||{}).value,nm=((qs('#exNewName')||{}).value||'').trim(),L=ttData(s).exams,b=(sel!==''&&sel!=null)?s.exams[+sel]:null,name=nm||(b?b.name:'');
+  if(!name){toast('Enter a name, e.g. Term 3 End-Term Exams','err');return;}
+  const x=exNorm({id:uid('xt_'),name,label:b?b.term+', '+b.year:''});x.classIds=b?s.exams.filter(e=>e.name===b.name&&e.term===b.term&&String(e.year)===String(b.year)).map(e=>e.classId):s.classes.map(c=>c.id);
+  L.push(x);exUI.id=x.id;exUI.tab='setup';exSave();exRedraw();}
+function exDel(id){if(!confirm('Delete this exam timetable?'))return;const L=ttData(currentSchool()).exams,i=L.findIndex(q=>q.id===id);if(i>=0)L.splice(i,1);exUI.id='';exSave();exRedraw();}
+function exSet(id,k,v){const x=exFind(id);if(!x)return;x[k]=v;exSave();exRedraw();}
+function exDay(id,d,on){const x=exFind(id);x.days=on?[...new Set(x.days.concat(d))].sort():x.days.filter(q=>q!==d);if(!x.days.length)x.days=[d];exSave();exRedraw();}
+function exAddSkip(id){const v=(qs('#exSkip')||{}).value;if(!v)return;const x=exFind(id);if(!x.skip.includes(v))x.skip.push(v);exSave();exRedraw();}
+function exDelSkip(id,d){const x=exFind(id);x.skip=x.skip.filter(q=>q!==d);exSave();exRedraw();}
+function exSess(id,i,k,v){const x=exFind(id);x.sess[i][k]=v;exSave();exRedraw();}
+function exSessAdd(id){const x=exFind(id),l=x.sess[x.sess.length-1],e=hm(l.e);x.sess.push({l:'Session '+(x.sess.length+1),s:fm(e+30),e:fm(e+30+150)});exSave();exRedraw();}
+function exSessDel(id,i){const x=exFind(id);if(x.sess.length>1){x.sess.splice(i,1);exSave();exRedraw();}}
+function exCl(id,c,on){const x=exFind(id);x.classIds=on?[...new Set(x.classIds.concat(c))]:x.classIds.filter(q=>q!==c);exSave();exRedraw();}
+function exClAll(id){const x=exFind(id);x.classIds=currentSchool().classes.map(c=>c.id);exSave();exRedraw();}
+function exExcl(id,c,a,on){const x=exFind(id);if(on)delete x.excl[c+'|'+a];else x.excl[c+'|'+a]=1;exSave();}
+function exRule(id,a,k,v){const x=exFind(id);(x.rules[a]=x.rules[a]||{})[k]=v;exSave();}
+function exGenerate(id){const s=currentSchool(),x=exFind(id),keep=!!(qs('#exKeep')||{}).checked;
+  if(!x.start||!x.end){toast('Set the first and last exam day in Setup','err');return;}if(!x.classIds.length){toast('Choose the classes sitting exams in Setup','err');return;}if(!exDays(x).length){toast('No exam days fall between those dates','err');return;}
+  const r=exGen(s,x,keep);x.cells=r.cells;x.genAt=Date.now();exSave();exRedraw();toast(r.un.length?r.un.length+' paper(s) could not be placed — see the checks below':'✅ Exam timetable generated');}
+function exClear(id){if(!confirm('Clear every paper from this timetable (including locked ones)?'))return;const x=exFind(id);x.cells={};exSave();exRedraw();}
+// ---- edit a paper ----
+let exmCtx=null;
+function exEdit(xid,c,d,si){const s=currentSchool(),x=exFind(xid);let v=((x.cells[c]||{})[d]||{})['s'+si]||{};if(v.cont){si--;v=x.cells[c][d]['s'+si]||{};}
+  exmCtx={xid,c,d,si};const S=x.sess.length,cnt=Math.max(x.inv,1),inv=v.inv||[],o=document.createElement('div');o.id='exModal';o.style.cssText='position:fixed;inset:0;background:rgba(9,30,55,.55);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;';
+  o.innerHTML=`<div class="card" style="max-width:420px;width:100%;max-height:90vh;overflow:auto"><h2 style="margin-top:0">${escapeHtml(ttCn(s,c))} · ${exFmt(d)} · ${escapeHtml(exSlot(x,si).l)}</h2>
+  <label>Learning area</label><select id="exmA"><option value="">— No paper —</option>${areasForClass(s,c).map(a=>`<option value="${a.id}" ${v.a===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join('')}</select>
+  ${si+1<S?`<label class="chip" style="cursor:pointer;margin-top:8px"><input type="checkbox" id="exm2" style="width:auto;display:inline-block;margin-right:4px" ${v.n>1?'checked':''}>Takes 2 sessions</label>`:''}
+  ${Array.from({length:cnt},(_,i)=>`<label>Invigilator ${i+1}</label><select class="exmI"><option value="">— none —</option>${s.teachers.map(t=>`<option value="${t.id}" ${inv[i]===t.id?'selected':''}>${escapeHtml(t.name)}</option>`).join('')}</select>`).join('')}
+  <label class="chip" style="cursor:pointer;margin-top:8px"><input type="checkbox" id="exmL" style="width:auto;display:inline-block;margin-right:4px" ${v.l?'checked':''}>🔒 Lock (kept when re-generating)</label>
+  <div class="flexbtns" style="margin-top:12px"><button onclick="exmSave()">Save</button><button class="ghost" onclick="exmClose()">Cancel</button></div><hr>
+  <label>Move this paper to</label><div class="row"><div><select id="exmD">${exDays(x).map(dd=>`<option value="${dd}" ${dd===d?'selected':''}>${exFmt(dd)}</option>`).join('')}</select></div><div><select id="exmS">${x.sess.map((q,i)=>`<option value="${i}" ${i===si?'selected':''}>${escapeHtml(q.l)}</option>`).join('')}</select></div><div><button class="ghost" onclick="exmMove()">Move / swap</button></div></div></div>`;
+  document.body.appendChild(o);}
+function exmClose(){const m=qs('#exModal');if(m)m.remove();}
+function exmSave(){const {xid,c,d,si}=exmCtx,x=exFind(xid),S=x.sess.length,a=qs('#exmA').value;x.cells[c]=x.cells[c]||{};const dd=x.cells[c][d]=x.cells[c][d]||{},old=dd['s'+si],own=!!(old&&!old.cont&&old.n>1),two=!!(a&&(qs('#exm2')||{}).checked&&si+1<S),nx=dd['s'+(si+1)];
+  if(two&&nx&&!(own&&nx.cont)){toast('The next session already has a paper — clear it first','err');return;}
+  if(own)delete dd['s'+(si+1)];delete dd['s'+si];
+  if(a){const inv=[...new Set([...document.querySelectorAll('.exmI')].map(e=>e.value).filter(Boolean))],l=qs('#exmL').checked?1:0;dd['s'+si]={a,n:two?2:1,inv,l};if(two)dd['s'+(si+1)]={a,cont:1,l};}
+  if(!Object.keys(dd).length)delete x.cells[c][d];exSave();exmClose();exRedraw();}
+function exmMove(){const {xid,c,d,si}=exmCtx,x=exFind(xid),d2=qs('#exmD').value,s2=+qs('#exmS').value;if(d2===d&&s2===si){toast('Choose a different date or session','err');return;}
+  const cc=x.cells[c]=x.cells[c]||{},A=cc[d]=cc[d]||{},B=cc[d2]=cc[d2]||{},v=A['s'+si];if(!v||v.cont){toast('Save a paper here first','err');return;}const w=B['s'+s2],n=v.n||1;
+  if(n>1){if(s2+1>=x.sess.length||w||B['s'+(s2+1)]){toast('A 2-session paper needs two free sessions','err');return;}delete A['s'+si];delete A['s'+(si+1)];B['s'+s2]=v;B['s'+(s2+1)]={a:v.a,cont:1,l:v.l};}
+  else{if(w&&(w.cont||w.n>1)){toast('Cannot swap with a 2-session paper','err');return;}if(w)A['s'+si]=w;else delete A['s'+si];B['s'+s2]=v;}
+  if(!Object.keys(A).length)delete cc[d];exSave();exmClose();exRedraw();}
+// ---- Teacher portal ----
+const exPub=s=>ttData(s).exams.filter(x=>exNorm(x).published&&Object.keys(x.cells).length);
+function tplTeacherEx(s,t){const L=exPub(s),cls=teacherClassIds(s,t);
+  if(!L.length)return '<div class="card"><h2>📝 Exam Timetable</h2><p class="small">No exam timetable has been published yet. You will see your invigilation duties and your classes\' papers here once the DOS/HOI publishes it.</p></div>';
+  return `<div class="card"><h2 class="no-print">📝 Exam Timetable</h2><div class="flexbtns no-print" style="align-items:flex-end">${ttPaper()}<button class="gold" onclick="exTeacherPrint()">🖨 Print my duties (A4)</button><button class="ghost" onclick="exTeacherShare()">📤 Share (WhatsApp)</button></div>
+  ${L.map(x=>{const du=exDuties(s,x,t.id),mine=exCls(s,x).filter(c=>cls.includes(c.id));return `<h3 style="margin:14px 0 2px">${escapeHtml(x.name)}</h3><p class="small" style="margin:0 0 6px">${exSub(x)}</p><b>👀 My invigilation duties (${du.length})</b>${exDutyTable(s,x,t.id,false)}
+  ${mine.length?`<div class="no-print" style="margin-top:10px"><label>Exam timetable for my class</label><select onchange="exTeacherClass('${x.id}',this.value)"><option value="">— choose class —</option>${mine.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select><div id="exTCls_${x.id}"></div></div>`:''}`;}).join('')}</div>`;}
+function exTeacherClass(xid,cid){const s=currentSchool(),x=exFind(xid),a=qs('#exTCls_'+xid);if(!a)return;a.innerHTML=x&&cid?`<div class="flexbtns" style="margin:6px 0"><button class="ghost" onclick="exPrintClassT('${xid}','${cid}')">🖨 Print this class (A4)</button></div>`+exGridClass(s,x,cid,{}):'';}
+function exPrintClassT(xid,cid){const s=currentSchool(),x=exFind(xid);if(x)ttPrintHTML(exPgClass(s,x,cid));}
+function exTeacherPrint(){const s=currentSchool(),t=currentTeacher(),h=exPub(s).map(x=>exDuties(s,x,t.id).length?exPgTeacher(s,x,t):'').join('');if(!h){toast('You have no invigilation duties to print','err');return;}ttPrintHTML(h);}
+function exTeacherShare(){const s=currentSchool(),t=currentTeacher();let x=`*${s.name}*\n*Invigilation duties — ${t.name}*\n`,any=false;
+  exPub(s).forEach(q=>{const du=exDuties(s,q,t.id);if(!du.length)return;any=true;x+=`\n*${q.name}*\n`;du.forEach(u=>{const tm=exTime(q,u.si,u.n,exR(s,q,u.a).mins);x+=`${exFmt(u.d)} ${fm(tm[0])}–${fm(tm[1])}  ${ttCn(s,u.c)} · ${ttAn(s,u.a)}\n`;});});
+  if(!any){toast('You have no duties to share','err');return;}if(navigator.share){navigator.share({title:'My invigilation duties',text:x}).catch(()=>{});}else window.open('https://wa.me/?text='+encodeURIComponent(x),'_blank');}
+function exUpCard(s,t){const today=new Date().toLocaleDateString('en-CA'),du=[];exPub(s).forEach(x=>exDuties(s,x,t.id).forEach(u=>{if(u.d>=today)du.push(Object.assign({x},u));}));
+  du.sort((p,q)=>p.d<q.d?-1:p.d>q.d?1:p.si-q.si);if(!du.length)return '';
+  return `<div class="card no-print"><b>📝 Upcoming invigilation</b><table style="margin-top:6px">${du.slice(0,4).map(u=>{const tm=exTime(u.x,u.si,u.n,exR(s,u.x,u.a).mins);return `<tr><td>${exFmt(u.d)}${u.d===today?' <span class="chip">Today</span>':''}</td><td>${fm(tm[0])}–${fm(tm[1])}</td><td>${escapeHtml(ttCn(s,u.c))} · ${escapeHtml(ttAn(s,u.a))}</td></tr>`;}).join('')}</table>${du.length>4?`<p class="small" style="margin:4px 0 0">+ ${du.length-4} more — see Exam Timetable.</p>`:''}</div>`;}
+/* ============================= DUTY ROTA (DOS/HOI + Teacher portal) =============================
+   school.dutyRotas = [x]. x = {id,name,label,start,end (ISO dates), perDuty (1|2|3), genderPair,
+     considerFar ('normal'|'light'|'exclude'), exclude:[teacherId], skipWeeks:[weekKey],
+     cells:{weekKey:{ids:[teacherId...], l:true/false}}, notes, published, genAt}
+   One team of `perDuty` teacher(s) goes on duty each week of the period. The generator keeps
+   everyone's total turns roughly equal (least-used teacher is always considered first), and — when
+   "Pair genders" is on — puts at least one man and one woman on duty together each week, cycling
+   fairly through each gender on its own so nobody repeats before everyone of that gender has had an
+   equal turn. A teacher flagged as living far from school can be given fewer turns, or left out of
+   duty altogether, without touching anything else about their account. weekKey = ISO Monday date. */
+let drUI={id:'',tab:'setup'};
+function drMon(iso){const d=exDate(iso),dow=d.getDay()||7;d.setDate(d.getDate()-(dow-1));return exIso(d);}
+function drWeeks(x){const out=[];if(!x.start||!x.end)return out;let m=drMon(x.start);const endMon=drMon(x.end);let n=0;
+  while(m<=endMon&&n<120){if(!x.skipWeeks.includes(m)){const sun=exDate(m);sun.setDate(sun.getDate()+6);out.push({k:m,mon:m,sun:exIso(sun)});}const d=exDate(m);d.setDate(d.getDate()+7);m=exIso(d);n++;}
+  return out;}
+function drWeekLabel(w){const a=exDate(w.mon),b=exDate(w.sun),sameMonth=a.getMonth()===b.getMonth();
+  return `${a.getDate()} ${sameMonth?'':EX_MON[a.getMonth()]+' '}– ${b.getDate()} ${EX_MON[b.getMonth()]} ${b.getFullYear()}`;}
+function drNorm(x){const D={name:'Duty Rota',label:'',start:'',end:'',perDuty:1,genderPair:false,considerFar:'normal',carryHistory:true,
+  notes:'Duty teacher(s) report 15 minutes before the first bell and remain on duty until the last learner has left the compound.',
+  published:false,genAt:0};
+  Object.keys(D).forEach(k=>{if(x[k]===undefined||x[k]===null)x[k]=D[k];});
+  ['exclude','skipWeeks'].forEach(k=>{if(!Array.isArray(x[k]))x[k]=[];});
+  if(!x.cells||typeof x.cells!=='object')x.cells={};
+  return x;}
+const drFind=id=>{const x=(currentSchool().dutyRotas||[]).find(q=>q.id===id);return x?drNorm(x):null;};
+function drSave(){saveDB(DB);}
+const drRedraw=()=>redrawKeepingState(renderDOS);
+const drTn=(s,id)=>{const t=s.teachers.find(q=>q.id===id);return t?t.name:'—';};
+const drCand=(s,x)=>s.teachers.filter(t=>!x.exclude.includes(t.id)&&!(x.considerFar==='exclude'&&t.farFromSchool));
+// Total times each teacher has been placed on duty across every duty rota this school has
+// ever had (so a new term can carry the rotation forward instead of resetting everyone to
+// zero). Pass excludeId to leave one rota's own cells out of the count — used when
+// generating that very rota, whose cells are about to be rebuilt.
+function drHistoryCounts(s, excludeId){
+  const cnt={};
+  (s.dutyRotas||[]).forEach(r=>{ if(r.id===excludeId) return;
+    Object.values(r.cells||{}).forEach(c=>{(c.ids||[]).forEach(id=>{cnt[id]=(cnt[id]||0)+1;});}); });
+  return cnt;
+}
+// Workload so far across every duty rota, for the "⚖️ Workload so far" summary — shown so
+// the DOS/HOI can see at a glance that duty really is spread evenly.
+function drWorkload(s,x){const cnt=drHistoryCounts(s);
+  return drCand(s,x).map(t=>({t,n:cnt[t.id]||0})).sort((a,b)=>b.n-a.n||a.t.name.localeCompare(b.t.name));}
+// ---- generator ----
+function drGen(s,x,keep){
+  const weeks=drWeeks(x),P=Math.max(1,Math.min(3,+x.perDuty||1)),cells={};
+  const cnt=x.carryHistory?drHistoryCounts(s,x.id):{};
+  const all=drCand(s,x),far=t=>x.considerFar==='light'&&t.farFromSchool;
+  if(keep)weeks.forEach(w=>{const old=x.cells[w.k];if(old&&old.l)cells[w.k]={ids:(old.ids||[]).filter(id=>all.some(t=>t.id===id)),l:true};});
+  Object.values(cells).forEach(c=>c.ids.forEach(id=>{cnt[id]=(cnt[id]||0)+1;}));
+  const male=all.filter(t=>t.gender==='M'),female=all.filter(t=>t.gender==='F');
+  const score=t=>(cnt[t.id]||0)+(far(t)?0.5:0)+Math.random()*0.01;
+  const pick=(pool,used)=>{const left=pool.filter(t=>!used.includes(t.id));if(!left.length)return null;left.sort((a,b)=>score(a)-score(b));return left[0];};
+  let flip=false,un=[];
+  weeks.forEach(w=>{
+    if(cells[w.k])return; // kept locked
+    const ids=[];
+    if(x.genderPair && male.length && female.length){
+      let mWant=Math.floor(P/2), fWant=P-mWant;
+      if(P%2){ if(flip){mWant++;fWant--;} else {fWant++;mWant--;} flip=!flip; }
+      for(let i=0;i<mWant;i++){const t=pick(male,ids);if(t)ids.push(t.id);}
+      for(let i=0;i<fWant;i++){const t=pick(female,ids);if(t)ids.push(t.id);}
+    }
+    while(ids.length<P){const t=pick(all,ids);if(!t)break;ids.push(t.id);}
+    ids.forEach(id=>{cnt[id]=(cnt[id]||0)+1;});
+    cells[w.k]={ids,l:false};
+    if(ids.length<P)un.push(w);
+  });
+  return {cells,un};
+}
+function drIssues(s,x){const weeks=drWeeks(x),P=Math.max(1,Math.min(3,+x.perDuty||1));
+  const short=weeks.filter(w=>((x.cells[w.k]||{}).ids||[]).length<P);
+  return {exp:weeks.length*P,got:weeks.reduce((a,w)=>a+((x.cells[w.k]||{}).ids||[]).length,0),
+    list:short.map(w=>`Week of ${drWeekLabel(w)}: only ${((x.cells[w.k]||{}).ids||[]).length} of ${P} duty teacher(s) placed — not enough eligible teachers left that week.`)};}
+// ---- DOS/HOI screens ----
+function drTabBtn(k){drUI.tab=k;renderDOS();}
+function tplDutyRota(s){const L=(s.dutyRotas||[]).map(drNorm);const x=L.find(q=>q.id===drUI.id)||L[0];if(x)drUI.id=x.id;
+  return `<div class="card"><h2 class="no-print">👮 Duty Rota</h2><p class="small no-print">Set the period and how many teachers go on duty together each week, let the generator place them fairly, then fine-tune or print.</p>
+  <div class="row no-print"><div><label>Duty rota</label><select onchange="drUI.id=this.value;renderDOS()">${L.map(q=>`<option value="${q.id}" ${q.id===drUI.id?'selected':''}>${escapeHtml(q.name)}</option>`).join('')||'<option>— none yet —</option>'}</select></div>
+  <div><label>Name</label><input id="drNewName" placeholder="e.g. Term 3 Duty Roster"></div><div style="align-self:flex-end"><button onclick="drAdd()">+ Create</button></div></div>
+  ${x?`<div class="no-print">${ttTabs(drUI.tab,[['setup','⚙️ Setup'],['table','🗓 Rota']],'drTabBtn')}${drUI.tab==='table'?'':drTabSetup(s,x)}</div>${drUI.tab==='table'?drTabTable(s,x):''}<div class="flexbtns no-print" style="margin-top:12px"><button class="danger" onclick="drDel('${x.id}')">Delete this duty rota</button></div>`:'<p class="small">Create your first duty rota above.</p>'}</div>`;}
+function drTabSetup(s,x){const id=x.id,weeks=drWeeks(x);
+  return `<div class="row"><div><label>Name</label><input value="${escapeHtml(x.name)}" onchange="drSet('${id}','name',this.value)"></div><div><label>Label on prints</label><input value="${escapeHtml(x.label)}" placeholder="e.g. Term 3, 2026" onchange="drSet('${id}','label',this.value)"></div><div><label>Period starts</label><input type="date" value="${x.start}" onchange="drSet('${id}','start',this.value)"></div><div><label>Period ends</label><input type="date" value="${x.end}" onchange="drSet('${id}','end',this.value)"></div></div>
+  <div class="row"><div><label>Teachers on duty together</label><select onchange="drSet('${id}','perDuty',+this.value)"><option value="1" ${x.perDuty===1?'selected':''}>1 teacher</option><option value="2" ${x.perDuty===2?'selected':''}>2 teachers</option><option value="3" ${x.perDuty===3?'selected':''}>3 teachers</option></select></div>
+  <div><label>If a teacher lives far from school</label><select onchange="drSet('${id}','considerFar',this.value)"><option value="normal" ${x.considerFar==='normal'?'selected':''}>Treat the same as everyone</option><option value="light" ${x.considerFar==='light'?'selected':''}>Give them fewer turns</option><option value="exclude" ${x.considerFar==='exclude'?'selected':''}>Leave them out of duty altogether</option></select></div></div>
+  <label class="chip" style="cursor:pointer;margin-top:8px"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.genderPair?'checked':''} onchange="drSet('${id}','genderPair',this.checked)">Pair a man and a woman on duty together each week (falls back to anyone available if one gender runs out)</label><br>
+  <label class="chip" style="cursor:pointer;margin-top:6px"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.carryHistory?'checked':''} onchange="drSet('${id}','carryHistory',this.checked)">Carry fairness over from past duty rotas (a new term continues the same rotation instead of starting everyone back at zero)</label>
+  <p class="small" style="margin-top:4px">Set each teacher's gender and whether they live far from school in <b>Teachers &amp; Permissions</b>.</p>
+  <label style="margin-top:8px">Notes printed under the rota</label><textarea rows="2" onchange="drSet('${id}','notes',this.value)">${escapeHtml(x.notes)}</textarea>
+  <h3 style="margin:12px 0 4px">Teachers in this rota</h3><div class="flexbtns">${s.teachers.map(t=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.exclude.includes(t.id)?'':'checked'} onchange="drExcl('${id}','${t.id}',this.checked)">${escapeHtml(t.name)}${t.gender?' ('+t.gender+')':''}${t.farFromSchool?' 🚗':''}</label>`).join('')||'<span class="small">Add teachers first.</span>'}</div>
+  <h3 style="margin:12px 0 4px">No-duty weeks (half term, exam week…)</h3><div class="flexbtns" style="align-items:center">${weeks.map(w=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.skipWeeks.includes(w.k)?'checked':''} onchange="drSkip('${id}','${w.k}',this.checked)">${drWeekLabel(w)}</label>`).join('')||'<span class="small">Set the dates above first.</span>'}</div>
+  <p class="small" style="margin-top:10px">${weeks.length} duty week(s) in this period.</p>`;}
+function drTabTable(s,x){const id=x.id,weeks=drWeeks(x),has=Object.keys(x.cells).length,iss=has?drIssues(s,x):null;
+  const box=iss?(iss.list.length?`<div class="card no-print" style="background:#fff6e5"><b>⚠ ${iss.list.length} thing(s) to check</b> <span class="small">(${iss.got} of ${iss.exp} duty slot(s) filled)</span><ul style="margin:6px 0 0 18px">${iss.list.slice(0,10).map(q=>`<li>${escapeHtml(q)}</li>`).join('')}</ul></div>`:`<div class="card no-print" style="background:#e9f7ef">✅ All ${iss.exp} duty slot(s) filled — workload is balanced across every teacher.</div>`):'';
+  const wl=drWorkload(s,x),wlBox=wl.length?`<div class="card no-print" style="margin-top:10px"><b>⚖️ Workload so far</b> <span class="small">(every duty rota this school has had${x.carryHistory?'':' — not counted toward this rota, since carry-over is off above'})</span><table style="margin-top:6px">${wl.map(r=>`<tr><td>${escapeHtml(r.t.name)}${r.t.gender?' ('+r.t.gender+')':''}${r.t.farFromSchool?' 🚗':''}</td><td style="text-align:right">${r.n} duty wk${r.n===1?'':'s'}</td></tr>`).join('')}</table></div>`:'';
+  const body=weeks.map(w=>{const c=x.cells[w.k]||{ids:[],l:false};return `<tr><td style="text-align:left">${drWeekLabel(w)}</td><td class="${c.l?'lk':''}" style="text-align:left;cursor:pointer" onclick="drEdit('${id}','${w.k}')">${c.ids.length?c.ids.map(id=>escapeHtml(drTn(s,id))).join(', ')+(c.l?' 🔒':''):'<span class="ta">— tap to assign —</span>'}</td></tr>`;}).join('');
+  return `<div class="flexbtns no-print" style="align-items:center"><button class="gold" onclick="drGenerate('${id}')">🔄 Generate</button><label class="chip" style="cursor:pointer"><input type="checkbox" id="drKeep" style="width:auto;display:inline-block;margin-right:4px" checked>Keep 🔒 locked weeks</label><button class="ghost" onclick="drClear('${id}')">Clear</button><label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.published?'checked':''} onchange="drSet('${id}','published',this.checked)">Visible in teachers' portal</label></div>${box}${wlBox}
+  ${weeks.length?`<p class="small no-print">Tap a week to change who's on duty or 🔒 lock it.</p><div class="ttw"><table class="ttg"><tr><th>Week</th><th>On duty</th></tr>${body}</table></div><div class="flexbtns no-print" style="align-items:flex-end;margin-top:10px">${ttPaper()}<button class="gold" onclick="drPrint('${id}')">🖨 Print rota</button></div>`:'<p class="small">Set the dates in Setup first.</p>'}`;}
+// ---- actions ----
+function drAdd(){const s=currentSchool(),nm=((qs('#drNewName')||{}).value||'').trim();
+  if(!nm){toast('Enter a name, e.g. Term 3 Duty Roster','err');return;}
+  if(!Array.isArray(s.dutyRotas))s.dutyRotas=[];
+  const x=drNorm({id:uid('dr_'),name:nm});s.dutyRotas.push(x);drUI.id=x.id;drUI.tab='setup';drSave();drRedraw();}
+function drDel(id){if(!confirm('Delete this duty rota?'))return;const s=currentSchool();s.dutyRotas=(s.dutyRotas||[]).filter(q=>q.id!==id);drUI.id='';drSave();drRedraw();}
+function drSet(id,k,v){const x=drFind(id);if(!x)return;x[k]=v;drSave();drRedraw();}
+function drExcl(id,tid,on){const x=drFind(id);x.exclude=on?x.exclude.filter(q=>q!==tid):[...new Set(x.exclude.concat(tid))];drSave();drRedraw();}
+function drSkip(id,wk,on){const x=drFind(id);x.skipWeeks=on?[...new Set(x.skipWeeks.concat(wk))]:x.skipWeeks.filter(q=>q!==wk);drSave();drRedraw();}
+function drGenerate(id){const s=currentSchool(),x=drFind(id),keep=!!(qs('#drKeep')||{}).checked;
+  if(!x.start||!x.end){toast('Set the period start and end in Setup','err');return;}
+  if(!drCand(s,x).length){toast('No eligible teachers — check Setup','err');return;}
+  if(!drWeeks(x).length){toast('No duty weeks fall between those dates','err');return;}
+  const r=drGen(s,x,keep);x.cells=r.cells;x.genAt=Date.now();drSave();drRedraw();toast(r.un.length?r.un.length+' week(s) could not be fully filled — see the checks below':'✅ Duty rota generated');}
+function drClear(id){if(!confirm('Clear every assignment on this rota (including locked weeks)?'))return;const x=drFind(id);x.cells={};drSave();drRedraw();}
+// ---- edit a week ----
+let drmCtx=null;
+function drEdit(xid,wk){const s=currentSchool(),x=drFind(xid),c=x.cells[wk]||{ids:[],l:false};
+  drmCtx={xid,wk};const P=Math.max(1,Math.min(3,+x.perDuty||1)),w=drWeeks(x).find(q=>q.k===wk)||{mon:wk,sun:wk},o=document.createElement('div');
+  o.id='drModal';o.style.cssText='position:fixed;inset:0;background:rgba(9,30,55,.55);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;';
+  o.innerHTML=`<div class="card" style="max-width:380px;width:100%;max-height:90vh;overflow:auto"><h2 style="margin-top:0">Duty: ${escapeHtml(drWeekLabel(w))}</h2>
+  ${Array.from({length:P},(_,i)=>`<label>Teacher ${i+1}</label><select class="drmT"><option value="">— none —</option>${s.teachers.map(t=>`<option value="${t.id}" ${c.ids[i]===t.id?'selected':''}>${escapeHtml(t.name)}${t.gender?' ('+t.gender+')':''}${t.farFromSchool?' 🚗':''}</option>`).join('')}</select>`).join('')}
+  <label class="chip" style="cursor:pointer;margin-top:8px"><input type="checkbox" id="drmL" style="width:auto;display:inline-block;margin-right:4px" ${c.l?'checked':''}>🔒 Lock (kept when re-generating)</label>
+  <div class="flexbtns" style="margin-top:12px"><button onclick="drmSave()">Save</button><button class="ghost" onclick="drmClose()">Cancel</button></div></div>`;
+  document.body.appendChild(o);}
+function drmClose(){const m=qs('#drModal');if(m)m.remove();}
+function drmSave(){const {xid,wk}=drmCtx,x=drFind(xid),ids=[...new Set([...document.querySelectorAll('.drmT')].map(e=>e.value).filter(Boolean))],l=qs('#drmL').checked;
+  if(ids.length)x.cells[wk]={ids,l};else delete x.cells[wk];drSave();drmClose();drRedraw();}
+// ---- print ----
+const drSub=x=>[x.name,x.label].filter(Boolean).map(escapeHtml).join(' · ');
+function drPgMaster(s,x){const weeks=drWeeks(x);
+  const body=`<div class="ttw"><table class="ttg"><tr><th>Week</th><th>Teacher(s) on duty</th></tr>${weeks.map(w=>{const c=x.cells[w.k]||{ids:[]};return `<tr><td style="text-align:left">${drWeekLabel(w)}</td><td style="text-align:left">${c.ids.length?c.ids.map(id=>escapeHtml(drTn(s,id))).join(', '):'—'}</td></tr>`;}).join('')}</table></div>`;
+  return ttPage(s,'Duty Rota',drSub(x),body,x.notes?escapeHtml(x.notes):'');}
+function drPrint(id){const s=currentSchool(),x=drFind(id);if(!Object.keys(x.cells).length){toast('Generate the duty rota first','err');return;}ttPrintHTML(drPgMaster(s,x));}
+// ---- Teacher portal ----
+const drPub=s=>(s.dutyRotas||[]).map(drNorm).filter(x=>x.published&&Object.keys(x.cells).length);
+function drUpCard(s,t){const today=drMon(exIso(new Date())),items=[];
+  drPub(s).forEach(x=>drWeeks(x).forEach(w=>{if(w.mon<today)return;const c=x.cells[w.k];if(c&&c.ids.includes(t.id))items.push({x,w});}));
+  items.sort((a,b)=>a.w.mon<b.w.mon?-1:1);
+  if(!items.length)return '';
+  return `<div class="card no-print"><b>👮 Upcoming duty</b><table style="margin-top:6px">${items.slice(0,4).map(i=>`<tr><td>${drWeekLabel(i.w)}${i.w.mon===today?' <span class="chip">This week</span>':''}</td><td>${escapeHtml(i.x.name)}</td></tr>`).join('')}</table></div>`;}
 /* ============================= DOS VIEW ============================= */
 let dosTab = 'dashboard';
 let teacherTab = 'dashboard', parentTab = 'dashboard', adminTab = 'dashboard';
@@ -3345,7 +3806,7 @@ function dismissWaGroupPrompt(){
 const DOS_MENU = [
   {group:'Overview', items:[['dashboard','🏠 Dashboard']]},
   {group:'School setup', items:[['classes','🏷 Grades'],['areas','📚 Learning Areas'],['grading','🎯 Grading System'],['students','🧑‍🎓 Learners'],['teachers','👩‍🏫 Teachers &amp; Permissions']]},
-  {group:'Timetable', items:[['tt','🗓 Timetables'],['ttsetup','⚙️ Timetable Setup'],['ttrem','🔁 Remedial Timetables']]},
+  {group:'Timetable', items:[['tt','🗓 Timetables'],['ttsetup','⚙️ Timetable Setup'],['ttrem','🔁 Remedial Timetables'],['ttwork','📊 Teacher Workload'],['extt','📝 Exam Timetable'],['duty','👮 Duty Rota']]},
   {group:'Exams &amp; marks', items:[['exams','📝 Exams'],['marks','✏️ Enter/Edit Marks']]},
   {group:'Results &amp; reports', items:[['assess','🖨 Assessment Sheets'],['analysis','📈 Results Analysis'],['reports','📄 Reports'],['history','🗂 Exam History']]},
   {group:'Parents', items:[['assignments','📎 Assignments'],['sms','💬 SMS to Parents'],['links','🔗 Share Login Links']]},
@@ -3459,12 +3920,16 @@ function renderDOS(){
       <button onclick="gotoDosTab('exams')">📝 Exams</button>
       <button onclick="gotoDosTab('assignments')">📎 Assignments</button>
       <button onclick="gotoDosTab('tt')">🗓 Timetables</button>
+      <button onclick="gotoDosTab('extt')">📝 Exam Timetable</button>
     </div>` + tplDashboard(school);
     if(school.classes.length) runDashboard();
   }
   if(dosTab==='tt') c.innerHTML = tplTt(school);
   if(dosTab==='ttsetup') c.innerHTML = tplTtSetup(school);
   if(dosTab==='ttrem') c.innerHTML = tplTtRem(school);
+  if(dosTab==='ttwork') c.innerHTML = tplTtWork(school);
+  if(dosTab==='extt') c.innerHTML = tplExTt(school);
+  if(dosTab==='duty') c.innerHTML = tplDutyRota(school);
   if(dosTab==='links') c.innerHTML = tplShareLinks(school);
   if(dosTab==='classes') c.innerHTML = tplClasses(school);
   if(dosTab==='areas') c.innerHTML = tplAreas(school);
@@ -4923,14 +5388,18 @@ function tplTeachers(school){
     <div><label>Password</label><input id="tePass" placeholder="leave blank to default to tea123"></div>
     <div><label>Email <span class="small">(optional)</span></label><input id="teEmail" type="email" placeholder="for password-reset codes"></div>
     <div><label>Phone <span class="small">(optional)</span></label><input id="tePhone" placeholder="for password-reset codes"></div>
+    <div><label>Gender <span class="small">(optional)</span></label><select id="teGender"><option value="">— not set —</option><option value="M">Male</option><option value="F">Female</option></select></div>
+    <div style="align-self:flex-end"><label class="chip" style="cursor:pointer"><input type="checkbox" id="teFar" style="width:auto;display:inline-block;margin-right:4px">Lives far from school</label></div>
   </div>
   <div class="flexbtns"><button onclick="addTeacher()">➕ Add Teacher</button></div>
-  <p class="small">Email/phone are only used so a teacher can reset a forgotten password themselves via a code sent to them — leave blank and they'll need to ask you instead. You (or the teacher, once logged in) can add or edit these later in the table below.</p>
-  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Assigned Grade / Learning Area</th><th>Class Teacher For</th><th>Can Print Reports?</th><th>Can Print Assessment Sheets?</th><th>Can Post Assignments?</th><th>Can Approve/<br>Disapprove Results?</th><th>Can Decide Edit Requests?</th><th>Can Open/Close Entry?</th><th>Actions</th></tr>
+  <p class="small">Email/phone are only used so a teacher can reset a forgotten password themselves via a code sent to them — leave blank and they'll need to ask you instead. Gender and "Lives far from school" are only used by the Duty Rota generator, to pair/alternate gender fairly and to go easy on — or exclude — a teacher with a long commute. You (or the teacher, once logged in) can add or edit these later in the table below.</p>
+  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Gender</th><th>Lives far?</th><th>Assigned Grade / Learning Area</th><th>Class Teacher For</th><th>Can Print Reports?</th><th>Can Print Assessment Sheets?</th><th>Can Post Assignments?</th><th>Can Approve/<br>Disapprove Results?</th><th>Can Decide Edit Requests?</th><th>Can Open/Close Entry?</th><th>Actions</th></tr>
   ${school.teachers.map(t=>`<tr>
     <td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.username)}</td>
     <td><input value="${escapeHtml(t.email||'')}" placeholder="email" onchange="setTeacherContact('${t.id}','email',this.value)"></td>
     <td><input value="${escapeHtml(t.phone||'')}" placeholder="phone" onchange="setTeacherContact('${t.id}','phone',this.value)"></td>
+    <td><select onchange="setTeacherField('${t.id}','gender',this.value)"><option value="" ${!t.gender?'selected':''}>—</option><option value="M" ${t.gender==='M'?'selected':''}>Male</option><option value="F" ${t.gender==='F'?'selected':''}>Female</option></select></td>
+    <td style="text-align:center"><input type="checkbox" ${t.farFromSchool?'checked':''} onchange="setTeacherField('${t.id}','farFromSchool',this.checked)"></td>
     <td>
       <select onchange="assignTeacher('${t.id}',this.value)">
         <option value="">-- assign --</option>
@@ -4958,7 +5427,7 @@ function tplTeachers(school){
     <td><input type="checkbox" ${t.canApproveEditRequests?'checked':''} onchange="toggleTeacherPerm('${t.id}','canApproveEditRequests',this.checked)"></td>
     <td><input type="checkbox" ${t.canManageEntry?'checked':''} onchange="toggleTeacherPerm('${t.id}','canManageEntry',this.checked)"></td>
     <td><button class="ghost" onclick="resetTeacherPassword('${t.id}')">🔑 Reset Password</button> <button class="danger" onclick="delTeacher('${t.id}')">✕</button></td>
-  </tr>`).join('') || '<tr><td colspan="13" class="small">No teachers yet.</td></tr>'}
+  </tr>`).join('') || '<tr><td colspan="15" class="small">No teachers yet.</td></tr>'}
   </table>
   <p class="small" style="margin-top:8px"><b>Class Teacher For</b> marks which grade(s) a teacher is class teacher of. A grade can have more than one.</p>
   <p class="small">The next three permissions only apply to grade(s) checked under <b>Class Teacher For</b>, letting that teacher handle their own grade's exam sign-off without waiting on you: <b>Approve/Disapprove Results</b>, <b>Decide Edit Requests</b>, and <b>Open/Close Entry</b>. You can always act directly on any exam yourself regardless.</p>
@@ -4975,13 +5444,23 @@ function addTeacher(){
   const name=qs('#teName').value.trim(), username=qs('#teUser').value.trim();
   let password=qs('#tePass').value.trim();
   const email=qs('#teEmail').value.trim(), phone=qs('#tePhone').value.trim();
+  const gender=(qs('#teGender')||{}).value||'', farFromSchool=!!(qs('#teFar')||{}).checked;
   if(!name||!username){ toast('Fill in name & username','err'); return; }
   if(!password) password = 'tea123';
   const school = currentSchool();
   if(school.teachers.some(t=>t.username===username)){ toast('That username is already taken','err'); return; }
-  school.teachers.push({id:uid('t_'), name, username, password, email, phone, assignments:[], canPrint:true, canPrintAssess:false, canPostAssignments:false,
+  school.teachers.push({id:uid('t_'), name, username, password, email, phone, gender, farFromSchool, assignments:[], canPrint:true, canPrintAssess:false, canPostAssignments:false,
     classTeacherOf:[], canApproveResults:false, canApproveEditRequests:false, canManageEntry:false});
   saveDB(DB); toast(`Teacher added. Password: ${password}`); renderDOS();
+}
+// Gender and farFromSchool are edited inline from the Teachers table, same pattern as
+// setTeacherContact — only these two are used by the Duty Rota generator.
+function setTeacherField(tid, field, value){
+  const t = currentSchool().teachers.find(x=>x.id===tid);
+  if(!t) return;
+  t[field] = value;
+  saveDB(DB);
+  renderDOS();
 }
 // Lets the DOS/HOI (from this table) or the teacher themselves (from My Account, once
 // logged in) keep a registered email/phone on file — the only thing "Forgot password?"
@@ -5463,7 +5942,7 @@ function renderTeacher(){
   if(t.canPostAssignments) more.push(['assignments','📎 Assignments']);
   if(ctTools) more.push(['classteacher','📋 Class Teacher Tools']);
   if(more.length) menu.push({group:'Class work', items:more});
-  menu.splice(1,0,{group:'Timetable', items:[['timetable','🗓 My Timetable']]});
+  menu.splice(1,0,{group:'Timetable', items:[['timetable','🗓 My Timetable'],['examtt','📝 Exam Timetable']]});
   menu.push({group:'My account', items:[['account','🔑 My Account']]});
   if(!menu.some(g=>g.items.some(i=>i[0]===teacherTab))) teacherTab = 'dashboard';
   const quick = [['timetable','🗓 My Timetable'],['marks','✏️ Enter Marks']];
@@ -5471,8 +5950,9 @@ function renderTeacher(){
   if(t.canPostAssignments) quick.push(['assignments','📎 Assignments']);
   quick.push(['approvals','⏳ Approval Status']);
   const content = {
-    dashboard: welcome + portalQuick('gotoTeacherTab', quick) + ttTodayCard(school, t) + dash,
+    dashboard: welcome + portalQuick('gotoTeacherTab', quick) + ttTodayCard(school, t) + exUpCard(school, t) + drUpCard(school, t) + dash,
     timetable: tplTeacherTt(school, t),
+    examtt: tplTeacherEx(school, t),
     marks: P.marks, approvals: P.approvals, reports: P.reports, assess: P.assess,
     history: P.history, assignments: P.assignments, classteacher: ctTools, account: acct
   }[teacherTab] || '';
@@ -8018,143 +8498,73 @@ function drawProgressChart(chartId, data){
     ctx.save(); ctx.translate(x,c.height-10); ctx.fillStyle='#123a63'; ctx.font='11px Arial'; ctx.textAlign='center'; ctx.fillText(d.label, 0, 0); ctx.restore();
   });
 }
-/* ============================= PRINT: FIT REPORT CARD TO ONE PAGE =============================
-   Guarantees a learner report always lands on exactly one A4 page, however many learning
-   areas a school has configured. Right before printing, this measures each .report-card's
-   actual rendered height against the printable page height and, if it's even slightly too
-   tall, shrinks it with CSS zoom — which (unlike transform:scale) causes a real reflow, so
-   nothing gets clipped, cut off, or spills a sliver onto a second page. Resets back to normal
-   size again once printing is done, so on-screen viewing is unaffected. */
+/* ============================= PRINT: FIT REPORT CARD TO ONE A4 PAGE =============================
+   Every learner report must fill the WHOLE printable A4 area (210x297mm minus the 8mm @page
+   margin on every side = 194x281mm): equal margins all round, no blank strip below, nothing
+   spilling to a 2nd page. The print CSS gives each card the full printable height as a flex
+   column, so a short report simply stretches (spacers share the spare height). A report with
+   a lot of content is shrunk with CSS zoom — and, because zoom also shrinks the box itself,
+   the card's width and height are divided by the zoom factor so that after zooming it still
+   covers exactly the full page width and height.
+   To decide HOW MUCH to shrink, each card is measured in a hidden copy that has the print
+   styles applied (print rules cloned under .rcsim) at the real printable width — measuring
+   the on-screen layout (wider, bigger type) would over-shrink the text. */
+function rcPrintSimCSS(){
+  if(document.getElementById('rcSimCss')) return;
+  // Copies every style rule that applies in PRINT (plain rules + @media print/all), in source order,
+  // each prefixed with .rcsim. Prefixing every rule equally keeps the cascade — specificity and
+  // order — identical to real printing, so the hidden copy measures exactly what the printer will lay out.
+  let css='';
+  const add=q=>{ if(q.type!==CSSRule.STYLE_RULE) return;
+    const sel=q.selectorText.split(',').map(x=>x.trim()).filter(x=>x && !/^(html|body|:root)/.test(x)).map(x=>'.rcsim '+x).join(',');
+    if(sel) css+=sel+'{'+q.style.cssText+'}'; };
+  Array.from(document.styleSheets).forEach(ss=>{
+    let rules; try{ rules=Array.from(ss.cssRules); }catch(e){ return; }   // cross-origin sheet (web font) — skip only that sheet
+    rules.forEach(r=>{
+      if(r.type===CSSRule.STYLE_RULE) add(r);
+      else if(r.type===CSSRule.MEDIA_RULE && /(^|[\s,(])(print|all)\b/.test(r.media.mediaText) && !/only screen|^screen/.test(r.media.mediaText)) Array.from(r.cssRules).forEach(add);
+    });
+  });
+  const st=document.createElement('style'); st.id='rcSimCss'; st.textContent=css; document.head.appendChild(st);
+}
+function resetReportFit(){
+  document.querySelectorAll('.report-card').forEach(el=>{ el.style.zoom=''; el.style.width=''; el.style.height=''; el.style.removeProperty('--rc-pad'); el.style.removeProperty('--rc-ch'); });
+}
 function fitReportCardsToPage(){
-  const mmToPx = mm => mm * 96/25.4;
-  // A small safety buffer (2mm) below the true printable height, so a report that lands
-  // right on the edge (rounding, font metrics, etc.) still shrinks a hair rather than
-  // spilling onto a second, otherwise-empty page.
-  const pageHeightPx = mmToPx(279.4) - mmToPx(8)*2 - mmToPx(2);
-  document.querySelectorAll('.report-card').forEach(el=>{
-    el.style.zoom = 1;
-    const h = el.scrollHeight;
-    if(h > pageHeightPx){
-      const ratio = Math.max(0.55, pageHeightPx / h); // never shrink past ~55% — stays legible
-      el.style.zoom = ratio;
+  const PX = mm => mm*96/25.4;
+  const PAGE_W = 194, PAGE_H = 280;            // printable A4 (mm): 210-2*8 wide, 297-2*8 tall minus 1mm safety
+  const cards = Array.from(document.querySelectorAll('.report-card'));
+  resetReportFit();
+  if(!cards.length) return;
+  rcPrintSimCSS();
+  const sim=document.createElement('div');
+  sim.className='rcsim';
+  sim.style.cssText='position:absolute;left:-10000px;top:0;visibility:hidden;width:'+PAGE_W+'mm;font-size:11px;font-family:var(--font);color:#1c2b3a;line-height:normal;';
+  document.body.appendChild(sim);
+  cards.forEach(el=>{
+    const c=el.cloneNode(true);
+    c.classList.remove('print-only-block');
+    c.style.cssText='height:auto;width:100%;margin:0;zoom:1;';
+    sim.appendChild(c);
+    const h=c.scrollHeight;                    // natural height at the real print width/typography
+    sim.removeChild(c);
+    if(h > PX(PAGE_H)){
+      const k=Math.max(0.5, PX(PAGE_H)/h);
+      el.style.zoom=k;
+      el.style.width=(100/k)+'%';
+      el.style.height=(PAGE_H/k)+'mm';
+    }else{
+      // Short report: instead of leaving one big empty gap, share ~80% of the spare height between
+      // taller table rows (55%) and a taller trend chart (25%); the flex spacers take the rest.
+      const spare=PX(PAGE_H)-h, rows=el.querySelectorAll('.rc-table tr').length||1;
+      el.style.setProperty('--rc-pad', (3.5+Math.min(spare*0.55/rows/2,13)).toFixed(1)+'px');
+      el.style.setProperty('--rc-ch', (120+Math.min(spare*0.25,140)).toFixed(0)+'px');
     }
   });
+  document.body.removeChild(sim);
 }
 window.addEventListener('beforeprint', fitReportCardsToPage);
-window.addEventListener('afterprint', ()=>{
-  document.querySelectorAll('.report-card').forEach(el=>{ el.style.zoom = 1; });
-});
-/* ============================= PARENT PORTAL VIEW =============================
-   Deliberately its own small, self-contained view: unlike renderDOS()/renderTeacher(),
-   it has no tabs, no learner list, no other class or exam management UI — just the one
-   logged-in learner's own report(s). There is no code path from here into any other
-   learner's data, another class, or the DOS/Teacher/Admin screens. */
-function renderParent(){
-  const school = parentSchoolData;
-  const student = school && school.students.find(s=>s.id===session.studentId);
-  if(!school || !student){
-    logout();
-    setTimeout(()=>toast('Learner record not found — please log in again.','err'), 50);
-    return;
-  }
-  const cls = school.classes.find(c=>c.id===student.classId);
-  const exams = school.exams.slice().reverse(); // already limited to this learner's own exams by buildParentSafeSchool
-  const assignments = school.assignments.slice().sort((a,b)=>b.postedAt-a.postedAt); // already limited to this learner's grade + visible ones
-  const menu = [
-    {group:'Overview', items:[['dashboard','🏠 Dashboard']]},
-    {group:'My child', items:[['report','📄 Progress Report'],['assignments','📎 Assignments'],['fees','🧾 Fee Invoice']]}
-  ];
-  if(!menu.some(g=>g.items.some(i=>i[0]===parentTab))) parentTab = 'dashboard';
-  const latest = exams[0];
-  const head = `<div class="card">
-    <h2>👋 ${escapeHtml(student.name)}</h2>
-    <p class="small">${cls?escapeHtml(cls.name):'Grade not set'} &nbsp;·&nbsp; ${escapeHtml(school.name)} &nbsp;·&nbsp; Admission No: ${escapeHtml(student.adm||'-')}${student.assessNo?` &nbsp;·&nbsp; Assessment No: ${escapeHtml(student.assessNo)}`:''}</p>
-    <p class="small" style="margin-bottom:0">${latest ? `Latest report: <b>${escapeHtml(latest.name)}</b> (${latest.term} ${latest.year})` : 'No reports are available yet.'}</p>
-  </div>`;
-  const reportCard = `<div class="card">
-    <h2>📄 Progress Report</h2>
-    <div class="row">
-      <div><label>Exam / Term</label>
-        <select id="pExam" onchange="viewParentReport()">
-          ${exams.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No reports available yet</option>'}
-        </select>
-      </div>
-    </div>
-  </div>
-  <div id="reportArea"></div>`;
-  const asgCard = assignments.length ? `<div class="card">
-    <h2>📎 Assignments</h2>
-    <table><tr><th>Title</th><th>Due</th><th>Posted</th><th></th></tr>
-    ${assignments.map(a=>`<tr><td style="text-align:left">${escapeHtml(a.title)}</td><td>${a.dueDate?escapeHtml(a.dueDate):'—'}</td><td>${new Date(a.postedAt).toLocaleDateString()}</td>
-    <td><button class="ghost" onclick="viewParentAssignment('${a.id}')">👁 View / Print</button></td></tr>`).join('')}
-    </table>
-    <div id="pAssignmentArea"></div>
-  </div>` : `<div class="card"><h2>📎 Assignments</h2><p class="small">No assignments have been posted for your child's grade yet.</p></div>`;
-  const content = {
-    dashboard: head + parentFeeSummaryHTML(school, student, parentFeePeriods(school)) + portalQuick('gotoParentTab', [['report','📄 Progress Report'],['assignments','📎 Assignments'+(assignments.length?' ('+assignments.length+')':'')],['fees','🧾 Fee Invoice']]),
-    report: reportCard,
-    assignments: asgCard,
-    fees: parentFeesCardHTML(school, student, parentFeePeriods(school))
-  }[parentTab] || '';
-  app.innerHTML = portalShell({menu, tab:parentTab, goto:'gotoParentTab', side:student.name, headName:student.name, headSub:(cls?cls.name+' · ':'')+'Adm '+(student.adm||'-')}) + `<div id="dosContent">${content}</div>`;
-  dosSyncBarOffset();
-  if(parentTab==='report' && exams.length) viewParentReport();
-  if(parentTab==='fees') viewParentInvoice();
-}
-// Parent Portal: this learner's own next-term invoice (arrears + next-term items). Read-only; shown in an isolated
-// frame so it looks and prints exactly like the school's printed copy.
-function parentFeeExams(school, student, exams){
-  const recs = e => (school.fees[e.id]||{})[student.id];
-  return exams.filter(e=>{ const r = recs(e); return r && ((r.balance!=null && r.balance!=='') || (r.nextTermFee!=null && r.nextTermFee!=='')); });
-}
-function parentFeesCardHTML(school, student, exams){
-  const list = parentFeeExams(school, student, exams);
-  if(!list.length) return `<div class="card"><h2>🧾 Fee Invoice</h2><p class="small">No fee invoice is available for ${escapeHtml(student.name)} yet. Please check again later or contact the school office${school.phone?' on '+escapeHtml(school.phone):''}.</p></div>`;
-  return `<div class="card"><h2>🧾 Next-Term Fee Invoice</h2>
-  <p class="small">Shows any unpaid balance (arrears) together with next term's fees, so you can pay everything in one go. You can print it or save it as a PDF from your phone or computer.</p>
-  <div class="row"><div><label>Based on balance at end of</label><select id="pFeeExam" onchange="viewParentInvoice()">${list.map(e=>`<option value="${e.id}">${escapeHtml(periodLabel(e))}</option>`).join('')}</select></div></div>
-  </div><div id="feeArea"></div>`;
-}
-function parentFeeSummaryHTML(school, student, exams){
-  const list = parentFeeExams(school, student, exams); if(!list.length) return '';
-  const e = list[0], r = school.fees[e.id][student.id]; const bal = Number(r.balance)||0, next = Number(r.nextTermFee)||0, total = bal+next; const nt = nextTermInfo(e);
-  const fm = n=>Number(n).toLocaleString(); const box = (t,v,c)=>`<div style="flex:1;min-width:120px;background:#f7f9fc;border:1px solid var(--border);border-radius:9px;padding:9px 11px;border-top:3px solid ${c}"><div class="small">${t}</div><div style="font-size:17px;font-weight:800;color:var(--navy)">${v}</div></div>`;
-  return `<div class="card"><h2>🧾 Fees for ${escapeHtml(nt.label+' '+nt.year)}</h2>
-  <div class="row" style="margin-bottom:8px">${box('Arrears', bal>0?'KES '+fm(bal):(bal<0?'Credit '+fm(-bal):'Nil'), bal>0?'var(--be)':'var(--ee)')}${box(escapeHtml(nt.label)+' fees','KES '+fm(next),'var(--me)')}${box(total>0?'Total due':'Credit','KES '+fm(Math.abs(total)), total>0?'var(--ae)':'var(--ee)')}</div>
-  <div class="flexbtns"><button class="gold" onclick="gotoParentTab('fees')">🧾 View / Print Invoice</button></div></div>`;
-}
-function viewParentInvoice(){
-  const school = parentSchoolData; const sel = qs('#pFeeExam'); const area = qs('#feeArea'); if(!school || !sel || !area) return;
-  const exam = finExams(school).find(e=>e.id===sel.value), student = school.students.find(s=>s.id===session.studentId);
-  if(!exam || !student){ area.innerHTML=''; return; }
-  const r = (school.fees[exam.id]||{})[student.id] || {};
-  const doc = ntiDocument(ntiPageHTML(school, exam, student, r), 'Next Term Invoice - '+student.name);
-  area.innerHTML = `<div class="card" style="padding:6px"><iframe id="feeFrame" title="Next term fee invoice" style="width:100%;height:1080px;border:0;background:#fff" srcdoc="${escapeHtml(doc)}"></iframe></div>
-  <div class="flexbtns no-print"><button class="gold" onclick="printParentInvoice()">🖨 Print / Save as PDF</button></div>`;
-}
-function printParentInvoice(){
-  const f = qs('#feeFrame'); if(!f || !f.contentWindow){ toast('Invoice not ready','err'); return; }
-  f.contentWindow.focus(); f.contentWindow.print();
-}
-function viewParentAssignment(id){
-  const school = parentSchoolData;
-  const a = school.assignments.find(x=>x.id===id);
-  if(!a) return;
-  qs('#pAssignmentArea').innerHTML = assignmentPrintHTML(school, a) + `<div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print This Assignment</button></div>`;
-}
-function viewParentReport(){
-  const school = parentSchoolData;
-  const examId = qs('#pExam').value;
-  if(!examId){ qs('#reportArea').innerHTML = '<p class="small">No report has been published for this learner yet.</p>'; return; }
-  const r = buildReportHTML(school, session.studentId, examId);
-  qs('#reportArea').innerHTML = r.html + `<div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print This Report</button></div>`;
-  drawProgressChart(r.chartId, r.historyPoints);
-}
-function confirmUnapproved(school, examId){
-  const e = school.exams.find(x=>x.id===examId);
-  if(e && !examReleased(school, e)) return confirm(`Results for "${e.name}" have not been approved yet.\n\nGenerate reports anyway?`);
-  return true;
-}
+window.addEventListener('afterprint', resetReportFit);
 function generateReport(sid, examId){
   if(!sid||!examId){ toast('Select learner & exam','err'); return; }
   const school = currentSchool();
