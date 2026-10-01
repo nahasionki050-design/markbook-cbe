@@ -1200,7 +1200,7 @@ function redrawKeepingState(fn){
     if(el.type==='file' || el.type==='password') return;
     st.push({id:el.id, tag:el.tagName, type:el.type, value:el.value, checked:el.checked});
   });
-  fn();
+  CALM.setKeep(true); try{ fn(); } finally { CALM.setKeep(false); }
   const reselect = [];
   st.forEach(o=>{
     const el = document.getElementById(o.id); if(!el || el.tagName!==o.tag) return;
@@ -1947,13 +1947,21 @@ function schoolHeaderTop(school){
 }
 function qs(sel,root=document){return root.querySelector(sel);}
 function qsa(sel,root=document){return [...root.querySelectorAll(sel)];}
+// Quiet notices: a small pill at the bottom of the screen. It never covers the page header, never takes clicks
+// (pointer-events:none), fades in/out without moving anything, and the same message is not stacked twice.
 function toast(msg,type='ok'){
-  const el = document.createElement('div');
-  el.className='msg '+type;
-  el.style.position='fixed'; el.style.top='10px'; el.style.right='10px'; el.style.zIndex=9999;
-  el.textContent = msg;
-  document.body.appendChild(el);
-  setTimeout(()=>el.remove(),2500);
+  let box=document.getElementById('toastBox');
+  if(!box){ box=document.createElement('div'); box.id='toastBox'; box.setAttribute('aria-live','polite');
+    box.style.cssText='position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;max-width:92vw;padding-bottom:env(safe-area-inset-bottom,0px)';
+    document.body.appendChild(box); }
+  const text=String(msg); const dupe=Array.from(box.children).find(c=>c.dataset.t===text);
+  if(dupe){ clearTimeout(dupe._to); dupe._to=setTimeout(()=>dupe.remove(), type==='err'?4500:2000); return; }
+  while(box.children.length>=2) box.firstChild.remove();
+  const el=document.createElement('div'); el.dataset.t=text; el.textContent=text;
+  const err=type==='err';
+  el.style.cssText='background:'+(err?'#8f2a2a':'#123a63')+';color:#fff;font-size:13px;line-height:1.35;padding:7px 14px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.22);opacity:0;transition:opacity .18s ease;text-align:center;font-weight:600';
+  box.appendChild(el); requestAnimationFrame(()=>{ el.style.opacity='.96'; });
+  el._to=setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(),220); }, err?4200:1800);
 }
 function getQueryParams(){
   const p = new URLSearchParams(location.search);
@@ -2017,6 +2025,134 @@ async function adminRetrieveSchoolByCode(){
 
 /* ============================= ROUTER / RENDER ============================= */
 const app = document.getElementById('app');
+/* ============================= CALM RENDERING =============================
+   Saving something (a learner, grade, teacher permission, timetable...) re-draws the screen. Instead of throwing the
+   page away and building it again (which dropped the keyboard/focus, reset inner scrolling, rebuilt the sticky menu bar
+   and made the screen "shake"), the new screen is compared with what is already there and ONLY the parts that really
+   changed are updated. Opening a different tab/portal still draws normally. */
+const CALM = (function(){
+  const nativeSet = Object.getOwnPropertyDescriptor(Element.prototype,'innerHTML').set;
+  const nativeGet = Object.getOwnPropertyDescriptor(Element.prototype,'innerHTML').get;
+  let lastKey = null, sameView = false, keepTyping = false;
+  const viewKey = ()=>{ try{ return session ? [session.role, session.schoolCode||'', session.userId||'', typeof dosTab!=='undefined'?dosTab:'', typeof teacherTab!=='undefined'?teacherTab:'', typeof finTab!=='undefined'?finTab:'', typeof adminTab!=='undefined'?adminTab:'', typeof sadminTab!=='undefined'?sadminTab:''].join('|') : 'out'; }catch(e){ return 'x'+Math.random(); } };
+  const isCtl = el=>/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+  function syncAttrs(o,n){
+    for(const a of Array.from(o.attributes)){ if(!n.hasAttribute(a.name) && !(o.tagName==='DETAILS'&&a.name==='open') && !(isCtl(o)&&(a.name==='value'||a.name==='checked'))) o.removeAttribute(a.name); }
+    for(const a of Array.from(n.attributes)){ if(o.tagName==='DETAILS'&&a.name==='open') continue; if(o.getAttribute(a.name)!==a.value) o.setAttribute(a.name,a.value); }
+  }
+  function syncControl(o,n){
+    const focused = document.activeElement===o, keep = focused && keepTyping;
+    if(o.tagName==='INPUT'){
+      const t=(o.type||'').toLowerCase(); if(t==='file') return;
+      if(t==='checkbox'||t==='radio'){ if(!keep && o.checked!==n.checked) o.checked=n.checked; }
+      else if(!keep && o.value!==n.value) o.value=n.value;
+    } else if(o.tagName==='TEXTAREA'){ if(!keep && o.value!==n.value) o.value=n.value; }
+  }
+  function same(o,n){ if(o.nodeType!==n.nodeType) return false; if(o.nodeType!==1) return true; return o.tagName===n.tagName && (o.id||'')===(n.id||''); }
+  function morphNode(o,n){
+    if(o.nodeType!==1){ if(o.nodeValue!==n.nodeValue) o.nodeValue=n.nodeValue; return; }
+    syncAttrs(o,n);
+    if(o.tagName==='TEXTAREA'||o.tagName==='SCRIPT'||o.tagName==='STYLE'||o.tagName==='CANVAS'){ syncControl(o,n); if(o.tagName!=='TEXTAREA' && o.textContent!==n.textContent) o.textContent=n.textContent; return; }
+    if(o.id==='dosContent'){ hook(o); if(!n.firstChild) return; }   // its content is filled right after, by its own calm setter
+    morphKids(o,n);
+    if(o.tagName==='SELECT'){ const sel=n.selectedIndex>=0?n.options[n.selectedIndex].value:null; if(!(document.activeElement===o&&keepTyping) && sel!==null && o.value!==sel) o.value=sel; }
+    else syncControl(o,n);
+  }
+  function morphKids(o,n){
+    const byId=new Map(); Array.from(o.childNodes).forEach(k=>{ if(k.nodeType===1&&k.id) byId.set(k.id,k); });
+    const nks=Array.from(n.childNodes); let i=0;
+    for(const nk of nks){
+      let ok=o.childNodes[i];
+      if(nk.nodeType===1&&nk.id){
+        const m=byId.get(nk.id);
+        if(m){ if(m!==ok){ o.insertBefore(m, ok||null); ok=m; } }
+        else { o.insertBefore(nk, ok||null); i++; continue; }
+      }
+      if(!ok){ o.appendChild(nk); i++; continue; }
+      if(same(ok,nk)) morphNode(ok,nk); else o.insertBefore(nk, ok);   // unused old nodes are trimmed below
+      i++;
+    }
+    while(o.childNodes.length>i) o.removeChild(o.lastChild);
+  }
+  function parse(html){ const t=document.createElement('div'); nativeSet.call(t,html); return t; }
+  function hook(el){
+    if(el.__calm) return; el.__calm=true;
+    Object.defineProperty(el,'innerHTML',{configurable:true,
+      get(){ return nativeGet.call(el); },
+      set(html){ if(sameView && el.firstChild){ try{ morphKids(el,parse(html)); return; }catch(e){ console.warn('calm render fell back',e); } } nativeSet.call(el,html); } });
+  }
+  hook(app);
+  // the app-level setter also records whether this is the same screen being refreshed
+  const contentSet = Object.getOwnPropertyDescriptor(app,'innerHTML').set;
+  Object.defineProperty(app,'innerHTML',{configurable:true,
+    get(){ return nativeGet.call(app); },
+    set(html){
+      const key=viewKey(); sameView = (key===lastKey) && !!app.firstElementChild; lastKey=key;
+      const y=window.scrollY;
+      if(sameView){ try{ morphKids(app,parse(html)); }catch(e){ console.warn('calm render fell back',e); sameView=false; nativeSet.call(app,html); } }
+      else nativeSet.call(app,html);
+      const dc=document.getElementById('dosContent'); if(dc) hook(dc);
+      if(sameView && window.scrollY!==y) window.scrollTo(0,y);
+    }});
+  return { setKeep(v){ keepTyping=v; } };
+})();
+
+/* ============================= ENTER = SAVE & GO TO NEXT =============================
+   Works on every screen (computer keyboard or the phone keyboard's Enter/Next/Go key):
+   - Enter in a box saves what was typed (the box is "left", which saves it exactly like clicking away) and jumps to the next box.
+   - In the marks grids Enter / Down-arrow goes to the next learner, Shift+Enter / Up-arrow to the previous one, and the
+     number is pre-selected so typing replaces it.
+   - Enter in the LAST box of a form presses that form's own Add / Save / Create / Generate button.
+   - Multi-line boxes keep Enter for a new line (Ctrl+Enter there saves and moves on). Delete / Remove / Clear / Print
+     buttons are never pressed by Enter. Boxes that already handle Enter themselves (login) are left alone. */
+(function(){
+  const SKIP_TYPES=/^(hidden|file|button|submit|reset|image|range|color)$/i;
+  const GOOD=/(add|save|create|update|send|submit|apply|record|post|assign|enrol|register|generate|continue|set\b|\+|➕|💾|✅|✔)/i;
+  const BAD=/(delete|remove|clear|cancel|reset|close|logout|log out|print|download|backup|restore|✕|🗑|🖨|⬇|⬆|danger)/i;
+  const ok=el=>{ if(!el||el.disabled||el.readOnly) return false; if(el.tagName==='INPUT'&&SKIP_TYPES.test(el.type)) return false; if(el.tabIndex<0) return false; return !!(el.offsetParent||el.getClientRects().length); };
+  const ctl=root=>Array.from(root.querySelectorAll('input,select,textarea')).filter(ok);
+  const scopeOf=el=>el.closest('[data-enter-scope]')||el.closest('.card')||el.closest('#app')||document.body;
+  function list(el){ if(el.classList&&el.classList.contains('markInput')){ const t=el.closest('table'); if(t) return Array.from(t.querySelectorAll('.markInput')).filter(ok); } return ctl(scopeOf(el)); }
+  function btnAfter(el,root){ const all=Array.from(root.querySelectorAll('button')); return all.find(b=>!b.disabled&&b.offsetParent&&(el.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING)&&!b.classList.contains('danger')&&!BAD.test((b.textContent||'')+' '+(b.className||''))&&GOOD.test(b.textContent||'')); }
+  function go(el,dir){
+    const L=list(el), i=L.indexOf(el), mark=el.classList&&el.classList.contains('markInput');
+    const tr=el.closest('tr');
+    if(dir>0&&!mark&&tr){ const inRow=ctl(tr); if(inRow[inRow.length-1]===el){ const b=btnAfter(el,tr); if(b){ el.blur(); b.click(); return true; } } }
+    const next=L[i+dir];
+    if(next){ el.blur(); let t=next; if(!t.isConnected&&next.id) t=document.getElementById(next.id); if(t&&t.isConnected){ t.focus({preventScroll:false}); if(t.select&&/^(text|number|search|tel|email|url|password)?$/i.test(t.type||'')) { try{ t.select(); }catch(e){} } } return true; }
+    if(dir>0){
+      const b=btnAfter(el,scopeOf(el));
+      if(b){ el.blur(); b.click(); return true; }
+      if(mark){ el.blur(); toast('✓ Last learner — all saved'); return true; }
+      el.blur(); return true;   // last box with no button: just save it
+    }
+    return false;
+  }
+  document.addEventListener('keydown',ev=>{
+    if(ev.isComposing||ev.altKey||ev.metaKey) return;
+    const el=ev.target; if(!el||!el.tagName||!/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return;
+    const enter=ev.key==='Enter'||ev.keyCode===13, mark=el.classList.contains('markInput');
+    const arrow=mark&&(ev.key==='ArrowDown'||ev.key==='ArrowUp');
+    if(!enter&&!arrow) return;
+    if(ev.defaultPrevented) return;
+    if(el.tagName==='TEXTAREA'&&!ev.ctrlKey) return;               // Enter = new line
+    if(ev.ctrlKey&&el.tagName!=='TEXTAREA') return;
+    if(el.tagName==='INPUT'&&SKIP_TYPES.test(el.type)) return;
+    const own=el.getAttribute('onkeydown'); if(own&&/Enter/.test(own)) return;   // already handles Enter (login etc.)
+    if(el.closest('[data-no-enter]')||el.closest('.login-field')) return;
+    if(!ok(el)&&!enter) return;
+    const dir=(ev.shiftKey||ev.key==='ArrowUp')?-1:1;
+    if(go(el,dir)) ev.preventDefault();
+  });
+  // phone keyboards: show "Next" on every box except the last one in its group, and "Done"/"Go" on the last
+  document.addEventListener('focusin',ev=>{
+    const el=ev.target; if(!el||el.tagName!=='INPUT'||SKIP_TYPES.test(el.type)) return;
+    if(el.classList.contains('markInput')){ try{ el.select(); }catch(e){} }
+    if(el.closest('.login-field')) return;
+    const L=list(el); el.setAttribute('enterkeyhint', L[L.length-1]===el ? (el.classList.contains('markInput')?'done':'go') : 'next');
+  });
+})();
+
 const whoBar = document.getElementById('whoBar');
 
 function route(){
@@ -3419,10 +3555,10 @@ const exIso=dt=>dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'
 const exDow=iso=>exDate(iso).getDay()||7;
 const exFmt=iso=>{const d=exDate(iso);return TT_D[exDow(iso)]+' '+String(d.getDate()).padStart(2,'0')+' '+EX_MON[d.getMonth()];};
 const exFmtL=iso=>{const d=exDate(iso);return TT_DF[exDow(iso)]+', '+d.getDate()+' '+EX_MON[d.getMonth()]+' '+d.getFullYear();};
-function exNorm(x){const D={name:'Exams',label:'',start:'',end:'',maxDay:2,heavyDay:1,maxPar:0,inv:1,invDay:3,avoidOwn:true,published:false,genAt:0,
+function exNorm(x){const D={name:'Exams',label:'',start:'',end:'',maxDay:2,heavyDay:1,maxPar:0,inv:1,invDay:3,report:15,avoidOwn:true,published:false,genAt:0,
   notes:'Learners must be seated 15 minutes before each paper starts. Mobile phones and unauthorised materials are not allowed in the exam room.'};
   Object.keys(D).forEach(k=>{if(x[k]===undefined||x[k]===null)x[k]=D[k];});
-  if(!Array.isArray(x.sess)||!x.sess.length)x.sess=[{l:'Session 1',s:'08:00',e:'10:30'},{l:'Session 2',s:'11:00',e:'13:30'}];
+  if(!Array.isArray(x.sess)||!x.sess.length)x.sess=[{l:'Period 1',s:'08:00',e:'10:30'},{l:'Period 2',s:'11:00',e:'13:30'}];
   ['rules','cells','excl'].forEach(k=>{if(!x[k]||typeof x[k]!=='object')x[k]={};});
   ['classIds','skip'].forEach(k=>{if(!Array.isArray(x[k]))x[k]=[];});if(!Array.isArray(x.days)||!x.days.length)x.days=[1,2,3,4,5];return x;}
 const exFind=id=>{const x=ttData(currentSchool()).exams.find(q=>q.id===id);return x?exNorm(x):null;};
@@ -3490,17 +3626,29 @@ function exTd(s,x,c,d,si,o){o=o||{};const v=((x.cells[c]||{})[d]||{})['s'+si],oc
   if(!v)return `<td class="tc"${oc}><span class="ta">—</span></td>`;
   if(v.cont)return `<td class="tc" style="background:${ttCol(v.a)}"${oc}><span class="ta">↑ continued</span></td>`;
   const r=exR(s,x,v.a),tm=exTime(x,si,v.n||1,r.mins),inv=o.inv?(v.inv||[]).map(t=>ttTn(s,t)).filter(Boolean).map(n=>o.sh?ttShort(n):n):[];
-  return `<td class="tc${o.edit&&v.l?' lk':''}" style="background:${ttCol(v.a)}"${oc}><b>${escapeHtml(ttAn(s,v.a))}</b><span class="ta">${fm(tm[0])}–${fm(tm[1])}</span>${inv.length?`<span class="ta">👀 ${escapeHtml(inv.join(', '))}</span>`:(o.inv&&o.edit&&x.inv>0?'<span class="ta">⚠ no invigilator</span>':'')}${o.edit&&v.l?'<span class="ta">🔒</span>':''}</td>`;}
+  return `<td class="tc${o.edit&&v.l?' lk':''}" style="background:${ttCol(v.a)}"${oc}><b>${escapeHtml(ttAn(s,v.a))}</b><span class="ta">${fm(tm[0])}–${fm(tm[1])} · ${tm[1]-tm[0]} min</span>${inv.length?`<span class="ta">👀 ${escapeHtml(inv.join(', '))}</span>`:(o.inv&&o.edit&&x.inv>0?'<span class="ta">⚠ no invigilator</span>':'')}${o.edit&&v.l?'<span class="ta">🔒</span>':''}</td>`;}
 const exCls=(s,x)=>s.classes.filter(c=>x.classIds.includes(c.id));
-function exGridClass(s,x,c,o){o=o||{};const days=exDays(x),S=x.sess.length;if(!days.length)return '<p class="small">Set the first/last exam day and exam days in Setup.</p>';
-  const head=`<tr><th class="dy">Date</th>${x.sess.map(q=>`<th>${escapeHtml(q.l)}<span class="ta">${q.s}–${q.e}</span></th>`).join('')}</tr>`;
-  const body=days.map(d=>`<tr><th class="dy">${exFmt(d)}</th>${x.sess.map((q,si)=>exTd(s,x,c,d,si,o)).join('')}</tr>`).join('');
-  return ttTbl(head+body,o.edit?'ed':'',o.fit,S+1,days.length+1);}
-function exGridMaster(s,x,dates,o){o=o||{};const S=x.sess.length,cl=exCls(s,x);if(!cl.length)return '<p class="small">No classes selected.</p>';
-  const h1=`<tr><th class="dy" rowspan="2">Class</th>${dates.map(d=>`<th colspan="${S}">${exFmt(d)}</th>`).join('')}</tr>`;
-  const h2=`<tr>${dates.map(()=>x.sess.map(q=>`<th>${escapeHtml(q.l)}<span class="ta">${q.s}</span></th>`).join('')).join('')}</tr>`;
-  const body=cl.map(c=>`<tr><th class="dy">${escapeHtml(c.name)}</th>${dates.map(d=>x.sess.map((q,si)=>exTd(s,x,c.id,d,si,o)).join('')).join('')}</tr>`).join('');
-  return ttTbl(h1+h2+body,o.edit?'ed':'',o.fit,dates.length*S+1,cl.length+2);}
+// Days (with dates) go DOWN the side; PERIODS (with times) and BREAKS go ACROSS the top.
+function exCols(x){const out=[];x.sess.forEach((q,i)=>{if(i){const a=hm(x.sess[i-1].e),b=hm(q.s);if(b>a)out.push({t:'B',s:a,e:b});}out.push({t:'S',si:i});});return out;}
+function exDayTh(d,fit){const dt=exDate(d),today=!fit&&d===new Date().toLocaleDateString('en-CA');return `<th class="dy${today?' today':''}">${TT_DF[exDow(d)]}<span class="ta">${String(dt.getDate()).padStart(2,'0')} ${EX_MON[dt.getMonth()]} ${dt.getFullYear()}</span></th>`;}
+function exSessTh(x,si){const q=exSlot(x,si),rep=+x.report||0;return `<th>${escapeHtml(q.l)}<span class="ta">${q.s}–${q.e}</span>${rep>0?`<span class="ta">Seated by ${fm(Math.max(0,hm(q.s)-rep))}</span>`:''}</th>`;}
+function exHead(x,first){return `<tr><th class="dy">${first||'Day / Date'}</th>${exCols(x).map(k=>k.t==='B'?`<th class="tbh">${fm(k.s)}<span class="ta">${fm(k.e)}</span></th>`:exSessTh(x,k.si)).join('')}</tr>`;}
+function exRows(x,dates,cell,fit){const cols=exCols(x),nd=dates.length;return dates.map((d,i)=>`<tr>${exDayTh(d,fit)}${cols.map(k=>k.t==='B'?(i===0?`<td class="tb" rowspan="${nd}"><span class="vt">Break</span></td>`:''):cell(d,k.si)).join('')}</tr>`).join('');}
+function exGridClass(s,x,c,o){o=o||{};const days=exDays(x);if(!days.length)return '<p class="small">Set the first/last exam day and exam days in Setup.</p>';
+  return ttTbl(exHead(x)+exRows(x,days,(d,si)=>exTd(s,x,c,d,si,o),o.fit),o.edit?'ed':'',o.fit,exCols(x).length+1,days.length+1);}
+function exMasterCell(s,x,d,si,o){const items=[];exCls(s,x).forEach(c=>{const v=((x.cells[c.id]||{})[d]||{})['s'+si];if(v)items.push({c,v});});
+  if(!items.length)return '<td class="tc"><span class="ta">—</span></td>';
+  const n=items.length,cc=n>12?3:n>6?2:1;
+  const lines=items.map(({c,v})=>{const oc=o.edit?` onclick="exEdit('${x.id}','${c.id}','${d}',${si})"`:'',bg=`style="background:${ttCol(v.a)}"`;
+    if(v.cont)return `<div class="exl"${oc} ${bg}><b>${escapeHtml(c.name)}</b> · ${escapeHtml(ttAn(s,v.a))} <span class="ta" style="display:inline">↑ continued</span></div>`;
+    const r=exR(s,x,v.a),tm=exTime(x,si,v.n||1,r.mins),inv=o.inv?(v.inv||[]).map(t=>ttTn(s,t)).filter(Boolean).map(q=>o.sh?ttShort(q):q):[];
+    return `<div class="exl"${oc} ${bg}><b>${escapeHtml(c.name)}</b> · ${escapeHtml(ttAn(s,v.a))} <span class="ta" style="display:inline">${fm(tm[0])}–${fm(tm[1])}</span>${inv.length?` <span class="ta" style="display:inline">👀 ${escapeHtml(inv.join(', '))}</span>`:(o.inv&&o.edit&&x.inv>0?' <span class="ta" style="display:inline">⚠ no invigilator</span>':'')}${o.edit&&v.l?' 🔒':''}</div>`;}).join('');
+  return `<td class="tc" style="text-align:left;vertical-align:top"><div style="column-count:${cc};column-gap:6px">${lines}</div></td>`;}
+function exGridMaster(s,x,dates,o){o=o||{};const cl=exCls(s,x);if(!cl.length)return '<p class="small">No classes selected.</p>';
+  let mx=1;dates.forEach(d=>x.sess.forEach((q,si)=>{let n=0;cl.forEach(c=>{if(((x.cells[c.id]||{})[d]||{})['s'+si])n++;});mx=Math.max(mx,n);}));
+  const L=Math.ceil(mx/(mx>12?3:mx>6?2:1));let f=L<=3?13:L<=5?12:L<=7?11:L<=9?10:9;if(dates.length>5)f--;if(ttUI.orient==='portrait')f--;
+  return `<div class="ttw"><table class="ttg ${o.edit?'ed':''}"${o.fit?` style="font-size:${Math.max(f,7)}px"`:''}>${exHead(x)+exRows(x,dates,(d,si)=>exMasterCell(s,x,d,si,o),o.fit)}</table></div>`;}
+(function(){const st=document.createElement('style');st.textContent='.ttg .exl{padding:1px 4px;margin:0 0 2px;border-radius:3px;break-inside:avoid;line-height:1.3}.ttg.ed .exl{cursor:pointer}.ttg.ed .exl:hover{outline:2px solid #123a63}';document.head.appendChild(st);})();
 function exDuties(s,x,tid){const out=[];Object.keys(x.cells).forEach(c=>{if(!x.classIds.includes(c))return;Object.keys(x.cells[c]).forEach(d=>Object.keys(x.cells[c][d]).forEach(k=>{const v=x.cells[c][d][k];if(v&&!v.cont&&(v.inv||[]).includes(tid))out.push({d,si:+k.slice(1),c,a:v.a,n:v.n||1});}));});return out.sort((p,q)=>p.d<q.d?-1:p.d>q.d?1:p.si-q.si);}
 function exGridRoster(s,x,dates,fit){const S=x.sess.length,rows=s.teachers.map(t=>({t,du:exDuties(s,x,t.id)})).filter(r=>r.du.length);
   if(!rows.length)return '<p class="small">No invigilators allocated yet — set "Invigilators per paper" in Setup, then generate.</p>';
@@ -3515,8 +3663,8 @@ function exDutyTable(s,x,tid,fit){const du=exDuties(s,x,tid);if(!du.length)retur
 // ---- print pages ----
 const exSub=x=>[x.name,x.label,x.start&&x.end?exFmt(x.start)+' – '+exFmt(x.end)+' '+exDate(x.end).getFullYear():''].filter(Boolean).map(escapeHtml).join(' · ');
 const exNotes=x=>x.notes?'<b>Notes:</b> '+escapeHtml(x.notes):'';
-function exPgClass(s,x,c){const ct=(s.classTeachers||{})[c];return ttPage(s,'Exam Timetable: '+escapeHtml(ttCn(s,c)),exSub(x)+(ct?' · Class teacher: '+escapeHtml(ct):''),exGridClass(s,x,c,{fit:true}),exNotes(x));}
-function exPgMaster(s,x){const w=exWeeks(exDays(x));return w.map((ds,i)=>ttPage(s,'Master Exam Timetable'+(w.length>1?' — Week '+(i+1)+' of '+w.length:''),exSub(x),exGridMaster(s,x,ds,{fit:true,sh:true,inv:true}),exNotes(x))).join('');}
+function exPgClass(s,x,c){const ct=(s.classTeachers||{})[c],n=s.students.filter(q=>q.classId===c).length,np=Object.values(x.cells[c]||{}).reduce((a,dd)=>a+Object.values(dd).filter(v=>v&&!v.cont).length,0);return ttPage(s,'Exam Timetable: '+escapeHtml(ttCn(s,c)),exSub(x)+(ct?' · Class teacher: '+escapeHtml(ct):'')+(n?' · Learners: '+n:'')+' · Papers: '+np,exGridClass(s,x,c,{fit:true}),exNotes(x)+((+x.report)>0?' · <b>Be seated '+(+x.report)+' minutes before each paper.</b>':''));}
+function exPgMaster(s,x){const w=exWeeks(exDays(x));return w.map((ds,i)=>ttPage(s,'Master Exam Timetable'+(w.length>1?' — Week '+(i+1)+' of '+w.length:''),exSub(x)+' · '+exCls(s,x).length+' classes',exGridMaster(s,x,ds,{fit:true,sh:true,inv:true}),exNotes(x)+((+x.report)>0?' · <b>Be seated '+(+x.report)+' minutes before each paper.</b>':''))).join('');}
 function exPgRoster(s,x){const w=exWeeks(exDays(x));return w.map((ds,i)=>ttPage(s,'Invigilation Roster'+(w.length>1?' — Week '+(i+1)+' of '+w.length:''),exSub(x),exGridRoster(s,x,ds,true),'Each cell shows the class (and paper) the teacher invigilates in that session.')).join('');}
 function exPgTeacher(s,x,t){const du=exDuties(s,x,t.id);return ttPage(s,'Invigilation Duties: '+escapeHtml(t.name),exSub(x),exDutyTable(s,x,t.id,true),`<b>Total duties:</b> ${du.length} · Please be in the exam room 15 minutes before each paper starts.`);}
 function exPrint(id,mode){const s=currentSchool(),x=exFind(id);let h='';if(!Object.keys(x.cells).length){toast('Generate the exam timetable first','err');return;}
@@ -3528,18 +3676,23 @@ function exPrint(id,mode){const s=currentSchool(),x=exFind(id);let h='';if(!Obje
 function exTabBtn(k){exUI.tab=k;renderDOS();}
 function tplExTt(s){const L=ttData(s).exams;L.forEach(exNorm);const x=L.find(q=>q.id===exUI.id)||L[0];if(x)exUI.id=x.id;
   const seen={},base=s.exams.map((e,i)=>({e,i})).filter(o=>{const k=o.e.name+'|'+o.e.term+'|'+o.e.year;if(seen[k])return false;seen[k]=1;return true;});
-  return `<div class="card"><h2 class="no-print">📝 Exam Timetable</h2><p class="small no-print">Plan the exam period: pick dates and sessions, set each paper's length and the date it <b>must be done by</b>, then generate. No class sits two papers at once, core papers are spread out, and invigilators are shared fairly.</p>
+  return `<div class="card"><h2 class="no-print">📝 Exam Timetable</h2><p class="small no-print">Plan the exam period: pick dates and sessions, set each paper's length and the date it <b>must be done by</b>, then generate. No class sits two papers at once, core papers are spread out, and invigilators are shared fairly.</p>${x?exSaveBar(s,x):''}
   <div class="row no-print"><div><label>Exam timetable</label><select onchange="exUI.id=this.value;renderDOS()">${L.map(q=>`<option value="${q.id}" ${q.id===exUI.id?'selected':''}>${escapeHtml(q.name)}</option>`).join('')||'<option>— none yet —</option>'}</select></div>
   <div><label>Based on an exam in Exams (optional)</label><select id="exBase"><option value="">— start blank —</option>${base.map(o=>`<option value="${o.i}">${escapeHtml(o.e.name)} · ${escapeHtml(o.e.term)} ${o.e.year}</option>`).join('')}</select></div>
   <div><label>Name</label><input id="exNewName" placeholder="e.g. Term 3 End-Term Exams"></div><div style="align-self:flex-end"><button onclick="exAdd()">+ Create</button></div></div>
   ${x?`<div class="no-print">${ttTabs(exUI.tab,[['setup','⚙️ Setup'],['papers','📚 Papers &amp; deadlines'],['table','🗓 Timetable'],['inv','👀 Invigilation']],'exTabBtn')}${exUI.tab==='papers'?exTabPapers(s,x):exUI.tab==='table'?'':exUI.tab==='inv'?'':exTabSetup(s,x)}</div>${exUI.tab==='table'?exTabTable(s,x):exUI.tab==='inv'?exTabInv(s,x):''}<div class="flexbtns no-print" style="margin-top:12px"><button class="danger" onclick="exDel('${x.id}')">Delete this exam timetable</button></div>`:'<p class="small">Create your first exam timetable above.</p>'}</div>`;}
+function exSaveBar(s,x){const t=ttData(s),cloud=!!(s.syncConfig&&s.syncConfig.enabled),has=Object.keys(x.cells).length,f=ms=>new Date(ms).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  return `<div class="no-print small" style="background:#eef4fb;border-radius:8px;padding:8px 10px;margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:220px">💾 <b>${has?'Generated timetable is saved':'Nothing generated yet'}</b> — every change saves automatically in this school's data on this device${cloud?' and syncs to the cloud':' (turn on Sync to share it across devices)'}.${t.stamp?' Last saved: '+f(t.stamp)+'.':''}${x.genAt?' Generated: '+f(x.genAt)+'.':''}</span><button class="ghost" onclick="exBackup('${x.id}')">⬇ Backup file</button><button class="ghost" onclick="document.getElementById('exRestoreF').click()">⬆ Restore</button><input type="file" id="exRestoreF" accept=".json" style="display:none" onchange="exRestore(this)"></div>`;}
+function exBackup(id){const s=currentSchool(),x=exFind(id);if(!x)return;const b=new Blob([JSON.stringify({kind:'exam-timetable',v:1,school:s.name,savedAt:Date.now(),exam:x})],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=(x.name||'exam-timetable').replace(/[^\w-]+/g,'_')+'.json';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
+function exRestore(inp){const f=inp.files&&inp.files[0];inp.value='';if(!f)return;const r=new FileReader();r.onload=()=>{try{const j=JSON.parse(r.result);if(j.kind!=='exam-timetable'||!j.exam)throw 0;const s=currentSchool(),L=ttData(s).exams,x=exNorm(j.exam),i=L.findIndex(q=>q.id===x.id);
+  if(i>=0){if(!confirm('This exam timetable already exists here. Replace it with the backup?'))return;L[i]=x;}else L.push(x);exUI.id=x.id;exSave();exRedraw();toast('Exam timetable restored');}catch(e){toast('That is not a valid exam timetable backup','err');}};r.readAsText(f);}
 function exTabSetup(s,x){const days=exDays(x),S=x.sess.length,cl=exCls(s,x),mx=Math.max(0,...cl.map(c=>exAreas(s,x,c.id).length)),per=days.length*Math.min(x.maxDay,S),id=x.id;
   const num=(k,mn,mxv,l)=>`<div><label>${l}</label><input type="number" min="${mn}" max="${mxv}" value="${x[k]}" onchange="exSet('${id}','${k}',Math.max(${mn},+this.value||0))"></div>`;
   return `<div class="row"><div><label>Name</label><input value="${escapeHtml(x.name)}" onchange="exSet('${id}','name',this.value)"></div><div><label>Label on prints</label><input value="${escapeHtml(x.label)}" placeholder="e.g. Term 3, 2026" onchange="exSet('${id}','label',this.value)"></div><div><label>First exam day</label><input type="date" value="${x.start}" onchange="exSet('${id}','start',this.value)"></div><div><label>Last exam day</label><input type="date" value="${x.end}" onchange="exSet('${id}','end',this.value)"></div></div>
   <label style="margin-top:8px">Exam days</label><div class="flexbtns">${[1,2,3,4,5,6,7].map(d=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.days.includes(d)?'checked':''} onchange="exDay('${id}',${d},this.checked)">${TT_DF[d]}</label>`).join('')}</div>
   <label style="margin-top:8px">No-exam dates (public holiday, sports day…)</label><div class="flexbtns" style="align-items:center">${x.skip.slice().sort().map(d=>`<span class="chip">${exFmt(d)} <a style="cursor:pointer;color:#b23b3b" onclick="exDelSkip('${id}','${d}')">✕</a></span>`).join('')}<input type="date" id="exSkip" style="max-width:170px"><button class="ghost" onclick="exAddSkip('${id}')">+ Add</button></div>
-  <h3 style="margin:12px 0 4px">Sessions on each exam day</h3><div class="ttw"><table><tr><th>Name</th><th>Starts</th><th>Ends</th><th></th></tr>${x.sess.map((q,i)=>`<tr><td><input value="${escapeHtml(q.l)}" onchange="exSess('${id}',${i},'l',this.value)"></td><td><input type="time" value="${q.s}" onchange="exSess('${id}',${i},'s',this.value)"></td><td><input type="time" value="${q.e}" onchange="exSess('${id}',${i},'e',this.value)"></td><td>${S>1?`<button class="danger" onclick="exSessDel('${id}',${i})">✕</button>`:''}</td></tr>`).join('')}</table></div>${S<4?`<button class="ghost" style="margin-top:6px" onclick="exSessAdd('${id}')">+ Add session</button>`:''}
-  <h3 style="margin:12px 0 4px">Limits</h3><div class="row">${num('maxDay',1,4,'Max papers per class per day')}${num('heavyDay',1,3,'Max core papers per class per day')}${num('maxPar',0,40,'Max classes sitting at once (0 = no limit)')}${num('inv',0,4,'Invigilators per paper')}${num('invDay',1,6,'Max duties per teacher per day')}</div>
+  <h3 style="margin:12px 0 4px">Periods on each exam day</h3><div class="ttw"><table><tr><th>Name</th><th>Starts</th><th>Ends</th><th></th></tr>${x.sess.map((q,i)=>`<tr><td><input value="${escapeHtml(q.l)}" onchange="exSess('${id}',${i},'l',this.value)"></td><td><input type="time" value="${q.s}" onchange="exSess('${id}',${i},'s',this.value)"></td><td><input type="time" value="${q.e}" onchange="exSess('${id}',${i},'e',this.value)"></td><td>${S>1?`<button class="danger" onclick="exSessDel('${id}',${i})">✕</button>`:''}</td></tr>`).join('')}</table></div>${S<4?`<button class="ghost" style="margin-top:6px" onclick="exSessAdd('${id}')">+ Add period</button>`:''}
+  <h3 style="margin:12px 0 4px">Limits</h3><div class="row">${num('maxDay',1,4,'Max papers per class per day')}${num('heavyDay',1,3,'Max core papers per class per day')}${num('maxPar',0,40,'Max classes sitting at once (0 = no limit)')}${num('inv',0,4,'Invigilators per paper')}${num('invDay',1,6,'Max duties per teacher per day')}${num('report',0,60,'Be seated (minutes before paper)')}</div>
   <label class="chip" style="cursor:pointer;margin-top:8px"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.avoidOwn?'checked':''} onchange="exSet('${id}','avoidOwn',this.checked)">Teachers should not invigilate their own subject</label>
   <label style="margin-top:8px">Notes printed under each timetable</label><textarea rows="2" onchange="exSet('${id}','notes',this.value)">${escapeHtml(x.notes)}</textarea>
   <h3 style="margin:12px 0 4px">Classes sitting these exams</h3><div class="flexbtns">${s.classes.map(c=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.classIds.includes(c.id)?'checked':''} onchange="exCl('${id}','${c.id}',this.checked)">${escapeHtml(c.name)}</label>`).join('')}<button class="ghost" onclick="exClAll('${id}')">Select all</button></div>
@@ -3557,7 +3710,7 @@ function exTabPapers(s,x){const id=x.id,cl=exCls(s,x),areas=s.learningAreas.filt
 function exTabTable(s,x){const id=x.id,has=Object.keys(x.cells).length,iss=has?exIssues(s,x):null,cl=exCls(s,x),c=cl.some(k=>k.id===exUI.cls)?exUI.cls:(cl[0]||{}).id;exUI.cls=c;
   const box=iss?(iss.list.length?`<div class="card no-print" style="background:#fff6e5"><b>⚠ ${iss.list.length} thing(s) to check</b> <span class="small">(${iss.got} of ${iss.exp} papers scheduled)</span><ul style="margin:6px 0 0 18px">${iss.list.slice(0,12).map(q=>`<li>${escapeHtml(q)}</li>`).join('')}${iss.list.length>12?`<li>…and ${iss.list.length-12} more</li>`:''}</ul></div>`:`<div class="card no-print" style="background:#e9f7ef">✅ All ${iss.exp} papers are scheduled — no clashes, every deadline is met.</div>`):'';
   return `<div class="flexbtns no-print" style="align-items:center"><button class="gold" onclick="exGenerate('${id}')">🔄 Generate</button><label class="chip" style="cursor:pointer"><input type="checkbox" id="exKeep" style="width:auto;display:inline-block;margin-right:4px" checked>Keep 🔒 locked papers</label><button class="ghost" onclick="exClear('${id}')">Clear</button><label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.published?'checked':''} onchange="exSet('${id}','published',this.checked)">Visible in teachers' portal</label></div>${box}
-  ${has?`<div class="row no-print"><div><label>View</label><select onchange="exUI.view=this.value;renderDOS()"><option value="class" ${exUI.view!=='master'?'selected':''}>By class</option><option value="master" ${exUI.view==='master'?'selected':''}>Master (all classes)</option></select></div>${exUI.view!=='master'?`<div><label>Class</label><select onchange="exUI.cls=this.value;renderDOS()">${cl.map(k=>`<option value="${k.id}" ${k.id===c?'selected':''}>${escapeHtml(k.name)}</option>`).join('')}</select></div>`:''}</div>
+  ${has?`<div class="row no-print"><div><label>View</label><select onchange="exUI.view=this.value;renderDOS()"><option value="class" ${exUI.view!=='master'?'selected':''}>By class</option><option value="master" ${exUI.view==='master'?'selected':''}>Master (all classes, day by day)</option></select></div>${exUI.view!=='master'?`<div><label>Class</label><select onchange="exUI.cls=this.value;renderDOS()">${cl.map(k=>`<option value="${k.id}" ${k.id===c?'selected':''}>${escapeHtml(k.name)}</option>`).join('')}</select></div>`:''}</div>
   <div class="flexbtns no-print" style="align-items:flex-end">${ttPaper()}<button class="gold" onclick="exPrint('${id}','one')">🖨 Print this view</button><button class="ghost" onclick="exPrint('${id}','master')">🖨 Master (all classes)</button><button class="ghost" onclick="exPrint('${id}','classes')">🖨 Each class</button><button class="ghost" onclick="exPrint('${id}','roster')">🖨 Invigilation roster</button><button class="ghost" onclick="exPrint('${id}','teachers')">🖨 Each teacher's duties</button></div>
   <p class="small no-print">Tap a paper to change it, move it, set invigilators or 🔒 lock it.</p>${exUI.view==='master'?exGridMaster(s,x,exDays(x),{edit:true,inv:true,sh:true}):exGridClass(s,x,c,{edit:true,inv:true})}`:'<p class="small">Nothing generated yet — set the dates in Setup and the papers in Papers &amp; deadlines, then press Generate.</p>'}`;}
 function exTabInv(s,x){const id=x.id,rows=s.teachers.map(t=>({t,n:exDuties(s,x,t.id).length})).filter(r=>r.n).sort((a,b)=>b.n-a.n);
@@ -3575,7 +3728,7 @@ function exDay(id,d,on){const x=exFind(id);x.days=on?[...new Set(x.days.concat(d
 function exAddSkip(id){const v=(qs('#exSkip')||{}).value;if(!v)return;const x=exFind(id);if(!x.skip.includes(v))x.skip.push(v);exSave();exRedraw();}
 function exDelSkip(id,d){const x=exFind(id);x.skip=x.skip.filter(q=>q!==d);exSave();exRedraw();}
 function exSess(id,i,k,v){const x=exFind(id);x.sess[i][k]=v;exSave();exRedraw();}
-function exSessAdd(id){const x=exFind(id),l=x.sess[x.sess.length-1],e=hm(l.e);x.sess.push({l:'Session '+(x.sess.length+1),s:fm(e+30),e:fm(e+30+150)});exSave();exRedraw();}
+function exSessAdd(id){const x=exFind(id),l=x.sess[x.sess.length-1],e=hm(l.e);x.sess.push({l:'Period '+(x.sess.length+1),s:fm(e+30),e:fm(e+30+150)});exSave();exRedraw();}
 function exSessDel(id,i){const x=exFind(id);if(x.sess.length>1){x.sess.splice(i,1);exSave();exRedraw();}}
 function exCl(id,c,on){const x=exFind(id);x.classIds=on?[...new Set(x.classIds.concat(c))]:x.classIds.filter(q=>q!==c);exSave();exRedraw();}
 function exClAll(id){const x=exFind(id);x.classIds=currentSchool().classes.map(c=>c.id);exSave();exRedraw();}
@@ -6052,27 +6205,22 @@ function fillTeacherRepExams(){
   qs('#trepExam').innerHTML = exams.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || `<option value="">${school.requireApproval?'No approved exams for this grade':'No exams for this grade'}</option>`;
 }
 function generateTeacherReport(sid, examId){
-  if(!sid||!examId){ toast('Select learner & exam','err'); return; }
+  if(!sid||!examId){ toast('Select a learner and an exam first','err'); return; }
   const school = currentSchool();
   const stu = school.students.find(x=>x.id===sid);
   if(!stu || teacherDenied('canPrint', stu.classId)) return;
   const _ex = school.exams.find(x=>x.id===examId);
   if(!_ex || !examReleased(school,_ex)){ toast('Results for this exam have not been approved yet','err'); return; }
-  const r = buildReportHTML(school, sid, examId);
-  qs('#treportArea').innerHTML = r.html + `<div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print This Report</button></div>`;
-  drawProgressChart(r.chartId, r.historyPoints);
+  showReports('#treportArea', [stu], examId, 'Print This Report');
 }
 function generateAllTeacherReports(classId, examId){
-  if(!classId||!examId){ toast('Select grade & exam','err'); return; }
+  if(!classId||!examId){ toast('Select a grade and an exam first','err'); return; }
   if(teacherDenied('canPrint', classId)) return;
   const school = currentSchool();
   const _ex = school.exams.find(x=>x.id===examId);
   if(!_ex || !examReleased(school,_ex)){ toast('Results for this exam have not been approved yet','err'); return; }
   const learners = applyGenderMode(studentsForExam(school, _ex), genderMode('trepGender'));
-  const reports = learners.map(s=>buildReportHTML(school,s.id,examId));
-  qs('#treportArea').innerHTML = reports.map(r=>r.html).join('') +
-   `<div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print All Reports</button></div>`;
-  reports.forEach(r=>drawProgressChart(r.chartId, r.historyPoints));
+  showReports('#treportArea', learners, examId, 'Print All Reports ('+learners.length+')');
 }
 function renderTeacherAreaOptions(){
   if(!qs('#tClass')) return;
@@ -6133,6 +6281,16 @@ function saveMark(examId,areaId,input){
   // A teacher can only save marks for a class + learning area assigned to them.
   if(session.role==='teacher' && teacherDenied(null, exam.classId, areaId)){
     input.value = ((school.marks[examId]||{})[sid]||{})[areaId] ?? '';
+    return;
+  }
+  // An emptied box means "no mark yet" — not a score of 0 (Enter-driven entry makes backspacing a box common).
+  if(String(input.value).trim()==='' && !(session.role==='teacher' && isExamClosed(exam))){
+    if(((school.marks[examId]||{})[sid]||{})[areaId]!=null){
+      delete school.marks[examId][sid][areaId];
+      if(exam.resultsApproval==='approved'){ exam.resultsApproval = 'pending'; exam.approvedBy = ''; exam.approvalAt = ''; touchExam(exam); }
+      saveDB(DB); pushMarkToCloud(school.code, examId, sid, areaId, null);
+      const pc=document.querySelector('.pctCell-'+sid), lc=document.querySelector('.lvlCell-'+sid); if(pc) pc.textContent='-'; if(lc) lc.textContent='-';
+    }
     return;
   }
   let val = Number(input.value);
@@ -6295,7 +6453,7 @@ function viewClassAssessment(examId, targetId){
   const learners = studentsForExam(school, exam);
   const areas = visibleAreas(school, exam.classId);
   const marksForExam = school.marks[examId] || {};
-  const classTeacher = school.classTeachers[exam.classId] || 'Not Set';
+  const classTeacher = (school.classTeachers||{})[exam.classId] || 'Not Set';
   // compute totals & positions
   let rows = learners.map(s=>{
     let total=0, totalPts=0, maxTotal=0;
@@ -8325,8 +8483,9 @@ function renderFinance(){
 
 /* ============================= REPORTS ============================= */
 function tplReportsPicker(school){
-  const firstClassId = school.classes[0].id;
-  return `<div class="card"><h2 class="no-print">📄 Individual / Whole-Grade Report Cards</h2>
+  const firstClassId = (school.classes[0]||{}).id;
+  if(!school.classes.length) return '<div class="card"><h2>📄 Report Cards</h2><p class="small">No grades set up yet — add a grade, learners and an exam first.</p></div>';
+  return `<div class="card"><h2 class="no-print">📄 Individual / Whole-Grade Report Cards</h2><p class="small no-print">Choose the Grade, Exam / Term and (for one report) the Learner, then tap <b>Generate</b>. Reports show marks as entered; exams awaiting approval ask for confirmation first.</p>
   <div class="row no-print">
     <div><label>Grade</label><select id="repClass" onchange="fillRepExams();fillRepLearners()">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
     <div><label>Exam / Term</label><select id="repExam" onchange="fillRepLearners()">${school.exams.filter(e=>e.classId===firstClassId).map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this grade</option>'}</select></div>
@@ -8358,7 +8517,7 @@ function fillRepExams(){
 function buildReportHTML(school, sid, examId){
   const student = school.students.find(s=>s.id===sid);
   const exam = school.exams.find(e=>e.id===examId);
-  const cls = school.classes.find(c=>c.id===exam.classId);
+  const cls = school.classes.find(c=>c.id===exam.classId) || {id:exam.classId, name:'—'};
   const scoped = !!(session && session.role==='teacher');
   const areas = visibleAreas(school, exam.classId);
   const marksForExam = school.marks[examId] || {};
@@ -8369,7 +8528,7 @@ function buildReportHTML(school, sid, examId){
     let g=null, pct=null;
     if(score!=null){ pct=pctOf(score,max); g=gradeFor(school,pct,exam.classId); totalScore+=score; totalPts+=g.points; sumPct+=pct; n++; }
     // teacher for this area/class
-    const teacher = school.teachers.find(t=>t.assignments.some(x=>x.classId===exam.classId && x.areaId===a.id));
+    const teacher = school.teachers.find(t=>(t.assignments||[]).some(x=>x.classId===exam.classId && x.areaId===a.id));
     return {name:a.name, score, max, pct, g, teacher: teacher?teacher.name:'-'};
   });
   // Overall performance is averaged across EVERY learning area assigned to the learner's grade — not just
@@ -8385,7 +8544,7 @@ function buildReportHTML(school, sid, examId){
     return {id:s.id, t};
   }).sort((a,b)=>b.t-a.t);
   let position = totals.findIndex(x=>x.id===sid)+1;
-  const classTeacher = school.classTeachers[exam.classId] || 'Not Set';
+  const classTeacher = (school.classTeachers||{})[exam.classId] || 'Not Set';
   // history across all exams/years for this learner (for chart)
   const historyExams = school.exams.filter(e=> (school.marks[e.id]||{})[sid])
     .sort((a,b)=> a.year-b.year || a.term.localeCompare(b.term));
@@ -8397,12 +8556,12 @@ function buildReportHTML(school, sid, examId){
   // A personalized remark for this learner+exam (set under Exams → Personalize Report
   // Remarks, or by their Class Teacher) always wins; otherwise fall back to the auto
   // remark tied to whichever grading level their overall mean % falls into.
-  const remark = (school.remarks[examId]||{})[sid] || overallGrade.remark;
+  const remark = ((school.remarks||{})[examId]||{})[sid] || overallGrade.remark;
   const chartId = 'chart_'+sid.replace(/\W/g,'');
   // Attendance and term dates are purely informational and only shown once a DOS/HOI has
   // actually filled them in (Exams tab) — an unset totalDays or missing days-present record
   // just leaves that part off the report rather than printing "0 of 0" or a blank date.
-  const daysPresent = (school.attendance[examId]||{})[sid];
+  const daysPresent = ((school.attendance||{})[examId]||{})[sid];
   const attendanceLine = (exam.totalDays && daysPresent!=null)
     ? `<div><b>Attendance:</b> ${daysPresent} of ${exam.totalDays} days (${Math.round(daysPresent/exam.totalDays*100)}%)</div>` : '';
   const closeLine = exam.termCloseDate ? `<div><b>Term Closes:</b> ${new Date(exam.termCloseDate).toLocaleDateString()}</div>` : '';
@@ -8410,7 +8569,7 @@ function buildReportHTML(school, sid, examId){
   // Fees balance/next-term-fee: purely informational, set by the Finance Portal (bulk CSV
   // import or manual entry) against this exact exam/term — left off entirely for a learner
   // with no fee record yet, rather than printing a misleading "KES 0".
-  let feeRec = (school.fees[examId]||{})[sid];
+  let feeRec = ((school.fees||{})[examId]||{})[sid];
   if(!feeRec){ const ex0 = school.exams.find(e=>e.id===examId), st0 = school.students.find(x=>x.id===sid); const ft0 = (ex0&&st0) ? (school.feeTerms||[]).find(t=>t.classId===st0.classId && t.term===ex0.term && String(t.year)===String(ex0.year)) : null; if(ft0) feeRec = (school.fees[ft0.id]||{})[sid]; }
   const feesLine = (feeRec && (feeRec.balance!=null || feeRec.nextTermFee!=null))
     ? `<div>${feeRec.balance!=null?`<b>Fees Balance:</b> KES ${Number(feeRec.balance).toLocaleString()}`:''}${(feeRec.balance!=null && feeRec.nextTermFee!=null)?' &nbsp;·&nbsp; ':''}${feeRec.nextTermFee!=null?`<b>Next Term Fee:</b> KES ${Number(feeRec.nextTermFee).toLocaleString()}`:''}</div>` : '';
@@ -8565,24 +8724,49 @@ function fitReportCardsToPage(){
 }
 window.addEventListener('beforeprint', fitReportCardsToPage);
 window.addEventListener('afterprint', resetReportFit);
+// Asks before producing report forms for an exam whose results are still awaiting DOS/HOI approval.
+// (Was called by both generators below but never defined, so the buttons threw an error and nothing appeared.)
+function confirmUnapproved(school, examId){
+  const e = school.exams.find(x=>x.id===examId);
+  if(!e) return true;
+  if(!school.requireApproval || e.resultsApproval==='approved') return true;
+  const st = e.resultsApproval==='disapproved' ? 'DISAPPROVED' : 'still PENDING approval';
+  return confirm('Results for "'+e.name+'" are '+st+'.\n\nReport forms made now are drafts and should not be given to parents.\n\nGenerate them anyway?');
+}
+// Shared by every "Generate" button: builds the cards, shows them, draws the charts, and reports any
+// problem on screen instead of failing silently.
+function showReports(areaSel, learners, examId, title){
+  const area = qs(areaSel), school = currentSchool();
+  if(!area){ toast('Report area not found — reopen the Reports page','err'); return; }
+  const exam = school.exams.find(x=>x.id===examId);
+  if(!exam){ area.innerHTML='<div class="msg err">That exam no longer exists. Pick the Exam / Term again.</div>'; return; }
+  if(!learners.length){ area.innerHTML='<div class="msg err">No learners found for this grade'+(genderMode('repGender')!=='all'?' with the chosen gender filter':'')+'. Add learners first.</div>'; return; }
+  const built = [], failed = [];
+  learners.forEach(l=>{ try{ built.push(buildReportHTML(school, l.id, examId)); }catch(err){ console.error('Report failed for', l && l.name, err); failed.push((l&&l.name)||'?'); } });
+  const marked = Object.keys(school.marks[examId]||{}).length;
+  const info = `<div class="no-print small" style="margin:8px 0">${built.length} report form(s) ready · ${escapeHtml(exam.name)} (${escapeHtml(exam.term)} ${exam.year})`
+    + (marked===0 ? ' · <b style="color:#9c2c2c">⚠ no marks have been entered for this exam yet — the forms will be blank</b>' : '')
+    + (failed.length ? `<br><b style="color:#9c2c2c">⚠ Could not build ${failed.length}: ${escapeHtml(failed.slice(0,8).join(', '))}${failed.length>8?'…':''}</b>` : '') + '</div>';
+  area.innerHTML = info + built.map(r=>r.html).join('') +
+    `<div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 ${title}</button></div>`;
+  built.forEach(r=>{ try{ drawProgressChart(r.chartId, r.historyPoints); }catch(e){} });
+  try{ area.scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){}
+}
 function generateReport(sid, examId){
-  if(!sid||!examId){ toast('Select learner & exam','err'); return; }
+  if(!sid||!examId){ toast('Select a learner and an exam first (add learners/exams if the lists are empty)','err'); return; }
   const school = currentSchool();
+  const stu = school.students.find(x=>x.id===sid);
+  if(!stu){ toast('Learner not found','err'); return; }
   if(!confirmUnapproved(school, examId)) return;
-  const r = buildReportHTML(school, sid, examId);
-  qs('#reportArea').innerHTML = r.html + `<div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print This Report</button></div>`;
-  drawProgressChart(r.chartId, r.historyPoints);
+  showReports('#reportArea', [stu], examId, 'Print This Report');
 }
 function generateAllReports(classId, examId){
-  if(!classId||!examId){ toast('Select grade & exam','err'); return; }
+  if(!classId||!examId){ toast('Select a grade and an exam first','err'); return; }
   const school = currentSchool();
   if(!confirmUnapproved(school, examId)) return;
   const _exm = school.exams.find(x=>x.id===examId);
   const learners = applyGenderMode(_exm ? studentsForExam(school, _exm) : studentsInClass(school, classId), genderMode('repGender'));
-  const reports = learners.map(s=>buildReportHTML(school,s.id,examId));
-  qs('#reportArea').innerHTML = reports.map(r=>r.html).join('') +
-   `<div class="flexbtns no-print"><button class="gold" onclick="window.print()">🖨 Print All Reports</button></div>`;
-  reports.forEach(r=>drawProgressChart(r.chartId, r.historyPoints));
+  showReports('#reportArea', learners, examId, 'Print All Reports ('+learners.length+')');
 }
 
 /* ============================= EXAM HISTORY ============================= */
