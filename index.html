@@ -491,6 +491,8 @@ function ensureSchoolShape(s){
     // printable assignments/homework to the Parent Portal), scoped to their own assigned
     // grade(s) only. Defaults to false, same as canPrintAssess.
     if(typeof t.canPostAssignments !== 'boolean') t.canPostAssignments = false;
+    // canAddQuestions: teacher may add questions to the exam question bank (own grades/areas only). On by default.
+    if(typeof t.canAddQuestions !== 'boolean') t.canAddQuestions = true;
     // classTeacherOf: the grade(s) this teacher is designated Class Teacher for — separate
     // from the free-text "Class Teacher" name shown on report cards (school.classTeachers),
     // and separate from subject/learning-area assignments above. A teacher can be Class
@@ -550,6 +552,10 @@ function ensureSchoolShape(s){
   // Duty Rota: school.dutyRotas = [x] (see the Duty Rota section for shape). A school that
   // existed before this feature simply has none yet.
   if(!Array.isArray(s.dutyRotas)) s.dutyRotas = [];
+  // Exam Paper Generator: school.qbank = {questions:[], papers:[]} (see the generator section).
+  if(!s.qbank || typeof s.qbank!=='object') s.qbank = {};
+  if(!Array.isArray(s.qbank.questions)) s.qbank.questions = [];
+  if(!Array.isArray(s.qbank.papers)) s.qbank.papers = [];
   return s;
 }
 function migrateDB(db){
@@ -1181,7 +1187,7 @@ async function refreshAllSchoolsFromCloud(silent){
 const DOS_TAB_DEPS = {
   classes:['classes','classTeachers','students'], areas:['learningAreas','classes'], grading:['gradingSystem','classes'],
   students:['students','classes'], teachers:['teachers','classes','learningAreas','classTeachers'], assignments:['assignments','classes'],
-  tt:['timetable','classes','teachers','learningAreas'], ttsetup:['timetable','classes','teachers','learningAreas'], ttrem:['timetable','classes','teachers','learningAreas'], ttwork:['timetable','classes','teachers','learningAreas'], extt:['timetable','classes','teachers','learningAreas','exams'], duty:['teachers','dutyRotas']
+  tt:['timetable','classes','teachers','learningAreas'], ttsetup:['timetable','classes','teachers','learningAreas'], ttrem:['timetable','classes','teachers','learningAreas'], ttwork:['timetable','classes','teachers','learningAreas'], extt:['timetable','classes','teachers','learningAreas','exams'], duty:['teachers','dutyRotas'], qpaper:['qbank','classes','learningAreas'], sow:['sow','classes','learningAreas']
 };
 let _lastInputAt = 0, _pendingRedraw = null, _redrawTimer = null;
 ['input','keydown'].forEach(ev=>document.addEventListener(ev, ()=>{ _lastInputAt = Date.now(); }, true));
@@ -1232,7 +1238,7 @@ function softRefresh(changed){
     const _t = currentTeacher();
     if(!_t){ logout(); setTimeout(()=>toast('Your teacher account is no longer available','err'),50); return; }
     if(teacherSig(currentSchool(), _t)!==_teacherSig){ calmRedraw(renderTeacher); toast('Your access was updated by the DOS/HOI'); return; }
-    if(teacherTab==='timetable' || teacherTab==='examtt' || teacherTab==='dashboard'){ calmRedraw(renderTeacher); return; }
+    if(teacherTab==='timetable' || teacherTab==='examtt' || teacherTab==='dashboard' || teacherTab==='qbank' || teacherTab==='sow'){ calmRedraw(renderTeacher); return; }
     try{ renderTeacherApprovals(); }catch(e){}
     softRefreshMarksGrid('#marksGridArea', ()=>({examId: qs('#tExam')&&qs('#tExam').value, areaId: qs('#tArea')&&qs('#tArea').value, classId: qs('#tClass')&&qs('#tClass').value}), loadMarksGrid);
   } else if(session.role==='dos'){
@@ -4037,7 +4043,7 @@ const DOS_MENU = [
   {group:'Overview', items:[['dashboard','🏠 Dashboard']]},
   {group:'School setup', items:[['classes','🏷 Grades'],['areas','📚 Learning Areas'],['grading','🎯 Grading System'],['students','🧑‍🎓 Learners'],['teachers','👩‍🏫 Teachers &amp; Permissions']]},
   {group:'Timetable', items:[['tt','🗓 Timetables'],['ttsetup','⚙️ Timetable Setup'],['ttrem','🔁 Remedial Timetables'],['ttwork','📊 Teacher Workload'],['extt','📝 Exam Timetable'],['duty','👮 Duty Rota']]},
-  {group:'Exams &amp; marks', items:[['exams','📝 Exams'],['marks','✏️ Enter/Edit Marks']]},
+  {group:'Exams &amp; marks', items:[['exams','📝 Exams'],['qpaper','🧠 Exam Paper Generator'],['sow','📅 Scheme of Work'],['marks','✏️ Enter/Edit Marks']]},
   {group:'Results &amp; reports', items:[['assess','🖨 Assessment Sheets'],['analysis','📈 Results Analysis'],['reports','📄 Reports'],['history','🗂 Exam History']]},
   {group:'Parents', items:[['assignments','📎 Assignments'],['sms','💬 SMS to Parents'],['links','🔗 Share Login Links']]},
   {group:'School &amp; account', items:[['profile','🏫 School Details'],['account','🔑 My Account'],['help','❓ Help / Manual']]}
@@ -4117,6 +4123,197 @@ function portalQuick(goto, items){
 function gotoTeacherTab(k){ teacherTab = k; document.body.classList.remove('dos-menu-open'); renderTeacher(); window.scrollTo(0,0); }
 function gotoParentTab(k){ parentTab = k; document.body.classList.remove('dos-menu-open'); renderParent(); window.scrollTo(0,0); }
 function gotoAdminTab(k){ adminTab = k; document.body.classList.remove('dos-menu-open'); renderAdmin(); window.scrollTo(0,0); }
+/* ============================= EXAM PAPER GENERATOR (DOS/HOI) =============================
+   s.qbank = {questions:[{id,classId,areaId,topic,type,text,opts[],ans,marks,diff(1-3),src,used[paperIds],at}],
+              papers:[{id,name,classId,areaId,term,year,mins,total,instr,items[questionIds],at}]}
+   Questions come from teachers (typed in) or from Claude (drafts reviewed first). Papers are assembled from the
+   bank to hit a mark target per section, a difficulty mix and an even spread of topics, avoiding recently used questions.
+   The API key lives only in this browser's localStorage - never in the school data, so it never syncs. */
+const QP_TYPES={mcq:'Multiple choice',short:'Short answer',long:'Structured / essay',prac:'Practical task'},QP_SEC=['mcq','short','long','prac'],QP_DM={mcq:1,short:2,long:5,prac:10},QP_DIFF={1:'Easy',2:'Medium',3:'Hard'};
+let qpUI={tab:'bank',fc:'',ft:'',cls:'',area:'',type:'',q:'',edit:'',add:false,bc:'',ba:'',topics:null,tm:{},ai:[],busy:false,draft:null,ac:'',aa:'',at:'',an:5,aty:'short',adf:0,am:'',ax:'',de:30,dm:50,dh:20,avoid:true};
+function qbData(s){if(!s.qbank||typeof s.qbank!=='object')s.qbank={};if(!Array.isArray(s.qbank.questions))s.qbank.questions=[];if(!Array.isArray(s.qbank.papers))s.qbank.papers=[];return s.qbank;}
+const qpSave=()=>saveDB(DB),qpFix=()=>['qpFa','qfA','qbA','qaA'].forEach(i=>{const x=qs('#'+i);if(x&&x.selectedIndex<0&&x.options.length)x.selectedIndex=0;}),qpRedraw=()=>{redrawKeepingState(qpR);qpFix();},qpTab=k=>{qpUI.tab=k;renderDOS();};
+const qpT=()=>session&&session.role==='teacher'?currentTeacher():null,qpR=()=>session&&session.role==='teacher'?renderTeacher():renderDOS();
+const qpAreas=(s,c)=>{const t=qpT(),L=c?areasForClass(s,c):s.learningAreas;return t?L.filter(a=>c?teacherAreaIds(s,t,c).includes(a.id):teacherClassIds(s,t).some(k=>teacherAreaIds(s,t,k).includes(a.id))):L;};
+const qpSee=(s,q)=>{const t=qpT();return !t||(teacherAreaIds(s,t,q.classId).includes(q.areaId)&&(q.status!=='pending'||q.by===t.id));},qpOwn=(s,q)=>{const t=qpT();return !t||q.by===t.id;};
+const qpOpt=(list,cur,all)=>(all!==undefined?`<option value="">${all}</option>`:'')+list.map(([v,l])=>`<option value="${escapeHtml(String(v))}" ${String(v)===String(cur)?'selected':''}>${escapeHtml(l)}</option>`).join('');
+const qpClsOpts=(s,cur,all)=>qpOpt((qpT()?s.classes.filter(c=>teacherClassIds(s,qpT()).includes(c.id)):s.classes).map(c=>[c.id,c.name]),cur,all),qpAreaOpts=(s,c,cur,all)=>qpOpt(qpAreas(s,c).map(a=>[a.id,a.name]),cur,all);
+const qpPool=(s,c,a)=>qbData(s).questions.filter(q=>q.classId===c&&q.areaId===a&&q.status!=='pending');
+const qpMk=n=>n+' mark'+(n>1?'s':''),qpMins=m=>m>=60?Math.floor(m/60)+' hr'+(Math.floor(m/60)>1?'s':'')+(m%60?' '+m%60+' min':''):m+' min';
+(function(){const R=['.qpp{width:190mm;color:#000;font:13px/1.45 Georgia,"Times New Roman",serif}','.qph{display:flex;align-items:center;gap:10px;border-bottom:2px solid #000;padding-bottom:4px}','.qph img{height:16mm;width:auto}','.qps{font-size:18px;font-weight:800;text-transform:uppercase}','.qpm{font-size:11px}','.qpt{text-align:center;font-size:16px;font-weight:800;margin:8px 0 2px}','.qpi{display:flex;justify-content:space-between;gap:8px;font-weight:700;border-bottom:1px solid #000;padding-bottom:4px;margin-bottom:6px}','.qpn{margin:10px 0}','.qpx{border:1px solid #000;padding:4px 6px;margin:6px 0;font-size:12px}','.qpsec{font-weight:800;background:#eee;padding:3px 6px;margin:10px 0 4px;break-after:avoid}','.qpq{break-inside:avoid;margin:0 0 8px}','.qpr{display:flex;gap:6px}','.qpr .qpt2{flex:1;white-space:pre-wrap}','.qpmk{font-weight:700;white-space:nowrap}','.qpo{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin:2px 0 0 20px}','.qpl{border-bottom:1px dotted #000;height:7mm;margin-left:20px}','.qpa{margin:2px 0 0 20px;white-space:pre-wrap;font-size:12px}','.qpe{text-align:center;margin-top:12px;font-weight:700}'];
+  const st=document.createElement('style');st.textContent=R.map(r=>'#ttPrintArea '+r).join('');document.head.appendChild(st);})();
+// ---- screens ----
+function tplQPaper(s){const B=qbData(s),t=qpUI.tab;
+  if(!s.classes.length)return '<div class="card"><h2>🧠 Exam Paper Generator</h2><p class="small">Add grades and learning areas first, then come back here.</p></div>';
+  return `<div class="card"><h2>🧠 Exam Paper Generator</h2><p class="small">Keep a bank of questions (typed by teachers or drafted by AI), then build a balanced, printable exam paper and marking scheme in one tap.</p>${ttTabs(t,[['bank','🏦 Question bank ('+B.questions.length+')'+(B.questions.some(q=>q.status==='pending')?' ⏳':'')],['ai','✨ AI questions'],['build','🧠 Build paper'],['papers','📄 Saved papers ('+B.papers.length+')']],'qpTab')}${t==='ai'?qpAiTab(s):t==='build'?qpBuildTab(s):t==='papers'?qpPapersTab(s):qpBankTab(s)}</div>`;}
+function qpAnsHtml(q){const o=q.type==='mcq'?(q.opts||[]).map((x,i)=>`<div class="small">${'ABCD'[i]}. ${escapeHtml(x)}</div>`).join(''):'';return o+(q.ans?`<div class="small" style="color:#1b6b3a;white-space:pre-wrap"><b>Answer:</b> ${escapeHtml(q.ans)}</div>`:'');}
+function qpCard(s,q){const u=(q.used||[]).length;return `<div class="card" style="padding:8px 10px;margin:6px 0"><div><span class="chip">${QP_TYPES[q.type]||q.type}</span><span class="chip">${qpMk(q.marks)}</span><span class="chip">${QP_DIFF[q.diff]||''}</span>${q.topic?`<span class="chip">${escapeHtml(q.topic)}</span>`:''}<span class="chip">${escapeHtml(ttCn(s,q.classId))} · ${escapeHtml(ttAn(s,q.areaId))}</span>${q.src==='ai'?'<span class="chip" style="background:#f3e8ff">✨ AI</span>':''}${q.byName?`<span class="chip">👤 ${escapeHtml(q.byName)}</span>`:''}${q.status==='pending'?'<span class="chip" style="background:#fff1d6">⏳ Awaiting review</span>':''}${u?`<span class="chip">used ${u}×</span>`:''}</div><div style="margin:6px 0;white-space:pre-wrap">${escapeHtml(q.text)}</div>${qpAnsHtml(q)}<div class="flexbtns">${qpOwn(s,q)?`<button class="ghost" onclick="qbEdit('${q.id}')">Edit</button><button class="danger" onclick="qbDel('${q.id}')">Delete</button>`:''}${!qpT()&&q.status==='pending'?`<button class="gold" onclick="qbApprove('${q.id}')">✔ Approve</button>`:''}</div></div>`;}
+function qpBankTab(s){const B=qbData(s),U=qpUI,k=(U.q||'').toLowerCase(),L=B.questions.filter(q=>qpSee(s,q)&&(!U.pend||q.status==='pending')).filter(q=>(!U.cls||q.classId===U.cls)&&(!U.area||q.areaId===U.area)&&(!U.type||q.type===U.type)&&(!k||((q.text||'')+' '+(q.topic||'')).toLowerCase().includes(k))),e=U.edit?B.questions.find(q=>q.id===U.edit):null;
+  return `<div class="row"><div><label>Grade</label><select id="qpFc" onchange="qpUI.cls=this.value;qpUI.area='';qpRedraw()">${qpClsOpts(s,U.cls,'All grades')}</select></div><div><label>Learning area</label><select id="qpFa" onchange="qpUI.area=this.value;qpRedraw()">${qpAreaOpts(s,U.cls,U.area,'All areas')}</select></div><div><label>Type</label><select id="qpFt" onchange="qpUI.type=this.value;qpRedraw()">${qpOpt(Object.entries(QP_TYPES),U.type,'All types')}</select></div><div><label>Search</label><input id="qpFq" value="${escapeHtml(U.q)}" placeholder="word or topic" onchange="qpUI.q=this.value;qpRedraw()"></div></div>
+  <div class="flexbtns" style="margin:8px 0"><button onclick="qpUI.add=qpUI.edit?false:!qpUI.add;qpUI.edit='';qpUI.ft='';qpRedraw()">${(U.add||e)?'Close form':'+ Add question'}</button>${qpT()?'':`<button class="ghost" onclick="qbExport()">⬇ Export bank</button><button class="ghost" onclick="qs('#qbImp').click()">⬆ Import</button><input type="file" id="qbImp" accept=".json" style="display:none" onchange="qbImport(this)">`}</div>
+  ${qpT()?'':qpReview(B)}${(U.add||e)?qpForm(s,e):''}<p class="small">${L.length} question(s)${L.length!==B.questions.length?' shown of '+B.questions.length:''}.</p>
+  ${L.slice(0,80).map(q=>qpCard(s,q)).join('')||'<p class="small">No questions yet — add one above, or let AI draft some in the ✨ AI questions tab.</p>'}${L.length>80?'<p class="small">Showing the first 80 — use the filters to narrow down.</p>':''}`;}
+function qpForm(s,e){const c=e?e.classId:(qpUI.fc||qpUI.cls||(qpT()?teacherClassIds(s,qpT())[0]:s.classes[0].id)),q=e||{type:'short',marks:2,diff:2,opts:['','','',''],text:'',ans:'',topic:'',areaId:''},ty=qpUI.ft||q.type,o=q.opts||[];
+  return `<div class="card" style="background:#f7fafd"><h3 style="margin-top:0">${e?'Edit question':'New question'}</h3><div class="row"><div><label>Grade</label><select id="qfC" onchange="qpUI.fc=this.value;qpRedraw()">${qpClsOpts(s,c)}</select></div><div><label>Learning area</label><select id="qfA">${qpAreaOpts(s,c,q.areaId||qpUI.area)}</select></div><div><label>Topic / strand</label><input id="qfTp" value="${escapeHtml(q.topic||'')}" placeholder="e.g. Fractions"></div></div>
+  <div class="row"><div><label>Type</label><select id="qfTy" onchange="qpUI.ft=this.value;qpRedraw()">${qpOpt(Object.entries(QP_TYPES),ty)}</select></div><div><label>Marks</label><input id="qfM" type="number" min="1" max="50" value="${q.marks||QP_DM[ty]}"></div><div><label>Difficulty</label><select id="qfD">${qpOpt(Object.entries(QP_DIFF),q.diff)}</select></div></div>
+  <label>Question</label><textarea id="qfT" rows="3">${escapeHtml(q.text||'')}</textarea>
+  ${ty==='mcq'?`<div class="row">${[0,1,2,3].map(i=>`<div><label>Option ${'ABCD'[i]}</label><input id="qfO${i}" value="${escapeHtml(o[i]||'')}"></div>`).join('')}</div>`:''}
+  <label>${ty==='mcq'?'Correct answer (e.g. B — reason)':'Marking scheme / model answer'}</label><textarea id="qfAns" rows="2">${escapeHtml(q.ans||'')}</textarea>
+  <div class="flexbtns" style="margin-top:8px"><button onclick="qbSave()">${e?'Save changes':'Add to bank'}</button></div></div>`;}
+function qbSave(){const s=currentSchool(),B=qbData(s),v=id=>((qs('#'+id)||{}).value||'').trim(),text=v('qfT'),ty=v('qfTy'),o=ty==='mcq'?[0,1,2,3].map(i=>v('qfO'+i)):[];
+  if(!v('qfA')){toast('Choose a learning area','err');return;}if(!text){toast('Type the question','err');return;}if(ty==='mcq'&&o.filter(Boolean).length<2){toast('Add at least two options','err');return;}
+  const e=qpUI.edit&&B.questions.find(q=>q.id===qpUI.edit),d={classId:v('qfC'),areaId:v('qfA'),topic:v('qfTp'),type:ty,text,opts:o,ans:v('qfAns'),marks:Math.max(1,Math.round(+v('qfM')||1)),diff:+v('qfD')||2};
+  const T=qpT();if(T){if(T.canAddQuestions===false||!teacherMay(null,d.classId,d.areaId)){toast('You can only add questions for your own grade and learning area','err');return;}if(e&&e.by!==T.id){toast('You can only edit your own questions','err');return;}d.by=T.id;d.byName=T.name;d.status=B.review!==false?'pending':'approved';}
+  if(e)Object.assign(e,d);else B.questions.unshift(Object.assign({id:uid('q_'),src:'manual',used:[],at:Date.now()},d));
+  qpSave();qpUI.edit='';qpUI.ft='';qpUI.add=!e;toast(e?'Question updated':'Question added'+(T&&d.status==='pending'?' — it will join exam papers once the DOS/HOI approves it':''));qpRedraw();['qfT','qfAns','qfO0','qfO1','qfO2','qfO3'].forEach(i=>{const el=qs('#'+i);if(el)el.value='';});}
+/* ============================= SCHEME OF WORK GENERATOR (DOS/HOI + Teacher portal) =============================
+   s.sow = [{id,classId,areaId,term,year,wk,lp,by,byName,rows[{week,lesson,strand,substrand,outcomes,experiences,inquiry,resources,assessment,reflection,off}],at}]
+   Drafted by Claude using the same device-only API key as the question generator; the teacher reviews/edits, saves and prints. */
+let swUI={c:'',a:'',term:'Term 1',year:String(new Date().getFullYear()),wk:13,lp:4,skip:'',ex:'',busy:false,msg:'',draft:null};
+const swData=s=>{if(!Array.isArray(s.sow))s.sow=[];return s.sow;},swRedraw=()=>{redrawKeepingState(qpR);['swC','swA'].forEach(i=>{const x=qs('#'+i);if(x&&x.selectedIndex<0&&x.options.length)x.selectedIndex=0;});};
+const SW_C=[['week','Wk'],['lesson','Lsn'],['strand','Strand / Theme'],['substrand','Sub-strand / Sub-theme'],['outcomes','Specific learning outcomes'],['experiences','Learning experiences'],['inquiry','Key inquiry question(s)'],['resources','Learning resources'],['assessment','Assessment'],['reflection','Reflection']];
+(function(){const st=document.createElement('style');st.textContent='.sow{border-collapse:collapse;width:100%;font-size:12px}.sow th,.sow td{border:1px solid #888;padding:3px 5px;vertical-align:top;text-align:left}.sow th{background:#eee}.sow tr{break-inside:avoid}';document.head.appendChild(st);})();
+function swTable(rows,edit){return `<table class="sow"><tr>${SW_C.map(c=>`<th>${c[1]}</th>`).join('')}</tr>${rows.map((r,i)=>r.off?`<tr><td><b>${r.week}</b></td><td colspan="9" style="text-align:center"><i>${escapeHtml(r.strand)}</i></td></tr>`:`<tr>${SW_C.map(([k])=>edit&&k!=='week'&&k!=='lesson'?`<td contenteditable="true" onblur="swEd(${i},'${k}',this.innerText)">${escapeHtml(r[k]||'')}</td>`:`<td>${escapeHtml(String(r[k]==null?'':r[k]))}</td>`).join('')}</tr>`).join('')}</table>`;}
+function swEd(i,k,v){const d=swUI.draft;if(d&&d.rows[i])d.rows[i][k]=v.trim();}
+function tplSOW(s){const T=qpT(),U=swUI,cls=T?s.classes.filter(x=>teacherClassIds(s,T).includes(x.id)):s.classes;
+  if(!cls.length)return '<div class="card"><h2>📅 Scheme of Work</h2><p class="small">'+(T?'You have no grade or learning area assigned yet.':'Add grades and learning areas first, then come back here.')+'</p></div>';
+  const c=cls.some(x=>x.id===U.c)?U.c:cls[0].id,ar=qpAreas(s,c),a=ar.some(x=>x.id===U.a)?U.a:((ar[0]||{}).id||''),has=!!qpKey(),mine=swData(s).filter(x=>!T||x.by===T.id),d=U.draft;U.c=c;U.a=a;
+  return `<div class="card"><h2>📅 Scheme of Work</h2><p class="small">Pick the grade, learning area and term and Claude drafts a week-by-week CBC scheme of work (strand, sub-strand, outcomes, experiences, inquiry question, resources, assessment). You can edit anything, save it and print it. <b>Always check it against the KICD curriculum design.</b></p>
+  <details class="card" style="padding:8px 12px;margin:8px 0" ${has?'':'open'}><summary><b>${has?'✅ AI key saved on this device':'🔑 Set up the AI (once per device)'}</b></summary><div class="row"><div><label>Anthropic API key</label><input id="qaKey" type="password" autocomplete="off" placeholder="${has?'saved — paste a new key to replace it':'sk-ant-…'}"></div><div><label>Model</label><input id="qaModel" value="${escapeHtml(qpModel())}"></div><div style="align-self:flex-end"><button class="ghost" onclick="qpAiSaveKey()">Save</button>${has?' <button class="danger" onclick="qpAiClearKey()">Remove key</button>':''}</div></div><p class="small">The key stays in this browser only and never syncs. Each generation uses credit on your Anthropic account. Don't save it on a shared computer.</p></details>
+  <div class="row"><div><label>Grade</label><select id="swC" onchange="swUI.c=this.value;swUI.a='';swRedraw()">${qpClsOpts(s,c)}</select></div><div><label>Learning area</label><select id="swA" onchange="swUI.a=this.value">${qpAreaOpts(s,c,a)}</select></div><div><label>Term</label><input value="${escapeHtml(U.term)}" onchange="swUI.term=this.value"></div><div><label>Year</label><input value="${escapeHtml(U.year)}" onchange="swUI.year=this.value"></div></div>
+  <div class="row"><div><label>Weeks in the term</label><input type="number" min="1" max="20" value="${U.wk}" onchange="swUI.wk=+this.value"></div><div><label>Lessons per week</label><input type="number" min="1" max="10" value="${U.lp}" onchange="swUI.lp=+this.value"></div><div><label>Weeks with no lessons <span class="small">(e.g. 6, 12)</span></label><input value="${escapeHtml(U.skip)}" placeholder="half-term, exams…" onchange="swUI.skip=this.value"></div></div>
+  <label>Topics / instructions (optional)</label><textarea rows="2" placeholder="Paste your topic list or syllabus order, or say e.g. Start with Numbers, include a revision week." onchange="swUI.ex=this.value">${escapeHtml(U.ex)}</textarea>
+  <div class="flexbtns" style="margin-top:8px;align-items:flex-end"><button class="gold" ${U.busy?'disabled':''} onclick="swRun()">${U.busy?'⏳ Writing…':'✨ Generate scheme of work'}</button>${ttPaper()}</div><p class="small" id="swMsg">${escapeHtml(U.msg)}</p>
+  ${d?`<hr><h3 style="margin:8px 0">${escapeHtml(ttAn(s,d.areaId))} — ${escapeHtml(ttCn(s,d.classId))} · ${escapeHtml([d.term,d.year].filter(Boolean).join(' '))}</h3><p class="small">Tap any cell to edit it. The Reflection column is for you to fill in after teaching.</p><div class="ttw">${swTable(d.rows,true)}</div><div class="flexbtns" style="margin-top:8px"><button onclick="swSaveDraft()">💾 Save</button><button class="gold" onclick="swPrint()">🖨 Print</button><button class="ghost" onclick="swUI.draft=null;swRedraw()">Close</button></div>`:''}
+  ${mine.length?`<hr><h3 style="margin:8px 0">Saved schemes of work (${mine.length})</h3>`+mine.map(x=>`<div class="card" style="padding:8px 10px;margin:6px 0"><b>${escapeHtml(ttAn(s,x.areaId))}</b> <span class="small">· ${escapeHtml(ttCn(s,x.classId))} · ${escapeHtml([x.term,x.year].filter(Boolean).join(' '))}${x.byName?' · 👤 '+escapeHtml(x.byName):''} · ${new Date(x.at).toLocaleDateString('en-GB')}</span><div class="flexbtns"><button class="ghost" onclick="swOpen('${x.id}')">Open / edit</button><button class="gold" onclick="swPrint('${x.id}')">🖨 Print</button><button class="danger" onclick="swDel('${x.id}')">Delete</button></div></div>`).join(''):''}</div>`;}
+function swOpen(id){const x=swData(currentSchool()).find(q=>q.id===id);if(!x)return;swUI.draft=JSON.parse(JSON.stringify(x));swRedraw();window.scrollTo(0,0);}
+function swDel(id){if(!confirm('Delete this saved scheme of work?'))return;const s=currentSchool(),T=qpT(),L=swData(s),x=L.find(q=>q.id===id);if(!x||(T&&x.by!==T.id))return;s.sow=L.filter(q=>q.id!==id);if(swUI.draft&&swUI.draft.id===id)swUI.draft.id='';qpSave();swRedraw();}
+function swSaveDraft(){const s=currentSchool(),d=swUI.draft,T=qpT();if(!d)return;const L=swData(s);let p=d.id&&L.find(x=>x.id===d.id);if(p&&T&&p.by!==T.id){toast('You can only change your own schemes','err');return;}
+  if(!p){p={id:uid('sw_'),at:Date.now(),by:T?T.id:'',byName:T?T.name:''};L.unshift(p);}Object.assign(p,{classId:d.classId,areaId:d.areaId,term:d.term,year:d.year,wk:d.wk,lp:d.lp,rows:d.rows.map(r=>Object.assign({},r))});d.id=p.id;qpSave();toast('Scheme of work saved');swRedraw();}
+function swPrint(id){const s=currentSchool(),d=id?swData(s).find(x=>x.id===id):swUI.draft;if(!d)return;const by=d.byName||(qpT()||{}).name||'';
+  ttPrintHTML(ttPage(s,'Scheme of Work: '+escapeHtml(ttAn(s,d.areaId))+' — '+escapeHtml(ttCn(s,d.classId)),escapeHtml([d.term,d.year].filter(Boolean).join(' '))+(by?' · Teacher: '+escapeHtml(by):''),swTable(d.rows,false),''));}
+async function swRun(){const s=currentSchool(),U=swUI,key=qpKey(),T=qpT();if(U.busy)return;if(!key){toast('Save your API key first (open the key section above)','err');return;}
+  if(!U.a){toast('Choose a learning area','err');return;}if(T&&!teacherMay(null,U.c,U.a)){toast('You can only plan your own grade and learning area','err');return;}
+  const wk=Math.max(1,Math.min(20,Math.round(+U.wk||13))),lp=Math.max(1,Math.min(10,Math.round(+U.lp||4))),off=new Set(String(U.skip||'').split(/[^0-9]+/).map(Number).filter(n=>n>0&&n<=wk)),weeks=[];
+  for(let w=1;w<=wk;w++)if(!off.has(w))weeks.push(w);if(!weeks.length){toast('Every week is marked as having no lessons','err');return;}
+  U.busy=true;U.draft=null;swRedraw();const rows=[],done=[];let err='';
+  try{for(let i=0;i<weeks.length;i+=3){const b=weeks.slice(i,i+3),m=qs('#swMsg');U.msg='Writing weeks '+b[0]+(b.length>1?'–'+b[b.length-1]:'')+' of '+wk+'…';if(m)m.textContent=U.msg;
+    const prompt=`Write a scheme of work for ${ttCn(s,U.c)} learners in ${ttAn(s,U.a)} (Kenya Competency Based Curriculum), ${U.term} ${U.year}.\nWeeks to write now: ${b.join(', ')}. Lessons per week: ${lp}. The term has ${wk} weeks in total.\n${done.length?'Already covered in earlier weeks (continue from there, do not repeat): '+done.join('; ')+'\n':''}${U.ex.trim()?"Teacher's topics / instructions:\n"+U.ex.trim()+'\n':''}\nReturn ONLY valid JSON, no other text, in this exact shape:\n{"rows":[{"week":1,"lesson":1,"strand":"","substrand":"","outcomes":"","experiences":"","inquiry":"","resources":"","assessment":""}]}\nRules: exactly ${lp} rows for each of the weeks listed, with lesson numbered 1 to ${lp}; follow the official KICD curriculum design for this grade and learning area in a logical order across the term; outcomes = 1-2 specific learning outcomes beginning "By the end of the lesson, the learner should be able to"; experiences = short learner-centred activities; inquiry = one key inquiry question; resources = realistic low-cost materials; assessment = the method (e.g. oral questions, observation, written exercise). Keep each field under 40 words. Plain text only.`;
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:qpModel(),max_tokens:Math.min(8000,600+b.length*lp*320),system:'You are an experienced Kenyan CBC teacher and curriculum designer who writes accurate, practical schemes of work.',messages:[{role:'user',content:prompt}]})});
+    const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(r.status===401?'The API key was not accepted — check it and save it again.':r.status===429?'Too many requests, or the account is out of credit — try again shortly.':(j.error&&j.error.message)||('Request failed ('+r.status+')'));
+    const txt=(j.content||[]).map(x=>x.type==='text'?x.text:'').join(''),data=JSON.parse(txt.slice(txt.indexOf('{'),txt.lastIndexOf('}')+1)),f=v=>String(v==null?'':v).trim(),n0=rows.length;
+    (data.rows||[]).forEach(q=>{if(!q||!b.includes(+q.week))return;rows.push({week:+q.week,lesson:Math.round(+q.lesson)||1,strand:f(q.strand),substrand:f(q.substrand),outcomes:f(q.outcomes),experiences:f(q.experiences),inquiry:f(q.inquiry),resources:f(q.resources),assessment:f(q.assessment),reflection:''});});
+    if(rows.length===n0)throw new Error('The AI returned no usable rows — try again.');rows.slice(n0).forEach(q=>{if(q.substrand&&!done.includes(q.substrand))done.push(q.substrand);});}}
+  catch(e){err=(e&&e.message)||'Could not generate the scheme of work';}
+  U.busy=false;U.msg='';if(rows.length){off.forEach(w=>rows.push({week:w,lesson:0,off:true,strand:'No lessons this week'}));rows.sort((x,y)=>x.week-y.week||x.lesson-y.lesson);U.draft={id:'',classId:U.c,areaId:U.a,term:U.term,year:U.year,wk,lp,rows};}
+  swRedraw();if(err)toast(rows.length?err+' — the weeks written so far are shown.':err,'err');else toast('Scheme of work ready — review and edit it below');}
+function qbApprove(id){const q=qbData(currentSchool()).questions.find(x=>x.id===id);if(q){q.status='approved';qpSave();qpRedraw();}}
+function qbApproveAll(){qbData(currentSchool()).questions.forEach(q=>{if(q.status==='pending')q.status='approved';});qpUI.pend=false;qpSave();toast('All teacher questions approved');qpRedraw();}
+function qbReview(on){qbData(currentSchool()).review=on;qpSave();}
+function qpReview(B){const n=B.questions.filter(q=>q.status==='pending').length;return `<div class="card" style="background:#fff9ec;padding:8px 10px"><label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${B.review!==false?'checked':''} onchange="qbReview(this.checked)">Review teachers' questions before they are used in papers</label>${n?`<div style="margin-top:6px"><b>${n}</b> question(s) waiting for review <span class="flexbtns" style="display:inline-flex"><button class="ghost" onclick="qpUI.pend=!qpUI.pend;qpRedraw()">${qpUI.pend?'Show all':'Show only these'}</button><button onclick="qbApproveAll()">✔ Approve all</button></span></div>`:''}</div>`;}
+function tplTeacherQB(s,t){if(t.canAddQuestions===false)return '';if(!s.classes.length||!teacherClassIds(s,t).length)return '<div class="card"><h2>🏦 Question Bank</h2><p class="small">You have no grade or learning area assigned yet.</p></div>';const B=qbData(s),mine=B.questions.filter(q=>q.by===t.id).length,pend=B.questions.filter(q=>q.by===t.id&&q.status==='pending').length;return `<div class="card"><h2>🏦 Question Bank</h2><p class="small">Add exam questions for the grades and learning areas you teach (you have added ${mine}${pend?`, ${pend} waiting for review`:''}). ${B.review!==false?'Your questions join exam papers once the DOS/HOI approves them. ':''}You can edit or delete only your own questions.</p>${qpBankTab(s)}</div>`;}
+function qbEdit(id){const T=qpT(),Q=qbData(currentSchool()).questions.find(x=>x.id===id);if(T&&(!Q||Q.by!==T.id)){toast('You can only edit your own questions','err');return;}qpUI.edit=id;qpUI.add=false;qpUI.ft='';qpR();window.scrollTo(0,0);}
+function qbDel(id){const T=qpT(),Q=qbData(currentSchool()).questions.find(x=>x.id===id);if(T&&(!Q||Q.by!==T.id)){toast('You can only delete your own questions','err');return;}if(!confirm('Delete this question from the bank?'))return;const B=qbData(currentSchool());B.questions=B.questions.filter(q=>q.id!==id);qpSave();qpRedraw();}
+function qbExport(){const s=currentSchool(),b=new Blob([JSON.stringify({kind:'question-bank',v:1,school:s.name,savedAt:Date.now(),questions:qbData(s).questions.map(q=>Object.assign({},q,{cn:ttCn(s,q.classId),an:ttAn(s,q.areaId)}))})],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='question-bank.json';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
+function qbImport(inp){const f=inp.files&&inp.files[0];inp.value='';if(!f)return;const r=new FileReader();r.onload=()=>{try{const j=JSON.parse(r.result);if(j.kind!=='question-bank'||!Array.isArray(j.questions))throw 0;const s=currentSchool(),B=qbData(s),have=new Set(B.questions.map(q=>q.id));let n=0,skip=0;
+  j.questions.forEach(q=>{if(!q||typeof q.text!=='string'||!QP_TYPES[q.type]||have.has(q.id))return;
+    const c=s.classes.find(x=>x.id===q.classId)||s.classes.find(x=>x.name===q.cn),a=s.learningAreas.find(x=>x.id===q.areaId)||s.learningAreas.find(x=>x.name===q.an);
+    if(!c||!a){skip++;return;}
+    q.id=q.id||uid('q_');q.classId=c.id;q.areaId=a.id;delete q.cn;delete q.an;q.marks=Math.max(1,Math.round(+q.marks||1));q.diff=[1,2,3].includes(+q.diff)?+q.diff:2;q.opts=Array.isArray(q.opts)?q.opts:[];q.used=[];B.questions.push(q);n++;});
+  qpSave();qpRedraw();toast(n+' question(s) imported'+(skip?' · '+skip+' skipped (grade or learning area not found)':''));}catch(e){toast('That is not a valid question bank file','err');}};r.readAsText(f);}
+// ---- AI ----
+const qpKey=()=>{try{return localStorage.getItem('qpAiKey')||'';}catch(e){return '';}},qpModel=()=>{try{return localStorage.getItem('qpAiModel')||'claude-sonnet-5-5';}catch(e){return 'claude-sonnet-5-5';}};
+function qpAiSaveKey(){try{const k=(qs('#qaKey').value||'').trim(),m=(qs('#qaModel').value||'').trim();if(k)localStorage.setItem('qpAiKey',k);if(m)localStorage.setItem('qpAiModel',m);toast('Saved on this device');}catch(e){toast('This browser would not save it','err');}qpRedraw();}
+function qpAiClearKey(){try{localStorage.removeItem('qpAiKey');}catch(e){}toast('Key removed from this device');qpRedraw();}
+function qpAiTab(s){const U=qpUI,c=s.classes.some(x=>x.id===U.ac)?U.ac:s.classes[0].id,areas=qpAreas(s,c),a=areas.some(x=>x.id===U.aa)?U.aa:((areas[0]||{}).id||''),has=!!qpKey();
+  return `<p class="small">Describe what you need and Claude drafts questions with answers. You review them, then add the good ones to your bank. <b>Always check the answers</b> before using them in an exam.</p>
+  <details class="card" style="padding:8px 12px;margin:8px 0" ${has?'':'open'}><summary><b>${has?'✅ AI key saved on this device':'🔑 Set up the AI (once per device)'}</b></summary><div class="row"><div><label>Anthropic API key</label><input id="qaKey" type="password" autocomplete="off" placeholder="${has?'saved — paste a new key to replace it':'sk-ant-…'}"></div><div><label>Model</label><input id="qaModel" value="${escapeHtml(qpModel())}"></div><div style="align-self:flex-end"><button class="ghost" onclick="qpAiSaveKey()">Save</button>${has?' <button class="danger" onclick="qpAiClearKey()">Remove key</button>':''}</div></div>
+  <p class="small">The key stays in this browser only — it is not part of the school data and never syncs to other devices. Each generation uses credit on your Anthropic account (console.anthropic.com). Don't save the key on a shared computer.</p></details>
+  <div class="row"><div><label>Grade</label><select id="qaC" onchange="qpUI.ac=this.value;qpUI.aa='';qpRedraw()">${qpClsOpts(s,c)}</select></div><div><label>Learning area</label><select id="qaA" onchange="qpUI.aa=this.value">${qpAreaOpts(s,c,a)}</select></div><div><label>Topic / strand</label><input id="qaT" value="${escapeHtml(U.at)}" placeholder="e.g. Fractions and decimals" onchange="qpUI.at=this.value"></div></div>
+  <div class="row"><div><label>Question type</label><select id="qaTy" onchange="qpUI.aty=this.value">${qpOpt(Object.entries(QP_TYPES),U.aty)}</select></div><div><label>How many</label><input id="qaN" type="number" min="1" max="15" value="${U.an}" onchange="qpUI.an=+this.value"></div><div><label>Marks each (blank = typical)</label><input id="qaM" type="number" min="1" max="30" value="${U.am||''}" onchange="qpUI.am=this.value"></div><div><label>Difficulty</label><select id="qaD" onchange="qpUI.adf=+this.value">${qpOpt([[0,'Mixed'],[1,'Easy'],[2,'Medium'],[3,'Hard']],U.adf)}</select></div></div>
+  <label>Extra instructions (optional)</label><textarea id="qaX" rows="2" placeholder="e.g. Follow the CBC strand Numbers. Use local examples. No diagrams." onchange="qpUI.ax=this.value">${escapeHtml(U.ax)}</textarea>
+  <div class="flexbtns" style="margin-top:8px"><button class="gold" ${U.busy?'disabled':''} onclick="qpAiRun()">${U.busy?'⏳ Writing questions…':'✨ Generate questions'}</button></div>${qpAiDrafts()}`;}
+function qpAiDrafts(){const L=qpUI.ai;if(!L.length)return '';
+  return `<h3 style="margin:14px 0 4px">Draft questions — review before adding</h3>${L.map((q,i)=>`<div class="card" style="padding:8px 10px;margin:6px 0"><label style="display:flex;gap:8px;cursor:pointer;margin:0;align-items:flex-start"><input type="checkbox" style="width:auto;margin-top:4px" ${q.keep?'checked':''} onchange="qpUI.ai[${i}].keep=this.checked"><span style="flex:1"><span class="chip">${QP_TYPES[q.type]}</span><span class="chip">${qpMk(q.marks)}</span><span class="chip">${QP_DIFF[q.diff]}</span>${q.topic?`<span class="chip">${escapeHtml(q.topic)}</span>`:''}<div style="white-space:pre-wrap;margin-top:4px">${escapeHtml(q.text)}</div>${qpAnsHtml(q)}</span></label></div>`).join('')}<div class="flexbtns"><button onclick="qpAiAdd()">➕ Add selected to bank</button><button class="ghost" onclick="qpUI.ai=[];qpRedraw()">Discard all</button></div>`;}
+async function qpAiRun(){const s=currentSchool(),U=qpUI,key=qpKey();if(U.busy)return;if(!key){toast('Save your API key first (open the key section above)','err');return;}
+  const c=qs('#qaC').value,a=qs('#qaA').value,topic=qs('#qaT').value.trim(),n=Math.max(1,Math.min(15,Math.round(+qs('#qaN').value||5))),ty=qs('#qaTy').value,mk=Math.max(0,Math.round(+qs('#qaM').value||0)),df=+qs('#qaD').value||0,ex=qs('#qaX').value.trim();
+  if(!a){toast('Choose a learning area','err');return;}if(!topic){toast('Enter a topic or strand','err');return;}
+  U.at=topic;U.busy=true;qpRedraw();const marks=mk||QP_DM[ty],
+  prompt=`Write ${n} ${QP_TYPES[ty].toLowerCase()} exam question(s) for ${ttCn(s,c)} learners in ${ttAn(s,a)}.\nTopic/strand: ${topic}\nDifficulty: ${df?QP_DIFF[df].toLowerCase():'a mix of easy, medium and hard'}\nMarks per question: ${marks} (the marking scheme must add up to this)\n${ex?'Extra instructions: '+ex+'\n':''}\nReturn ONLY valid JSON, no other text, in this exact shape:\n{"questions":[{"type":"${ty}","topic":"${topic.replace(/"/g,"'")}","text":"the question","options":["option text","option text","option text","option text"],"answer":"model answer or marking scheme","marks":${marks},"difficulty":1}]}\nRules: difficulty is 1 (easy), 2 (medium) or 3 (hard). "options" is only for multiple choice (exactly 4, without the letters A-D) and then "answer" must start with the correct letter, e.g. "B - because ...". For every other type leave "options" as an empty list and make "answer" a short marking scheme showing where each mark is earned. Questions must be accurate, clear, age-appropriate, different from each other, and not need a diagram. Plain text only.`;
+  try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:qpModel(),max_tokens:Math.min(8000,800+n*600),system:'You are an experienced school teacher and examiner who writes fair, accurate exam questions and marking schemes.',messages:[{role:'user',content:prompt}]})});
+    const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(r.status===401?'The API key was not accepted — check it and save it again.':r.status===429?'Too many requests, or the account is out of credit — try again shortly.':(j.error&&j.error.message)||('Request failed ('+r.status+')'));
+    const txt=(j.content||[]).map(b=>b.type==='text'?b.text:'').join(''),data=JSON.parse(txt.slice(txt.indexOf('{'),txt.lastIndexOf('}')+1)),out=[];
+    (data.questions||[]).forEach(q=>{if(!q||typeof q.text!=='string'||!q.text.trim())return;const t=QP_TYPES[q.type]?q.type:ty,o=t==='mcq'?(Array.isArray(q.options)?q.options.map(x=>String(x).trim()).filter(Boolean).slice(0,4):[]):[];if(t==='mcq'&&o.length<2)return;
+      out.push({type:t,topic:String(q.topic||topic).trim(),text:q.text.trim(),opts:o,ans:String(q.answer||'').trim(),marks:Math.max(1,Math.round(+q.marks||marks)),diff:[1,2,3].includes(+q.difficulty)?+q.difficulty:2,classId:c,areaId:a,keep:true});});
+    if(!out.length)throw new Error('The AI returned no usable questions — try again.');U.ai=out;toast(out.length+' draft question(s) ready — review them below');
+  }catch(e){toast(e instanceof SyntaxError?'The AI reply could not be read — please try again':(e.message==='Failed to fetch'?'Could not reach the AI — check your internet connection':e.message),'err');}
+  finally{U.busy=false;qpRedraw();}}
+function qpAiAdd(){const B=qbData(currentSchool()),L=qpUI.ai.filter(q=>q.keep);if(!L.length){toast('Tick the questions you want to keep','err');return;}
+  L.slice().reverse().forEach(q=>{const c=Object.assign({},q);delete c.keep;B.questions.unshift(Object.assign({id:uid('q_'),src:'ai',used:[],at:Date.now()},c));});
+  qpUI.ai=[];qpSave();toast(L.length+' question(s) added to the bank');qpRedraw();}
+// ---- build ----
+function qpBSel(s){const U=qpUI,c=s.classes.some(x=>x.id===U.bc)?U.bc:s.classes[0].id,areas=qpAreas(s,c),a=areas.some(x=>x.id===U.ba)?U.ba:((areas[0]||{}).id||'');return {c,a};}
+const qpTops=(s,c,a)=>[...new Set(qpPool(s,c,a).map(q=>q.topic||''))].sort();
+function qpTopic(i,on){const s=currentSchool(),{c,a}=qpBSel(s),t=qpTops(s,c,a),cur=qpUI.topics||t.slice();qpUI.topics=on?[...new Set(cur.concat(t[i]))]:cur.filter(x=>x!==t[i]);}
+function qpTm(t,v){qpUI.tm=qpUI.tm||{};if(v===''||v==null)delete qpUI.tm[t];else qpUI.tm[t]=Math.max(0,+v||0);}
+function qpSync(){const U=qpUI,g=i=>{const e=qs('#'+i);return e?e.value:null;},m={qbN:['bn',0],qbTe:['bt',0],qbY:['by',0],qbMi:['bm',1],qbTot:['btot',1],qbI:['bi',0]};Object.keys(m).forEach(i=>{const v=g(i);if(v!==null)U[m[i][0]]=m[i][1]?+v:v;});
+  [['qbDe','de'],['qbDm','dm'],['qbDh','dh']].forEach(([i,k])=>{const v=g(i);if(v!==null&&v!=='')U[k]=+v||0;});
+  QP_SEC.forEach(t=>{const v=g('qbS_'+t);if(v!==null)qpTm(t,v);});}
+function qpBuildTab(s){const U=qpUI,{c,a}=qpBSel(s),pool=qpPool(s,c,a),tops=qpTops(s,c,a),sel=U.topics||tops,tm=U.tm||{},
+  cnt=t=>{const L=pool.filter(q=>q.type===t);return L.length?`${QP_TYPES[t]}: <b>${L.length}</b> (${L.reduce((n,q)=>n+q.marks,0)} marks)`:'';};
+  return `<div class="row"><div><label>Grade</label><select id="qbC" onchange="qpUI.bc=this.value;qpUI.ba='';qpUI.topics=null;qpRedraw()">${qpClsOpts(s,c)}</select></div><div><label>Learning area</label><select id="qbA" onchange="qpUI.ba=this.value;qpUI.topics=null;qpRedraw()">${qpAreaOpts(s,c,a)}</select></div><div><label>Paper title</label><input id="qbN" value="${escapeHtml(U.bn||'End of Term Examination')}" onchange="qpUI.bn=this.value"></div></div>
+  <div class="row"><div><label>Term</label><input id="qbTe" value="${escapeHtml(U.bt||'')}" placeholder="e.g. Term 3" onchange="qpUI.bt=this.value"></div><div><label>Year</label><input id="qbY" value="${escapeHtml(U.by||String(new Date().getFullYear()))}" onchange="qpUI.by=this.value"></div><div><label>Time allowed (minutes)</label><input id="qbMi" type="number" min="10" max="360" value="${U.bm||60}" onchange="qpUI.bm=+this.value"></div><div><label>Total marks</label><input id="qbTot" type="number" min="5" max="200" value="${U.btot||50}" onchange="qpUI.btot=+this.value"></div></div>
+  <p class="small"><b>In the bank for this grade and subject:</b> ${QP_SEC.map(cnt).filter(Boolean).join(' · ')||'nothing yet — add questions in the bank or with ✨ AI.'}</p>
+  ${tops.length>1?`<label>Topics to cover</label><div class="flexbtns">${tops.map((t,i)=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:3px" ${sel.includes(t)?'checked':''} onchange="qpTopic(${i},this.checked)">${escapeHtml(t||'(no topic)')}</label>`).join('')}</div>`:''}
+  <label style="margin-top:8px">Marks per section <span class="small">(leave blank to split automatically)</span></label><div class="row">${QP_SEC.map(t=>`<div><label>${QP_TYPES[t]}</label><input id="qbS_${t}" type="number" min="0" max="200" placeholder="auto" value="${tm[t]!=null?tm[t]:''}" onchange="qpTm('${t}',this.value)"></div>`).join('')}</div>
+  <label>Difficulty mix (%)</label><div class="row"><div><label>Easy</label><input id="qbDe" type="number" min="0" max="100" value="${U.de}" onchange="qpUI.de=+this.value"></div><div><label>Medium</label><input id="qbDm" type="number" min="0" max="100" value="${U.dm}" onchange="qpUI.dm=+this.value"></div><div><label>Hard</label><input id="qbDh" type="number" min="0" max="100" value="${U.dh}" onchange="qpUI.dh=+this.value"></div></div>
+  <label>Instructions printed on the paper</label><textarea id="qbI" rows="2" onchange="qpUI.bi=this.value">${escapeHtml(U.bi!=null?U.bi:'Answer all questions. Write your name and class on every page.')}</textarea>
+  <div class="flexbtns" style="margin-top:8px;align-items:center"><button class="gold" onclick="qpBuild()">🧠 Generate paper</button><label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${U.avoid?'checked':''} onchange="qpUI.avoid=this.checked">Avoid questions used in earlier papers</label></div>${U.draft?qpDraft(s):''}`;}
+function qpPick(pool,target,mix,avoid){const ch=[],left=pool.slice(),tc={},got={e:0,m:0,h:0},dk=q=>q.diff===1?'e':q.diff===3?'h':'m';let sum=0;
+  const sc=q=>{let v=Math.random()*2;if(avoid)v+=(q.used||[]).length*4;v+=(tc[q.topic||'']||0)*2.5;v+=(mix[dk(q)]*target-got[dk(q)])>0?-3:2;return v;};
+  while(sum<target&&left.length){left.sort((x,y)=>sc(x)-sc(y));const i=left.findIndex(q=>sum+q.marks<=target);if(i<0)break;const q=left.splice(i,1)[0];ch.push(q);sum+=q.marks;got[dk(q)]+=q.marks;tc[q.topic||'']=(tc[q.topic||'']||0)+1;}
+  for(let k=0;k<30&&sum<target;k++){const gap=target-sum;let done=false;for(const c of ch){const u=left.find(q=>q.marks>c.marks&&q.marks-c.marks<=gap);if(u){left.splice(left.indexOf(u),1,c);ch[ch.indexOf(c)]=u;sum+=u.marks-c.marks;done=true;break;}}if(!done)break;}
+  return {chosen:ch,sum};}
+function qpBuild(){qpSync();const s=currentSchool(),U=qpUI,{c,a}=qpBSel(s),tot=Math.max(5,Math.round(+U.btot||50)),all=qpPool(s,c,a),tops=[...new Set(all.map(q=>q.topic||''))],sel=U.topics||tops,pool=all.filter(q=>sel.includes(q.topic||''));
+  if(!pool.length){toast('There are no questions for this grade and subject yet — add some first','err');return;}
+  const W={mcq:2,short:4,long:4,prac:0},tm=U.tm||{},tgt={};let fixed=0;QP_SEC.forEach(t=>{if(tm[t]!=null){tgt[t]=Math.max(0,Math.round(+tm[t]));fixed+=tgt[t];}});
+  const auto=QP_SEC.filter(t=>tgt[t]===undefined&&W[t]>0&&pool.some(q=>q.type===t)),ws=auto.reduce((n,t)=>n+W[t],0),base=Math.max(0,tot-fixed);let left=base;auto.forEach((t,i)=>{const v=i===auto.length-1?left:Math.round(base*W[t]/ws);tgt[t]=v;left-=v;});
+  if(!QP_SEC.some(t=>tgt[t]>0)){const t=QP_SEC.find(x=>pool.some(q=>q.type===x));tgt[t]=tot;}
+  const e=+U.de||0,m=+U.dm||0,h=+U.dh||0,ms=(e+m+h)||100,mix={e:e/ms,m:m/ms,h:h/ms},items=[],short=[];
+  QP_SEC.forEach(t=>{const T=tgt[t]||0;if(!T)return;const r=qpPick(pool.filter(q=>q.type===t),T,mix,U.avoid!==false);r.chosen.forEach(q=>items.push(q.id));if(r.sum<T)short.push({t,need:T-r.sum});});
+  U.draft={id:'',name:U.bn||'End of Term Examination',classId:c,areaId:a,term:U.bt||'',year:U.by||String(new Date().getFullYear()),mins:+U.bm||60,total:tot,instr:U.bi!=null?U.bi:'Answer all questions. Write your name and class on every page.',items,short};
+  qpRedraw();}
+function qpSections(L){const pres=QP_SEC.filter(t=>L.some(q=>q.type===t));return pres.map((t,i)=>{const x=L.filter(q=>q.type===t);return {t,letter:'ABCD'[i],L:x,marks:x.reduce((n,q)=>n+q.marks,0)};});}
+function qpMeta(d){qpSync();const U=qpUI;d.name=U.bn||d.name;d.term=U.bt!=null?U.bt:d.term;d.year=U.by||d.year;d.mins=+U.bm||d.mins;d.total=+U.btot||d.total;d.instr=U.bi!=null?U.bi:d.instr;}
+const qpItems=(s,d)=>d.items.map(id=>qbData(s).questions.find(q=>q.id===id)).filter(Boolean);
+function qpDraft(s){const d=qpUI.draft,L=qpItems(s,d),sum=L.reduce((n,q)=>n+q.marks,0);let n=0;
+  const secs=qpSections(L).map(sc=>`<h3 style="margin:10px 0 4px">Section ${sc.letter}: ${QP_TYPES[sc.t]} <span class="small">(${sc.marks} marks)</span></h3>`+sc.L.map(q=>{n++;return `<div class="card" style="padding:6px 10px;margin:4px 0"><div style="display:flex;gap:8px;align-items:flex-start"><b>${n}.</b><div style="flex:1;white-space:pre-wrap">${escapeHtml(q.text)}${q.type==='mcq'?(q.opts||[]).map((x,k)=>`<div class="small">${'ABCD'[k]}. ${escapeHtml(x)}</div>`).join(''):''}<div class="small">${qpMk(q.marks)} · ${QP_DIFF[q.diff]}${q.topic?' · '+escapeHtml(q.topic):''}</div></div><button class="ghost" title="Swap for another question" onclick="qpSwap('${q.id}')">↻</button><button class="ghost" title="Remove" onclick="qpRemove('${q.id}')">✕</button></div></div>`;}).join('')).join('');
+  const warn=(d.short||[]).map(x=>`<li>${QP_TYPES[x.t]} is short by <b>${x.need}</b> mark${x.need>1?'s':''} — the bank has no more suitable questions. <a style="cursor:pointer;color:#123a63;font-weight:700" onclick="qpGoAi('${x.t}',${x.need})">✨ Write more with AI</a></li>`).join('');
+  return `<hr><h3 style="margin:8px 0">Paper preview — <b>${sum}</b> marks${sum!==d.total?` <span class="small">(target ${d.total})</span>`:''}</h3>${warn?`<div class="card" style="background:#fff6e5"><ul style="margin:0 0 0 18px">${warn}</ul></div>`:''}${secs||'<p class="small">All questions removed — press Generate paper again.</p>'}
+  <div class="flexbtns" style="margin-top:10px"><button class="ghost" onclick="qpBuild()">🔄 Regenerate</button><button onclick="qpSavePaper()">💾 Save paper</button><button class="gold" onclick="qpPrint('paper')">🖨 Print question paper</button><button class="ghost" onclick="qpPrint('scheme')">🖨 Print marking scheme</button></div>`;}
+function qpSwap(id){const s=currentSchool(),d=qpUI.draft,i=d.items.indexOf(id),q=qbData(s).questions.find(x=>x.id===id);if(i<0||!q)return;const sel=qpUI.topics||qpTops(s,d.classId,d.areaId);
+  const c=qpPool(s,d.classId,d.areaId).filter(x=>x.type===q.type&&!d.items.includes(x.id)&&sel.includes(x.topic||'')).map(x=>({x,v:Math.abs(x.marks-q.marks)*5+(x.used||[]).length*3+Math.random()})).sort((p,r)=>p.v-r.v);
+  if(!c.length){toast('No other '+QP_TYPES[q.type].toLowerCase()+' question in the bank','err');return;}d.items[i]=c[0].x.id;d.short=[];qpRedraw();}
+function qpRemove(id){const d=qpUI.draft;d.items=d.items.filter(x=>x!==id);qpRedraw();}
+function qpGoAi(t,need){const s=currentSchool(),d=qpUI.draft;qpUI.ac=d.classId;qpUI.aa=d.areaId;qpUI.aty=t;qpUI.an=Math.max(1,Math.min(15,Math.ceil(need/QP_DM[t])+1));const tp=qpUI.topics||qpTops(s,d.classId,d.areaId);if(tp.length===1&&tp[0])qpUI.at=tp[0];qpUI.tab='ai';renderDOS();}
+function qpSavePaper(){const s=currentSchool(),B=qbData(s),d=qpUI.draft;if(!d||!d.items.length){toast('Nothing to save','err');return;}qpMeta(d);
+  let p=d.id&&B.papers.find(x=>x.id===d.id);if(p)B.questions.forEach(q=>{q.used=(q.used||[]).filter(u=>u!==p.id);});else{p={id:uid('qp_'),at:Date.now()};B.papers.unshift(p);}
+  Object.assign(p,{name:d.name,classId:d.classId,areaId:d.areaId,term:d.term,year:d.year,mins:d.mins,total:d.total,instr:d.instr,items:d.items.slice()});d.id=p.id;
+  B.questions.forEach(q=>{if(p.items.includes(q.id)){q.used=q.used||[];if(!q.used.includes(p.id))q.used.push(p.id);}});qpSave();toast('Paper saved');qpRedraw();}
+// ---- saved papers + printing ----
+function qpPapersTab(s){const B=qbData(s);if(!B.papers.length)return '<p class="small">No saved papers yet. Build one in the 🧠 Build paper tab and press Save.</p>';
+  return B.papers.map(p=>{const L=qpItems(s,p),sum=L.reduce((n,q)=>n+q.marks,0);return `<div class="card" style="padding:8px 10px;margin:6px 0"><b>${escapeHtml(p.name)}</b> <span class="small">· ${escapeHtml(ttCn(s,p.classId))} · ${escapeHtml(ttAn(s,p.areaId))}${[p.term,p.year].filter(Boolean).length?' · '+[p.term,p.year].filter(Boolean).map(escapeHtml).join(' '):''} · ${L.length} questions · ${sum} marks · ${new Date(p.at).toLocaleDateString('en-GB')}</span><div class="flexbtns"><button class="ghost" onclick="qpOpen('${p.id}')">Open / edit</button><button class="gold" onclick="qpPrint('paper','${p.id}')">🖨 Paper</button><button class="ghost" onclick="qpPrint('scheme','${p.id}')">🖨 Marking scheme</button><button class="danger" onclick="qpDelPaper('${p.id}')">Delete</button></div></div>`;}).join('');}
+function qpOpen(id){const s=currentSchool(),p=qbData(s).papers.find(x=>x.id===id);if(!p)return;const U=qpUI;Object.assign(U,{bc:p.classId,ba:p.areaId,bn:p.name,bt:p.term,by:p.year,bm:p.mins,btot:p.total,bi:p.instr,topics:null,tab:'build'});
+  U.draft=Object.assign({},p,{items:qpItems(s,p).map(q=>q.id),short:[]});renderDOS();}
+function qpDelPaper(id){if(!confirm('Delete this saved paper? Its questions stay in the bank.'))return;const B=qbData(currentSchool());B.papers=B.papers.filter(p=>p.id!==id);B.questions.forEach(q=>{q.used=(q.used||[]).filter(u=>u!==id);});if(qpUI.draft&&qpUI.draft.id===id)qpUI.draft.id='';qpSave();qpRedraw();}
+function qpPaperHTML(s,d,scheme){const L=qpItems(s,d),sum=L.reduce((n,q)=>n+q.marks,0);let n=0;
+  const head=`<div class="qph">${s.logo?`<img src="${s.logo}" alt="">`:''}<div><div class="qps">${escapeHtml(s.name)}</div>${s.motto?`<div class="qpm"><i>${escapeHtml(s.motto)}</i></div>`:''}</div></div><div class="qpt">${escapeHtml(d.name)}${scheme?' — MARKING SCHEME':''}</div><div class="qpi"><span>${escapeHtml(ttCn(s,d.classId))} · ${escapeHtml(ttAn(s,d.areaId))}</span><span>${[d.term,d.year].filter(Boolean).map(escapeHtml).join(' ')}</span>${scheme?'':`<span>Time: ${qpMins(+d.mins||60)}</span>`}<span>Total: ${sum} marks</span></div>${scheme?'':`<div class="qpn">Name: ______________________________ &nbsp; Class: __________ &nbsp; Adm No: __________</div>${d.instr?`<div class="qpx"><b>Instructions:</b> ${escapeHtml(d.instr)}</div>`:''}`}`;
+  const lines=q=>{const k=q.type==='short'?Math.min(6,Math.max(2,q.marks+1)):q.type==='long'?Math.min(14,Math.max(4,q.marks*2)):q.type==='prac'?Math.min(12,Math.max(4,q.marks)):0;return '<div class="qpl"></div>'.repeat(k);};
+  const body=qpSections(L).map(sc=>`<div class="qpsec">SECTION ${sc.letter}: ${QP_TYPES[sc.t].toUpperCase()} (${sc.marks} marks)</div>`+sc.L.map(q=>{n++;return `<div class="qpq"><div class="qpr"><b>${n}.</b><span class="qpt2">${escapeHtml(q.text)}</span><span class="qpmk">(${scheme?q.marks:qpMk(q.marks)})</span></div>${scheme?`<div class="qpa"><b>Answer:</b> ${escapeHtml(q.ans||'— not recorded —')}</div>`:(q.type==='mcq'?`<div class="qpo">${(q.opts||[]).map((x,k)=>`<div>${'ABCD'[k]}. ${escapeHtml(x)}</div>`).join('')}</div>`:lines(q))}</div>`;}).join('')).join('');
+  return `<div class="qpp">${head}${body}<div class="qpe">— End of ${scheme?'marking scheme':'paper'} —</div></div>`;}
+function qpPrint(mode,id){const s=currentSchool(),d=id?qbData(s).papers.find(p=>p.id===id):qpUI.draft;if(!d||!qpItems(s,d).length){toast('Build a paper first','err');return;}if(!id)qpMeta(d);
+  const old=ttUI.orient;ttUI.orient='portrait';try{ttPrintHTML(qpPaperHTML(s,d,mode==='scheme'));}finally{ttUI.orient=old;}}
+
 function renderDOS(){
   const school = currentSchool();
   document.body.classList.remove('dos-menu-open');
@@ -4151,6 +4348,7 @@ function renderDOS(){
       <button onclick="gotoDosTab('assignments')">📎 Assignments</button>
       <button onclick="gotoDosTab('tt')">🗓 Timetables</button>
       <button onclick="gotoDosTab('extt')">📝 Exam Timetable</button>
+      <button onclick="gotoDosTab('qpaper')">🧠 Exam Paper Generator</button>
     </div>` + tplDashboard(school);
     if(school.classes.length) runDashboard();
   }
@@ -4166,6 +4364,8 @@ function renderDOS(){
   if(dosTab==='grading') c.innerHTML = tplGrading(school);
   if(dosTab==='students') c.innerHTML = tplStudents(school);
   if(dosTab==='exams') c.innerHTML = tplExams(school);
+  if(dosTab==='qpaper') c.innerHTML = tplQPaper(school);
+  if(dosTab==='sow') c.innerHTML = tplSOW(school);
   if(dosTab==='teachers') c.innerHTML = tplTeachers(school);
   if(dosTab==='finance') c.innerHTML = tplFinanceAccounts(school);
   if(dosTab==='marks'){ c.innerHTML = tplDosMarks(school); if(school.classes.length) dosRenderExamOptions(); }
@@ -4323,6 +4523,12 @@ const HELP_SECTIONS = [
     <p><b>Finance access levels:</b> Full accounts can change fee records; View-only accounts can only view, print and export.
     Finance can also view learner report cards but cannot enter or change marks.</p>` },
 
+  { title: '🧠 Exam Paper Generator', body: `
+    <p>Found under <b>Exams &amp; marks &rarr; Exam Paper Generator</b>. It builds a printable exam paper and marking scheme from a bank of questions.</p>
+    <p><b>1. Question bank.</b> Add questions by hand (multiple choice, short answer, structured/essay or practical) with marks, difficulty, topic and a marking scheme. You can export the bank to a file and import it into another school.</p>
+    <p><b>2. AI questions.</b> Paste your Anthropic API key once per device (it stays in that browser only and never syncs), choose the grade, learning area and topic, and the AI drafts questions with answers. Review the drafts, tick the good ones and add them to the bank. Always check the answers yourself before an exam.</p>
+    <p><b>3. Build paper.</b> Choose grade, learning area, total marks and time. The app picks questions to reach the marks for each section, mixes easy, medium and hard questions as you set, spreads the topics and avoids questions used in earlier papers. Swap (&#8635;) or remove any question, then print the paper or the marking scheme. If the bank runs short, it offers to write more with AI.</p>
+    <p><b>4. Saved papers.</b> Save a paper to reopen, edit or reprint it later.</p>` },
   { title: '🛠 Troubleshooting &amp; FAQ', body: `
     <p><b>"School code not found."</b> — Double-check the 8-digit School Code. If the school was only just created
     on another device and Multi-Device Sync isn't on yet, it may take a moment to appear on this one.</p>
@@ -5623,7 +5829,7 @@ function tplTeachers(school){
   </div>
   <div class="flexbtns"><button onclick="addTeacher()">➕ Add Teacher</button></div>
   <p class="small">Email/phone are only used so a teacher can reset a forgotten password themselves via a code sent to them — leave blank and they'll need to ask you instead. Gender and "Lives far from school" are only used by the Duty Rota generator, to pair/alternate gender fairly and to go easy on — or exclude — a teacher with a long commute. You (or the teacher, once logged in) can add or edit these later in the table below.</p>
-  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Gender</th><th>Lives far?</th><th>Assigned Grade / Learning Area</th><th>Class Teacher For</th><th>Can Print Reports?</th><th>Can Print Assessment Sheets?</th><th>Can Post Assignments?</th><th>Can Approve/<br>Disapprove Results?</th><th>Can Decide Edit Requests?</th><th>Can Open/Close Entry?</th><th>Actions</th></tr>
+  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Gender</th><th>Lives far?</th><th>Assigned Grade / Learning Area</th><th>Class Teacher For</th><th>Can Print Reports?</th><th>Can Print Assessment Sheets?</th><th>Can Post Assignments?</th><th>Can Add Exam Questions?</th><th>Can Approve/<br>Disapprove Results?</th><th>Can Decide Edit Requests?</th><th>Can Open/Close Entry?</th><th>Actions</th></tr>
   ${school.teachers.map(t=>`<tr>
     <td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.username)}</td>
     <td><input value="${escapeHtml(t.email||'')}" placeholder="email" onchange="setTeacherContact('${t.id}','email',this.value)"></td>
@@ -5653,6 +5859,7 @@ function tplTeachers(school){
     <td><input type="checkbox" ${t.canPrint?'checked':''} onchange="toggleTeacherPerm('${t.id}','canPrint',this.checked)"></td>
     <td><input type="checkbox" ${t.canPrintAssess?'checked':''} onchange="toggleTeacherPerm('${t.id}','canPrintAssess',this.checked)"></td>
     <td><input type="checkbox" ${t.canPostAssignments?'checked':''} onchange="toggleTeacherPerm('${t.id}','canPostAssignments',this.checked)"></td>
+    <td><input type="checkbox" ${t.canAddQuestions!==false?'checked':''} onchange="toggleTeacherPerm('${t.id}','canAddQuestions',this.checked)"></td>
     <td><input type="checkbox" ${t.canApproveResults?'checked':''} onchange="toggleTeacherPerm('${t.id}','canApproveResults',this.checked)"></td>
     <td><input type="checkbox" ${t.canApproveEditRequests?'checked':''} onchange="toggleTeacherPerm('${t.id}','canApproveEditRequests',this.checked)"></td>
     <td><input type="checkbox" ${t.canManageEntry?'checked':''} onchange="toggleTeacherPerm('${t.id}','canManageEntry',this.checked)"></td>
@@ -5679,7 +5886,7 @@ function addTeacher(){
   if(!password) password = 'tea123';
   const school = currentSchool();
   if(school.teachers.some(t=>t.username===username)){ toast('That username is already taken','err'); return; }
-  school.teachers.push({id:uid('t_'), name, username, password, email, phone, gender, farFromSchool, assignments:[], canPrint:true, canPrintAssess:false, canPostAssignments:false,
+  school.teachers.push({id:uid('t_'), name, username, password, email, phone, gender, farFromSchool, assignments:[], canPrint:true, canPrintAssess:false, canPostAssignments:false, canAddQuestions:true,
     classTeacherOf:[], canApproveResults:false, canApproveEditRequests:false, canManageEntry:false});
   saveDB(DB); toast(`Teacher added. Password: ${password}`); renderDOS();
 }
@@ -6035,7 +6242,7 @@ function teacherDenied(perm, classId, areaId){
 // Fingerprint of everything that decides what a teacher may see, so a live change made by
 // the DOS/HOI (new/removed assignment, permission on/off) re-draws the teacher's screen.
 function teacherSig(school, t){
-  return JSON.stringify([teacherClassIds(school,t).map(cid=>[cid, teacherAreaIds(school,t,cid).sort()]), !!t.canPrint, !!t.canPrintAssess, !!t.canPostAssignments,
+  return JSON.stringify([teacherClassIds(school,t).map(cid=>[cid, teacherAreaIds(school,t,cid).sort()]), !!t.canPrint, !!t.canPrintAssess, !!t.canPostAssignments, t.canAddQuestions!==false,
     (t.classTeacherOf||[]).slice().sort(), !!t.canApproveResults, !!t.canApproveEditRequests, !!t.canManageEntry]);
 }
 
@@ -6170,6 +6377,8 @@ function renderTeacher(){
   if(res.length) menu.push({group:'Results &amp; reports', items:res});
   const more = [];
   if(t.canPostAssignments) more.push(['assignments','📎 Assignments']);
+  if(t.canAddQuestions!==false) more.push(['qbank','🏦 Question Bank']);
+  if(myClasses.length) more.push(['sow','📅 Scheme of Work']);
   if(ctTools) more.push(['classteacher','📋 Class Teacher Tools']);
   if(more.length) menu.push({group:'Class work', items:more});
   menu.splice(1,0,{group:'Timetable', items:[['timetable','🗓 My Timetable'],['examtt','📝 Exam Timetable']]});
@@ -6184,7 +6393,7 @@ function renderTeacher(){
     timetable: tplTeacherTt(school, t),
     examtt: tplTeacherEx(school, t),
     marks: P.marks, approvals: P.approvals, reports: P.reports, assess: P.assess,
-    history: P.history, assignments: P.assignments, classteacher: ctTools, account: acct
+    history: P.history, qbank: tplTeacherQB(school, t), sow: tplSOW(school), assignments: P.assignments, classteacher: ctTools, account: acct
   }[teacherTab] || '';
   app.innerHTML = portalShell({menu, tab:teacherTab, goto:'gotoTeacherTab', side:t.name, headName:t.name, headSub:school.name}) + `<div id="dosContent">${content}</div>`;
   dosSyncBarOffset();
