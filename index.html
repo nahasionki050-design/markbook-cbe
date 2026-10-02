@@ -144,6 +144,13 @@ table.rc-table th{background:var(--navy);color:#fff;font-size:13px;text-transfor
 table.rc-table td{padding:9px 8px;}
 table.rc-table tr.rc-total td{background:#fdf6e5;font-weight:800;border-top:2px solid var(--gold);}
 .rc-remark{margin-top:12px;background:#fbf8ef;border-left:4px solid var(--gold);border-radius:0 8px 8px 0;padding:10px 14px;font-size:14px;line-height:1.5;}
+.rc-analysis{margin-top:12px;border:1px solid #d9e1ec;border-radius:8px;padding:8px 10px;font-size:13px;line-height:1.45;}
+.rc-analysis h4{margin:0 0 6px;color:var(--navy);font-size:14px;}
+.rc-tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:6px;}
+.rc-tile{background:#f4f7fb;border-radius:6px;padding:5px 6px;text-align:center;}
+.rc-tile b{display:block;font-size:15px;color:var(--navy);}
+.rc-tile span{font-size:10.5px;color:#5b6b7e;text-transform:uppercase;letter-spacing:.2px;}
+.rc-analysis ul{margin:4px 0 0 16px;padding:0;}
 .rc-chartwrap{margin-top:16px;}
 .rc-chartwrap canvas{display:block;width:100%;height:auto;}
 .rc-chart-label{font-size:14px;font-weight:700;color:var(--navy);display:block;margin-bottom:6px;}
@@ -160,6 +167,9 @@ table.rc-table tr.rc-total td{background:#fdf6e5;font-weight:800;border-top:2px 
 .sig-box .sig-slot .sig-date{padding-bottom:3px;font-weight:600;}
 .sig-box .sig-line{margin-top:0;}
 .rc-sigrow .sig-box{margin-top:0;}
+.ct-ov{position:fixed;inset:0;background:rgba(10,25,45,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:12px;}
+.ct-box{background:#fff;border-radius:12px;padding:16px;max-width:660px;width:100%;max-height:96vh;overflow:auto;}
+#ctSigPad{display:block;max-width:100%;touch-action:none;cursor:crosshair;border-radius:8px;}
 .sig-pad-wrap{border:1.5px dashed var(--navy);border-radius:8px;background:#fafcfe;display:inline-block;max-width:100%;}
 #hoiSigPad{display:block;max-width:100%;touch-action:none;cursor:crosshair;border-radius:8px;}
 .rc-footer{text-align:center;font-size:11px;color:#a9b6c4;margin-top:12px;letter-spacing:.3px;}
@@ -231,6 +241,13 @@ canvas{max-width:100%;}
   .rc-overall-box .rc-sub{font-size:10.5px;}
   .report-card canvas{display:block;width:100% !important;max-width:100%;max-height:var(--rc-ch,120px);height:var(--rc-ch,120px) !important;}
   .rc-remark{font-size:11.5px;padding:6px 9px;}
+  .rc-analysis{font-size:10.5px;padding:5px 8px;margin-top:6px;line-height:1.3;}
+  .rc-analysis h4{font-size:11.5px;margin-bottom:3px;}
+  .rc-tiles{gap:4px;margin-bottom:3px;}
+  .rc-tile{padding:2px 4px;}
+  .rc-tile b{font-size:12px;}
+  .rc-tile span{font-size:8.5px;}
+  .rc-analysis ul{margin:2px 0 0 14px;}
   .rc-chart-label{font-size:12px;}
   /* margin-top:auto turns these into flexible spacers inside the .rc-body flex column: any
      unused page height (short reports with few learning areas) gets split between the gap
@@ -448,6 +465,7 @@ function ensureSchoolShape(s){
   // the report card and the Finance Portal's own summary); never feeds grading/positions.
   if(!s.fees || typeof s.fees!=='object') s.fees = {};
   if(!s.classTeachers || typeof s.classTeachers!=='object') s.classTeachers = {};
+  if(!s.classTeacherSigs || typeof s.classTeacherSigs!=='object') s.classTeacherSigs = {}; // classId -> {img,name,tid,at}
   if(!s.marks || typeof s.marks!=='object') s.marks = {};
   // Attendance: s.attendance[examId][studentId] = days present. Keyed the same way as
   // marks so it survives class/exam edits the same way, but kept in its own object since
@@ -945,7 +963,7 @@ function buildParentSafeSchool(fullSchool, student){
     status: fullSchool.status, trialEndsAt: fullSchool.trialEndsAt,
     gradingSystem: fullSchool.gradingSystem, learningAreas: fullSchool.learningAreas,
     classes: fullSchool.classes.filter(c=>gradeIds.has(c.id)),
-    classTeachers,
+    classTeachers, classTeacherSigs: (()=>{ const o={}; gradeIds.forEach(id=>{ const g=(fullSchool.classTeacherSigs||{})[id]; if(g) o[id]=g; }); return o; })(),
     exams, marks, students, teachers, dos: [], attendance, assignments, remarks,
     // Fees: ONLY this learner's own record, payments and the fee structure of the exams in scope --
     // never a classmate's balance.
@@ -1724,6 +1742,7 @@ function newSchool(name, dosUsername, dosPassword, hoiName, address, email, phon
     exams: [],
     marks: {}, // examId -> { adm -> {areaId: score} }
     classTeachers: {}, // classId -> teacher name
+    classTeacherSigs: {}, // classId -> {img,name,tid,at}: class teacher's on-screen signature
     // Printable assignments/homework the DOS/HOI sends to the Parent Portal, per grade —
     // see tplAssignments(). Each parent only ever receives the ones for their own child's
     // grade, and only once marked visible (see buildParentSafeSchool).
@@ -4224,12 +4243,15 @@ const qpProv=()=>{try{return localStorage.getItem('qpAiProv')==='gemini'?'gemini
 const qpKey=()=>{try{return localStorage.getItem(qpKS())||'';}catch(e){return '';}},qpModel=()=>{const g=qpProv()==='gemini',d=g?'gemini-2.5-flash':'claude-sonnet-5-5';try{const v=(localStorage.getItem(qpMS())||'').trim();return v&&(g?/^gemini/i.test(v):/^claude/i.test(v))?v:d;}catch(e){return d;}};
 function qpSetProv(v){try{localStorage.setItem('qpAiProv',v==='gemini'?'gemini':'claude');}catch(e){}qpRedraw();}
 function qpKeyBox(){const g=qpProv()==='gemini',has=!!qpKey();return `<details class="card" style="padding:8px 12px;margin:8px 0" ${has?'':'open'}><summary><b>${has?'✅ AI key saved on this device ('+(g?'Gemini':'Claude')+')':'🔑 Set up the AI (once per device)'}</b></summary><div class="row"><div><label>AI provider</label><select id="qaProv" onchange="qpSetProv(this.value)"><option value="claude" ${g?'':'selected'}>Claude (Anthropic) — paid</option><option value="gemini" ${g?'selected':''}>Gemini (Google) — free tier</option></select></div><div><label>${g?'Gemini API key':'Anthropic API key'}</label><input id="qaKey" type="password" autocomplete="off" placeholder="${has?'saved — paste a new key to replace it':(g?'AQ.… or AIza…':'sk-ant-…')}"></div><div><label>Model</label><input id="qaModel" value="${escapeHtml(qpModel())}"></div><div style="align-self:flex-end"><button class="ghost" onclick="qpAiSaveKey()">Save</button>${has?' <button class="danger" onclick="qpAiClearKey()">Remove key</button>':''}</div></div><p class="small">${g?'Get a free key at aistudio.google.com (Get API key). Free-tier prompts may be used by Google to improve its products, so never type learner names or personal details. Daily limits apply. ':'Get a key at console.anthropic.com. Each generation uses credit on that account. '}The key stays in this browser only and never syncs. Don't save it on a shared computer.</p></details>`;}
-async function qpAI(sys,prompt,maxTok){const key=qpKey(),g=qpProv()==='gemini';
-  const r=g?await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(qpModel())+':generateContent',{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:Math.max(8192,maxTok),responseMimeType:'application/json'}})}):await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:qpModel(),max_tokens:maxTok,system:sys,messages:[{role:'user',content:prompt}]})});
+async function qpAI1(sys,prompt,maxTok,mo){const key=qpKey(),g=qpProv()==='gemini',MD=mo||qpModel();
+  const r=g?await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(MD)+':generateContent',{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:Math.max(8192,maxTok),responseMimeType:'application/json'}})}):await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:qpModel(),max_tokens:maxTok,system:sys,messages:[{role:'user',content:prompt}]})});
   const j=await r.json().catch(()=>({})),em=(j.error&&j.error.message)||'';
-  if(!r.ok)throw new Error(r.status===401||(g&&(r.status===403||(r.status===400&&/api key/i.test(em))))?'The API key was not accepted — check it and save it again.':r.status===429?(g?'Gemini free limit reached for now — wait a minute (or until tomorrow) and try again.':'Too many requests, or the account is out of credit — try again shortly.'):em||('Request failed ('+r.status+')'));
+  if(!r.ok)throw Object.assign(new Error(r.status===401||(g&&(r.status===403||(r.status===400&&/api key/i.test(em))))?'The API key was not accepted — check it and save it again.':r.status===429?(g?'Gemini free limit reached for now — wait a minute (or until tomorrow) and try again.':'Too many requests, or the account is out of credit — try again shortly.'):(r.status===503||r.status===500)?'The AI is busy right now (high demand).':em||('Request failed ('+r.status+')')),{st:r.status});
   if(g){const c=(j.candidates||[])[0];return ((c&&c.content&&c.content.parts)||[]).map(x=>x.text||'').join('');}
   return (j.content||[]).map(b=>b.type==='text'?b.text:'').join('');}
+async function qpAI(sys,prompt,maxTok){const g=qpProv()==='gemini',ms=[qpModel()];if(g&&ms[0]!=='gemini-2.5-flash')ms.push('gemini-2.5-flash');if(g)ms.push('gemini-2.5-flash-lite');let last;
+  for(let i=0;i<ms.length;i++){for(let t=0;t<(g?3:1);t++){try{return await qpAI1(sys,prompt,maxTok,ms[i]);}catch(e){last=e;if(!(g&&(e.st===503||e.st===500)))throw e;await new Promise(r=>setTimeout(r,2500*(t+1)));}}}
+  throw new Error('Gemini is overloaded right now. Wait a minute and try again.');}
 function qpAiSaveKey(){try{const k=(qs('#qaKey').value||'').trim(),m=(qs('#qaModel').value||'').trim();if(k)localStorage.setItem(qpKS(),k);if(m&&(qpProv()==='gemini'?/^gemini/i.test(m):/^claude/i.test(m)))localStorage.setItem(qpMS(),m);else localStorage.removeItem(qpMS());toast('Saved on this device');}catch(e){toast('This browser would not save it','err');}qpRedraw();}
 function qpAiClearKey(){try{localStorage.removeItem(qpKS());}catch(e){}toast('Key removed from this device');qpRedraw();}
 function qpAiTab(s){const U=qpUI,c=s.classes.some(x=>x.id===U.ac)?U.ac:s.classes[0].id,areas=qpAreas(s,c),a=areas.some(x=>x.id===U.aa)?U.aa:((areas[0]||{}).id||''),has=!!qpKey();
@@ -4613,7 +4635,8 @@ function tplSchoolProfile(school){
     </div>
     ${school.hoiSignature ? `<div style="margin-top:10px;max-width:280px"><p class="small" style="margin:0 0 4px">Currently saved signature (exactly as it appears on reports):</p>${sigBox('DOS/HOI: '+escapeHtml(school.hoiName), hoiSigImg(school))}</div>` : '<p class="small">No signature saved yet.</p>'}
     <div id="hoiSigMsg"></div>
-  </div>`;
+  </div>
+  ${tplClassTeacherSigs(school)}`;
 }
 /* --- School Logo Upload ---
    Read as a data URL (like the HOI signature) rather than kept as a File, so it's a plain
@@ -5950,7 +5973,89 @@ function tplTeacherAccount(t){
     <div style="align-self:flex-end"><button onclick="changeTeacherPassword()">Update Password</button></div>
   </div>
   <div id="tAcctMsg"></div>
+  </div>${tplMyClassSignatures(currentSchool(),t)}`;
+}
+/* --- Class Teacher on-screen signatures ---
+   school.classTeacherSigs[classId] = {img (cropped PNG data URL), name (teacher it was signed for),
+   tid (teacher account id, if signed from the teacher's own login), at (ISO time)}.
+   Stamped on the "Class/Grade Teacher" line of report cards, assessment sheets and cumulative
+   sheets. A signature belongs to a person, so it is only printed while the grade's class teacher
+   is still that same person; if the name is changed it stops printing until they sign again. */
+const ctNorm = v=>String(v||'').trim().toLowerCase().replace(/\s+/g,' ');
+function ctSigValid(school, classId){
+  const g = (school.classTeacherSigs||{})[classId]; if(!g || !g.img) return false;
+  if(ctNorm(g.name) && ctNorm(g.name)===ctNorm((school.classTeachers||{})[classId])) return true;
+  const t = g.tid && (school.teachers||[]).find(x=>x.id===g.tid);
+  return !!(t && (t.classTeacherOf||[]).includes(classId));
+}
+function ctSigImg(school, classId){
+  return ctSigValid(school, classId) ? `<img src="${school.classTeacherSigs[classId].img}" alt="Class teacher signature">` : '';
+}
+function ctRow(school, c, mine){
+  const g=(school.classTeacherSigs||{})[c.id], nm=(school.classTeachers||{})[c.id]||'', ok=ctSigValid(school,c.id);
+  const status = !g ? '<span class="small">Not signed yet</span>'
+    : ok ? `<span style="color:#1f8a4c;font-weight:700">✔ Signed</span> <span class="small">${g.at?new Date(g.at).toLocaleDateString():''}</span>`
+    : `<span style="color:#d1473f;font-weight:700">⚠ Signed by ${escapeHtml(g.name||'someone else')}</span> <span class="small">— not printed; class teacher is now ${escapeHtml(nm||'not set')}. Please sign again.</span>`;
+  return `<tr><td style="text-align:left"><b>${escapeHtml(c.name)}</b></td><td style="text-align:left">${nm?escapeHtml(nm):'<span class="small">No class teacher set (Grades tab)</span>'}</td>
+  <td>${g&&g.img?`<img src="${g.img}" alt="" style="max-height:34px;max-width:110px;background:#fff">`:'—'}</td><td style="text-align:left">${status}</td>
+  <td>${nm||mine?`<button class="ghost" onclick="ctOpenSign('${c.id}')">✍️ ${g?'Re-sign':'Sign'}</button>`:''}${g?` <button class="danger ghost" onclick="ctRemoveSig('${c.id}')">✕</button>`:''}</td></tr>`;
+}
+function tplClassTeacherSigs(school){
+  const cls=school.classes||[];
+  return `<div class="card"><h2>✍️ Class Teacher Signatures</h2>
+  <p class="small">Hand the phone or tablet to each class teacher so they can sign on the screen. The signature is cropped automatically and printed on the Class/Grade Teacher line of that grade's report cards, assessment sheets and cumulative sheets. Class teachers can also sign for themselves under <b>My Account</b> when they log in. Only the named class teacher should sign — a signature is only printed while the grade's class teacher is still the same person.</p>
+  ${cls.length?`<div style="overflow-x:auto"><table class="ra-table"><tr><th>Grade</th><th>Class Teacher</th><th>Signature</th><th>Status</th><th>Action</th></tr>${cls.map(c=>ctRow(school,c,false)).join('')}</table></div>`:'<p class="small">Add grades first (Grades tab).</p>'}
   </div>`;
+}
+let ctSigState = {classId:null,drawing:false,lx:0,ly:0};
+function ctOpenSign(classId){
+  const school=currentSchool(), c=school.classes.find(x=>x.id===classId); if(!c) return;
+  const nm=(school.classTeachers||{})[classId]||'', t=(session&&session.role==='teacher')?currentTeacher():null, who=t&&(t.classTeacherOf||[]).includes(classId)?t.name:nm;
+  ctSigState.classId=classId;
+  const ov=document.createElement('div'); ov.className='ct-ov'; ov.id='ctOv';
+  ov.innerHTML=`<div class="ct-box"><h3 style="margin:0 0 4px;color:var(--navy)">✍️ Class Teacher Signature</h3>
+  <p class="small" style="margin:0 0 8px"><b>${escapeHtml(c.name)}</b> — ${escapeHtml(who||'class teacher')}. Sign in the box with your finger or mouse.</p>
+  <div class="sig-pad-wrap"><canvas id="ctSigPad" width="600" height="180"></canvas></div>
+  <label style="display:flex;gap:8px;align-items:flex-start;margin:10px 0;font-weight:400"><input type="checkbox" id="ctSigOk" style="width:auto;margin-top:3px"><span class="small">I am ${escapeHtml(who||'the class teacher')} and I agree this signature may be printed on this grade's reports and sheets.</span></label>
+  <div class="flexbtns"><button class="gold" onclick="ctSaveSig()">💾 Save Signature</button><button class="ghost" onclick="ctClearPad()">🧹 Clear</button><button class="ghost" onclick="ctCloseSign()">Cancel</button></div>
+  <div id="ctSigMsg"></div></div>`;
+  document.body.appendChild(ov);
+  const canvas=qs('#ctSigPad'), ctx=canvas.getContext('2d');
+  ctx.lineWidth=2.4; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#123a63';
+  const pos=e=>{ const r=canvas.getBoundingClientRect(), t=e.touches&&e.touches[0], x=t?t.clientX:e.clientX, y=t?t.clientY:e.clientY; return {x:(x-r.left)*(canvas.width/r.width), y:(y-r.top)*(canvas.height/r.height)}; };
+  const st=e=>{ e.preventDefault(); ctSigState.drawing=true; const q=pos(e); ctSigState.lx=q.x; ctSigState.ly=q.y; ctx.beginPath(); ctx.arc(q.x,q.y,1.2,0,Math.PI*2); ctx.fillStyle='#123a63'; ctx.fill(); };
+  const mv=e=>{ if(!ctSigState.drawing) return; e.preventDefault(); const q=pos(e); ctx.beginPath(); ctx.moveTo(ctSigState.lx,ctSigState.ly); ctx.lineTo(q.x,q.y); ctx.stroke(); ctSigState.lx=q.x; ctSigState.ly=q.y; };
+  const en=()=>{ ctSigState.drawing=false; };
+  canvas.onmousedown=st; canvas.onmousemove=mv; canvas.onmouseup=en; canvas.onmouseleave=en; canvas.ontouchstart=st; canvas.ontouchmove=mv; canvas.ontouchend=en;
+}
+function ctClearPad(){ const c=qs('#ctSigPad'); if(c) c.getContext('2d').clearRect(0,0,c.width,c.height); }
+function ctCloseSign(){ const o=qs('#ctOv'); if(o) o.remove(); ctSigState.classId=null; }
+function ctSaveSig(){
+  const canvas=qs('#ctSigPad'); if(!canvas) return;
+  const msg=h=>{ qs('#ctSigMsg').innerHTML=h; };
+  const blank=!canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data.some((v,i)=>i%4===3&&v!==0);
+  if(blank){ msg('<div class="msg err">Please sign in the box first.</div>'); return; }
+  if(!qs('#ctSigOk').checked){ msg('<div class="msg err">Please tick the confirmation box.</div>'); return; }
+  const school=currentSchool(), classId=ctSigState.classId; if(!classId) return;
+  const t=(session&&session.role==='teacher')?currentTeacher():null, mine=t&&(t.classTeacherOf||[]).includes(classId);
+  const name=mine?t.name:((school.classTeachers||{})[classId]||'');
+  if(mine && !ctNorm((school.classTeachers||{})[classId])) school.classTeachers[classId]=t.name; // keep the printed name in step
+  trimSignature(canvas.toDataURL('image/png'), out=>{
+    school.classTeacherSigs[classId]={img:out,name:name,tid:mine?t.id:'',at:new Date().toISOString()};
+    saveDB(DB); ctCloseSign(); toast('Class teacher signature saved — it will now print on this grade\'s reports and sheets');
+    if(session&&session.role==='teacher') renderTeacher(); else renderDOS();
+  });
+}
+function ctRemoveSig(classId){
+  if(!confirm('Remove this class teacher signature? That grade goes back to a plain signature line.')) return;
+  const school=currentSchool(); delete school.classTeacherSigs[classId]; saveDB(DB);
+  if(session&&session.role==='teacher') renderTeacher(); else renderDOS();
+}
+function tplMyClassSignatures(school,t){
+  const mine=(school.classes||[]).filter(c=>(t.classTeacherOf||[]).includes(c.id)); if(!mine.length) return '';
+  return `<div class="card no-print"><h2>✍️ My Signature</h2>
+  <p class="small">You are class teacher for the grade(s) below. Sign once here and it prints on your grade's report cards and assessment sheets.</p>
+  <div style="overflow-x:auto"><table class="ra-table"><tr><th>Grade</th><th>Class Teacher</th><th>Signature</th><th>Status</th><th>Action</th></tr>${mine.map(c=>ctRow(school,c,true)).join('')}</table></div></div>`;
 }
 function saveMyTeacherContact(){
   const t = currentTeacher(); if(!t) return;
@@ -6794,7 +6899,7 @@ function viewClassAssessment(examId, targetId){
   ${genderSummaryHTML(school, exam.classId, allRows)}
   ${gradingKey}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px">
-    ${sigBox('Class Teacher: '+escapeHtml(classTeacher))}
+    ${sigBox('Class Teacher: '+escapeHtml(classTeacher), ctSigImg(school, exam.classId))}
     ${sigBox('DOS/HOI: '+escapeHtml(school.hoiName), hoiSigImg(school))}
   </div>
   <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
@@ -6859,7 +6964,7 @@ function viewCumulative(){
   ${genderSummaryHTML(school, classId, allRows)}
   ${gradingKey}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px">
-    ${sigBox('Class Teacher: '+escapeHtml(classTeacher))}
+    ${sigBox('Class Teacher: '+escapeHtml(classTeacher), ctSigImg(school, classId))}
     ${sigBox('DOS/HOI: '+escapeHtml(school.hoiName), hoiSigImg(school))}
   </div>
   <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
@@ -6886,7 +6991,7 @@ function raBadge(school,classId,level){
 }
 function tplResultsAnalysis(school){
   return `<div class="card"><h2 class="no-print">📈 Results Analysis</h2>
-  <p class="small no-print">Ranks every grade by its mean score, names the best grade, and compares streams of the same grade (e.g. Grade 6 Blue vs Grade 6 Red — grades are grouped by the grade number in their name).</p>
+  <p class="small no-print">Ranks every grade by its mean score, names the best grade, shows score spread (standard deviation), most improved learners, gender comparison and learners needing support, and compares streams of the same grade (e.g. Grade 6 Blue vs Grade 6 Red — grades are grouped by the grade number in their name).</p>
   <div class="row no-print">
     <div><label>Term</label><select id="raTerm" onchange="raFillExams()"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>
     <div><label>Year</label><input id="raYear" type="number" value="${new Date().getFullYear()}" onchange="raFillExams()"></div>
@@ -6900,19 +7005,21 @@ function raFillExams(){
   const names=[...new Set(school.exams.filter(e=>e.term===term && e.year===year).map(e=>e.name))];
   qs('#raExam').innerHTML='<option value="">All exams in the term (average)</option>'+names.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
 }
+function raSD(a){ if(!a||!a.length) return 0; const m=a.reduce((t,x)=>t+x,0)/a.length; return Math.sqrt(a.reduce((t,x)=>t+(x-m)*(x-m),0)/a.length); }
+function raMedian(a){ if(!a.length) return 0; const b=a.slice().sort((x,y)=>x-y), h=Math.floor(b.length/2); return b.length%2?b[h]:(b[h-1]+b[h])/2; }
 function raCompute(school,term,year,exName){
   const stats=[];
   school.classes.forEach(cls=>{
     const exams=school.exams.filter(e=>e.classId===cls.id && e.term===term && e.year===year && (!exName || e.name===exName));
     const areas=areasForClass(school,cls.id), learners=unionStudents(exams.flatMap(ex=>studentsForExam(school,ex)));
     if(!exams.length || !areas.length) return;
-    const sub=areas.map(()=>({sum:0,n:0})), lrn=[], lv={};
+    const sub=areas.map(()=>({sum:0,n:0,v:[]})), lrn=[], lv={};
     learners.forEach(s=>{
       let any=false, tot=0;
       areas.forEach((a,i)=>{
         let sp=0, n=0;
         exams.forEach(ex=>{ const sc=(school.marks[ex.id]||{})[s.id]?.[a.id]; if(sc!=null){ sp+=pctOf(sc,ex.maxMarksByArea[a.id]??100); n++; } });
-        if(n){ any=true; tot+=sp/n; sub[i].sum+=sp/n; sub[i].n++; }
+        if(n){ any=true; tot+=sp/n; sub[i].sum+=sp/n; sub[i].n++; sub[i].v.push(sp/n); }
       });
       if(!any) return; // learners with no marks are not counted; missing areas count as 0, like the Cumulative Sheet
       const m=tot/areas.length, l=gradeFor(school,m,cls.id).level;
@@ -6923,7 +7030,7 @@ function raCompute(school,term,year,exName){
     const tbl=gradingFor(school,cls.id).slice().sort((a,b)=>b.points-a.points), top=tbl.slice(0,2).map(g=>g.level);
     stats.push({cls, glabel:raGradeLabel(cls.name), enrolled:learners.length, assessed:lrn.length, sumMeans, mean, lrn, lv,
       tableLevels:tbl.map(g=>g.level), top, meet:top.reduce((n,l)=>n+(lv[l]||0),0),
-      areas:areas.map((a,i)=>({name:a.name, avg:sub[i].n?sub[i].sum/sub[i].n:null})), level:gradeFor(school,mean,cls.id)});
+      areas:areas.map((a,i)=>({name:a.name, avg:sub[i].n?sub[i].sum/sub[i].n:null, v:sub[i].v})), sd:raSD(lrn.map(l=>l.mean)), med:raMedian(lrn.map(l=>l.mean)), hi:Math.max(...lrn.map(l=>l.mean)), lo:Math.min(...lrn.map(l=>l.mean)), level:gradeFor(school,mean,cls.id)});
   });
   return stats;
 }
@@ -6935,13 +7042,13 @@ function runResultsAnalysis(){
   const best=ranked.filter(r=>r.rank===1);
   const nAll=stats.reduce((s,r)=>s+r.assessed,0), schoolMean=stats.reduce((s,r)=>s+r.sumMeans,0)/nAll;
   // previous term (Term 1 -> Term 3 of last year) for the change column
-  const pt=Number(term.slice(-1)), prev={};
-  raCompute(school, pt>1?'Term '+(pt-1):'Term 3', pt>1?year:year-1, exName).forEach(r=>{ prev[r.cls.id]=r.mean; });
+  const pt=Number(term.slice(-1)), prev={}, prevL={};
+  raCompute(school, pt>1?'Term '+(pt-1):'Term 3', pt>1?year:year-1, exName).forEach(r=>{ prev[r.cls.id]=r.mean; r.lrn.forEach(l=>{ prevL[l.s.id]=l.mean; }); });
   const chg=r=>{ const p=prev[r.cls.id]; if(p==null) return '—'; const d=r.mean-p; return `<b style="color:${d>=0?'#1f8a4c':'#d1473f'}">${d>=0?'▲':'▼'} ${Math.abs(d).toFixed(1)}</b>`; };
   // subjects across the school
   const subj={};
-  stats.forEach(r=>r.areas.forEach(a=>{ if(a.avg==null) return; const o=subj[a.name]=subj[a.name]||{sum:0,n:0,rows:[]}; o.sum+=a.avg*r.assessed; o.n+=r.assessed; o.rows.push({c:r.cls.name,v:a.avg}); }));
-  const subjects=Object.entries(subj).map(([name,o])=>{ const rows=o.rows.slice().sort((a,b)=>b.v-a.v); return {name, mean:o.sum/o.n, best:rows[0], low:rows[rows.length-1], one:rows.length===1}; }).sort((a,b)=>b.mean-a.mean);
+  stats.forEach(r=>r.areas.forEach(a=>{ if(a.avg==null) return; const o=subj[a.name]=subj[a.name]||{sum:0,n:0,rows:[],v:[]}; a.v.forEach(x=>o.v.push(x)); o.sum+=a.avg*r.assessed; o.n+=r.assessed; o.rows.push({c:r.cls.name,v:a.avg}); }));
+  const subjects=Object.entries(subj).map(([name,o])=>{ const rows=o.rows.slice().sort((a,b)=>b.v-a.v); return {name, mean:o.sum/o.n, sd:raSD(o.v), best:rows[0], low:rows[rows.length-1], one:rows.length===1}; }).sort((a,b)=>b.mean-a.mean);
   // level distribution
   const levels=[]; stats.forEach(r=>gradingFor(school,r.cls.id).forEach(g=>{ if(!levels.includes(g.level)) levels.push(g.level); }));
   const meets=r=>r.meet, sameTop=stats.every(r=>r.top.join()===stats[0].top.join()), topLbl=sameTop?stats[0].top.map(escapeHtml).join(' + '):'Top 2 levels', cell=(n,t)=>`${n} (${(n/t*100).toFixed(0)}%)`;
@@ -6950,6 +7057,45 @@ function runResultsAnalysis(){
   const all=stats.flatMap(r=>r.lrn.map(l=>({s:l.s,mean:l.mean,lv:l.lv,c:r.cls.name,cid:r.cls.id})));
   raRank(all,'mean','rank');
   const H=t=>`<h3 style="color:var(--navy);margin:0 0 6px">${t}</h3>`;
+
+  const dv=d=>`<b style="color:${d>=0?'#1f8a4c':'#d1473f'}">${d>=0?'+':''}${d.toFixed(1)}</b>`;
+  const hasPrev=Object.keys(prevL).length>0, prevName=(pt>1?'Term '+(pt-1):'Term 3')+' '+(pt>1?year:year-1);
+  const imp=hasPrev?all.filter(l=>prevL[l.s.id]!=null).map(l=>({...l,prevM:prevL[l.s.id],d:l.mean-prevL[l.s.id]})):[];
+  const improved=imp.filter(l=>l.d>0).sort((a,b)=>b.d-a.d).slice(0,10), declined=imp.filter(l=>l.d<0).sort((a,b)=>a.d-b.d).slice(0,5);
+  const impRow=(l,i)=>`<tr><td>${i+1}</td><td>${l.s.adm?escapeHtml(l.s.adm):'—'}</td><td style="text-align:left">${escapeHtml(l.s.name)}</td><td>${escapeHtml(l.c)}</td><td>${l.prevM.toFixed(1)}%</td><td>${l.mean.toFixed(1)}%</td><td>${dv(l.d)}</td></tr>`;
+  const impHead=`<tr><th>#</th><th>Adm No.</th><th>Name</th><th>Grade</th><th>${escapeHtml(prevName)} Mean %</th><th>Now Mean %</th><th>Change</th></tr>`;
+  const improvedHtml=!hasPrev?`<div class="ra-sec" style="margin-top:14px">${H('Most Improved Learners')}<p class="small">No results were found for ${escapeHtml(prevName)}${exName?' ('+escapeHtml(exName)+')':''}, so improvement cannot be calculated yet.</p></div>`
+   :`<div class="ra-sec" style="margin-top:14px">${H('Most Improved Learners (vs '+escapeHtml(prevName)+')')}
+   ${improved.length?`<table class="ra-table">${impHead}${improved.map(impRow).join('')}</table>`:'<p class="small">No learner improved on the previous term.</p>'}
+   <p class="small">Change = mean % now minus mean % in ${escapeHtml(prevName)}, in percentage points. Only learners with results in both periods are compared.</p></div>
+   ${declined.length?`<div class="ra-sec" style="margin-top:14px">${H('Learners Whose Performance Dropped Most — Needs Attention')}<table class="ra-table">${impHead}${declined.map(impRow).join('')}</table></div>`:''}`;
+  const cons=sd=>sd<10?'Consistent':sd<15?'Moderate spread':'Wide gap';
+  const sdAll=raSD(all.map(l=>l.mean)), medAll=raMedian(all.map(l=>l.mean));
+  const spreadHtml=`<div class="ra-sec" style="margin-top:14px">${H('Score Spread &amp; Deviation')}
+  <table class="ra-table"><tr><th>Grade</th><th>Assessed</th><th>Highest %</th><th>Lowest %</th><th>Range</th><th>Median %</th><th>Std Dev</th><th>Spread</th></tr>
+  ${ranked.map(r=>`<tr><td style="text-align:left">${escapeHtml(r.cls.name)}</td><td>${r.assessed}</td><td>${r.hi.toFixed(1)}</td><td>${r.lo.toFixed(1)}</td><td>${(r.hi-r.lo).toFixed(1)}</td><td>${r.med.toFixed(1)}</td><td><b>${r.sd.toFixed(1)}</b></td><td>${cons(r.sd)}</td></tr>`).join('')}
+  <tr class="rc-total"><td>Whole school</td><td>${nAll}</td><td>${Math.max(...all.map(l=>l.mean)).toFixed(1)}</td><td>${Math.min(...all.map(l=>l.mean)).toFixed(1)}</td><td>${(Math.max(...all.map(l=>l.mean))-Math.min(...all.map(l=>l.mean))).toFixed(1)}</td><td>${medAll.toFixed(1)}</td><td>${sdAll.toFixed(1)}</td><td>${cons(sdAll)}</td></tr></table>
+  <p class="small">Std Dev (standard deviation) shows how far learners' mean scores spread around the class mean. A small value means learners are performing at similar levels; a large value means a big gap between the strongest and weakest learners, so plan both extension and remedial support. Rule of thumb used here: under 10 consistent, 10–15 moderate, over 15 wide gap. "vs School Mean" in the Grade Ranking shows how many points a grade is above (+) or below (−) the whole-school mean.</p></div>`;
+  const gOf=l=>normGender(l.s.gender), hasG=all.some(l=>gOf(l));
+  const gM=a=>a.length?a.reduce((t,l)=>t+l.mean,0)/a.length:null, gC=a=>a.length?a.length+' — '+gM(a).toFixed(1)+'%':'—';
+  const gRow=(name,L)=>{ const b=L.filter(l=>gOf(l)==='M'), g=L.filter(l=>gOf(l)==='F'), d=(b.length&&g.length)?gM(g)-gM(b):null; return `<tr><td style="text-align:left">${name}</td><td>${gC(b)}</td><td>${gC(g)}</td><td>${d==null?'—':dv(d)}</td></tr>`; };
+  const genderHtml=hasG?`<div class="ra-sec" style="margin-top:14px">${H('Performance by Gender')}
+  <table class="ra-table"><tr><th>Grade</th><th>Boys (no. — mean)</th><th>Girls (no. — mean)</th><th>Girls minus Boys</th></tr>
+  ${ranked.map(r=>gRow(escapeHtml(r.cls.name),all.filter(l=>l.cid===r.cls.id))).join('')}
+  <tr class="rc-total">${gRow('Whole school',all).replace(/^<tr>/,'').replace(/<\/tr>$/,'')}</tr></table>
+  <p class="small">Learners whose gender is not set are left out of this table.</p></div>`:'';
+  const support=all.slice().sort((a,b)=>a.mean-b.mean).slice(0,10);
+  const supportHtml=`<div class="ra-sec" style="margin-top:14px">${H('Learners Needing Support (lowest 10)')}
+  <table class="ra-table"><tr><th>#</th><th>Adm No.</th><th>Name</th><th>Grade</th><th>Mean %</th><th>Level</th></tr>
+  ${support.map((l,i)=>`<tr><td>${i+1}</td><td>${l.s.adm?escapeHtml(l.s.adm):'—'}</td><td style="text-align:left">${escapeHtml(l.s.name)}</td><td>${escapeHtml(l.c)}</td><td><b>${l.mean.toFixed(1)}%</b></td><td>${raBadge(school,l.cid,l.lv)}</td></tr>`).join('')}</table></div>`;
+  const obs=[], lowG=ranked[ranked.length-1], wide=ranked.slice().sort((a,b)=>b.sd-a.sd)[0];
+  if(ranked.length>1) obs.push(`Lowest-performing grade: <b>${escapeHtml(lowG.cls.name)}</b> (${lowG.mean.toFixed(1)}%), ${(ranked[0].mean-lowG.mean).toFixed(1)} points behind the best grade.`);
+  obs.push(`Widest spread of scores: <b>${escapeHtml(wide.cls.name)}</b> (Std Dev ${wide.sd.toFixed(1)}) — ${cons(wide.sd).toLowerCase()} between strongest and weakest learners.`);
+  const gch=ranked.filter(r=>prev[r.cls.id]!=null).map(r=>({r,d:r.mean-prev[r.cls.id]})).sort((a,b)=>b.d-a.d);
+  if(gch.length) obs.push(`Most improved grade vs ${escapeHtml(prevName)}: <b>${escapeHtml(gch[0].r.cls.name)}</b> (${gch[0].d>=0?'+':''}${gch[0].d.toFixed(1)} points).`);
+  if(improved.length) obs.push(`Most improved learner: <b>${escapeHtml(improved[0].s.name)}</b> (${escapeHtml(improved[0].c)}), up ${improved[0].d.toFixed(1)} points.`);
+  const obsHtml=`<div class="rc-remark" style="margin-top:10px">🔎 <b>Key observations</b><ul style="margin:6px 0 0 18px">${obs.map(o=>'<li>'+o+'</li>').join('')}</ul></div>`;
+  const extraHtml=spreadHtml+improvedHtml+genderHtml+supportHtml;
   const streamHtml=Object.values(stats.reduce((g,r)=>{ const k=r.glabel.toLowerCase(); (g[k]=g[k]||[]).push(r); return g; },{})).filter(g=>g.length>1).map(g=>{
     const rows=g.slice(); raRank(rows,'mean','grank');
     const subs=[...new Set(rows.flatMap(r=>r.areas.map(a=>a.name)))];
@@ -6968,9 +7114,9 @@ function runResultsAnalysis(){
   <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>Results Analysis — ${term} ${year}</p><p class="small">${exName?escapeHtml(exName):'Average of all exams in the term'}</p></div>
   <div class="rc-remark">🏆 <b>Best grade:</b> ${best.map(r=>escapeHtml(r.cls.name)).join(', ')} — ${best[0].mean.toFixed(1)}% (${best[0].level.level}) &nbsp;|&nbsp; <b>School mean:</b> ${schoolMean.toFixed(1)}% &nbsp;|&nbsp; <b>Meeting expectation or above (${topLbl}):</b> ${(stats.reduce((s,r)=>s+meets(r),0)/nAll*100).toFixed(0)}%<br>
   📚 <b>Strongest learning area:</b> ${escapeHtml(subjects[0].name)} (${subjects[0].mean.toFixed(1)}%) &nbsp;|&nbsp; <b>Weakest learning area:</b> ${escapeHtml(subjects[subjects.length-1].name)} (${subjects[subjects.length-1].mean.toFixed(1)}%)</div>
-  <div class="ra-sec" style="margin-top:14px">${H('Grade Ranking')}
-  <table class="ra-table"><tr><th>Rank</th><th>Grade</th><th>Grade Teacher</th><th>Learners Assessed</th><th>Mean %</th><th>Level</th><th>Change vs previous term</th></tr>
-  ${ranked.map(r=>`<tr class="${r.rank===1?'ra-best':''}"><td>${r.rank}</td><td style="text-align:left">${escapeHtml(r.cls.name)}</td><td>${escapeHtml((school.classTeachers||{})[r.cls.id]||'—')}</td><td>${r.assessed} of ${r.enrolled}</td><td><b>${r.mean.toFixed(1)}%</b></td><td>${raBadge(school,r.cls.id,r.level.level)}</td><td>${chg(r)}</td></tr>`).join('')}
+  ${obsHtml}<div class="ra-sec" style="margin-top:14px">${H('Grade Ranking')}
+  <table class="ra-table"><tr><th>Rank</th><th>Grade</th><th>Grade Teacher</th><th>Learners Assessed</th><th>Mean %</th><th>Level</th><th>Change vs previous term</th><th>Std Dev</th><th>vs School Mean</th></tr>
+  ${ranked.map(r=>`<tr class="${r.rank===1?'ra-best':''}"><td>${r.rank}</td><td style="text-align:left">${escapeHtml(r.cls.name)}</td><td>${escapeHtml((school.classTeachers||{})[r.cls.id]||'—')}</td><td>${r.assessed} of ${r.enrolled}</td><td><b>${r.mean.toFixed(1)}%</b></td><td>${raBadge(school,r.cls.id,r.level.level)}</td><td>${chg(r)}</td><td>${r.sd.toFixed(1)}</td><td>${dv(r.mean-schoolMean)}</td></tr>`).join('')}
   </table></div>
   ${streamHtml}
   <div class="ra-sec" style="margin-top:14px">${H('Performance Level Distribution')}
@@ -6978,8 +7124,8 @@ function runResultsAnalysis(){
   ${ranked.map(r=>`<tr><td style="text-align:left">${escapeHtml(r.cls.name)}</td>${levels.map(l=>`<td>${r.tableLevels.includes(l)?cell(r.lv[l]||0,r.assessed):'—'}</td>`).join('')}<td><b>${(meets(r)/r.assessed*100).toFixed(0)}%</b></td></tr>`).join('')}
   <tr class="rc-total"><td>Whole school</td>${levels.map(l=>`<td>${cell(totLv[l]||0,nAll)}</td>`).join('')}<td>${(stats.reduce((s,r)=>s+meets(r),0)/nAll*100).toFixed(0)}%</td></tr></table></div>
   <div class="ra-sec" style="margin-top:14px">${H('Learning Area Performance (whole school)')}
-  <table class="ra-table"><tr><th>Rank</th><th>Learning Area</th><th>School Mean %</th><th>Best Grade</th><th>Lowest Grade</th></tr>
-  ${subjects.map((x,i)=>`<tr><td>${i+1}</td><td style="text-align:left">${escapeHtml(x.name)}</td><td><b>${x.mean.toFixed(1)}%</b></td><td>${escapeHtml(x.best.c)} (${x.best.v.toFixed(1)}%)</td><td>${x.one?'—':escapeHtml(x.low.c)+' ('+x.low.v.toFixed(1)+'%)'}</td></tr>`).join('')}
+  <table class="ra-table"><tr><th>Rank</th><th>Learning Area</th><th>School Mean %</th><th>Best Grade</th><th>Lowest Grade</th><th>Std Dev</th></tr>
+  ${subjects.map((x,i)=>`<tr><td>${i+1}</td><td style="text-align:left">${escapeHtml(x.name)}</td><td><b>${x.mean.toFixed(1)}%</b></td><td>${escapeHtml(x.best.c)} (${x.best.v.toFixed(1)}%)</td><td>${x.one?'—':escapeHtml(x.low.c)+' ('+x.low.v.toFixed(1)+'%)'}</td><td>${x.sd.toFixed(1)}</td></tr>`).join('')}
   </table></div>
   <div class="ra-sec" style="margin-top:14px">${H('Top 10 Learners (whole school)')}
   <table class="ra-table"><tr><th>Rank</th><th>Adm No.</th>${assessTh(hasAssessNo(all.slice(0,10), l=>l.s))}<th>Name</th><th>Grade</th><th>Mean %</th><th>Level</th></tr>
@@ -6989,6 +7135,7 @@ function runResultsAnalysis(){
   <table class="ra-table"><tr><th>Grade</th><th>1st</th><th>2nd</th><th>3rd</th></tr>
   ${ranked.map(r=>{ const t=r.lrn.slice().sort((a,b)=>b.mean-a.mean); return `<tr><td style="text-align:left">${escapeHtml(r.cls.name)}</td>${[0,1,2].map(i=>`<td>${t[i]?escapeHtml(t[i].s.name)+' — '+t[i].mean.toFixed(1)+'%':'—'}</td>`).join('')}</tr>`; }).join('')}
   </table></div>
+  ${extraHtml}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px">${sigBox('Head of Institution: '+escapeHtml(school.hoiName||''), hoiSigImg(school))}${sigBox('Date', '<span class="sig-date">'+new Date().toLocaleDateString()+'</span>')}</div>
   <div class="flexbtns no-print"><button class="gold" onclick="printSection('raArea')">🖨 Print</button></div>
   </div>`;
@@ -8869,6 +9016,45 @@ function buildReportHTML(school, sid, examId){
   // the report rather than assumed knowledge for parents.
   const keyTable = gradingFor(school, exam.classId);
   const gradingKey = keyTable.length ? `<div class="rc-key">${keyTable.map(k=>`<span><b>${escapeHtml(k.level)}</b> = ${escapeHtml(k.label)}</span>`).join('')}</div>` : '';
+
+  // ---- Learner analysis (class comparison, deviation, strengths/weaknesses, progress) ----
+  const sgn=d=>`<b style="color:${d>=0?'#1f8a4c':'#d1473f'}">${d>=0?'+':''}${d.toFixed(1)}</b>`;
+  const clsArea=areas.map(a=>{ const v=learners.map(x=>(marksForExam[x.id]||{})[a.id]).filter(x=>x!=null).map(x=>pctOf(x,exam.maxMarksByArea[a.id]??100)); return v.length?v.reduce((t,x)=>t+x,0)/v.length:null; });
+  subjectRows.forEach((r,i)=>{ r.cavg=clsArea[i]; r.dev=(r.pct!=null&&r.cavg!=null)?r.pct-r.cavg:null; });
+  const lMeans=learners.map(x=>{ let t=0, any=false; areas.forEach(a=>{ const sc=(marksForExam[x.id]||{})[a.id]; if(sc!=null){ t+=pctOf(sc,exam.maxMarksByArea[a.id]??100); any=true; } }); return {m:areas.length?t/areas.length:0, any}; }).filter(x=>x.any);
+  const clsMean=lMeans.length?lMeans.reduce((t,x)=>t+x.m,0)/lMeans.length:null;
+  const clsSD=raSD(lMeans.map(x=>x.m));
+  const beatPct=lMeans.length>1?Math.round(lMeans.filter(x=>x.m<meanPct-1e-9).length/(lMeans.length-1)*100):null;
+  const curIdx=historyExams.findIndex(e=>e.id===examId), prevEx=curIdx>0?historyExams[curIdx-1]:null;
+  let prevMean=null;
+  if(prevEx){ const mk=school.marks[prevEx.id][sid]||{}; let t=0,c=0; areas.forEach(a=>{ const sc=mk[a.id]; if(sc!=null){ t+=pctOf(sc,prevEx.maxMarksByArea[a.id]??100); c++; } }); if(c) prevMean=t/areas.length; }
+  const markedRows=subjectRows.filter(r=>r.pct!=null).sort((a,b)=>b.pct-a.pct);
+  const kk=markedRows.length>=5?2:1, strong=markedRows.slice(0,kk), weak=markedRows.length>1?markedRows.slice(-kk).reverse():[];
+  const lvTbl=gradingFor(school,exam.classId).slice().sort((a,b)=>b.points-a.points), topLv=lvTbl.slice(0,2).map(g=>g.level), lowLv=lvTbl.length>2?lvTbl[lvTbl.length-1].level:null;
+  const atExp=markedRows.filter(r=>topLv.includes(r.g.level)).length, needSup=lowLv?markedRows.filter(r=>r.g.level===lowLv):[];
+  const ssd=raSD(markedRows.map(r=>r.pct));
+  const evenLbl=markedRows.length<3?'':ssd<8?'very even across learning areas':ssd<15?'fairly even across learning areas':'uneven — a big gap between the strongest and weakest areas';
+  const nm=a=>a.map(r=>escapeHtml(r.name)+' ('+r.pct.toFixed(0)+'%)').join(', ');
+  const delta=prevMean!=null?meanPct-prevMean:null;
+  const attPct=(exam.totalDays&&daysPresent!=null)?daysPresent/exam.totalDays*100:null;
+  const notes=[];
+  if(strong.length) notes.push(`<b>Strongest:</b> ${nm(strong)}.`);
+  if(weak.length && weak[0].name!==strong[0].name) notes.push(`<b>Needs most improvement:</b> ${nm(weak)}.`);
+  notes.push(`<b>At or above expectation (${topLv.map(escapeHtml).join('/')}):</b> ${atExp} of ${markedRows.length} learning area(s).${needSup.length?` <b>Needs extra support (${escapeHtml(lowLv)}):</b> ${needSup.map(r=>escapeHtml(r.name)).join(', ')}.`:''}`);
+  if(evenLbl) notes.push(`<b>Consistency:</b> performance is ${evenLbl}.`);
+  if(delta!=null) notes.push(`<b>Progress:</b> ${Math.abs(delta)<2?'steady':delta>0?'improved':'dropped'} since ${escapeHtml(prevEx.name)} (${prevMean.toFixed(1)}% → ${meanPct.toFixed(1)}%).`);
+  if(attPct!=null && attPct<85) notes.push(`<b>Attendance:</b> ${attPct.toFixed(0)}% — regular attendance will help improve results.`);
+  const analysisHtml = markedRows.length ? `<div class="rc-analysis"><h4>📊 Learner Analysis</h4>
+    <div class="rc-tiles">
+      <div class="rc-tile"><b>${position} / ${learners.length}</b><span>Position</span></div>
+      <div class="rc-tile"><b>${clsMean!=null?clsMean.toFixed(1)+'%':'—'}</b><span>Class mean</span></div>
+      <div class="rc-tile"><b>${clsMean!=null?sgn(meanPct-clsMean):'—'}</b><span>Vs class mean</span></div>
+      <div class="rc-tile"><b>${beatPct!=null?beatPct+'%':'—'}</b><span>Of class beaten</span></div>
+      <div class="rc-tile"><b>${delta!=null?sgn(delta):'—'}</b><span>Since last exam</span></div>
+    </div>
+    <ul>${notes.map(x=>'<li>'+x+'</li>').join('')}</ul>
+    ${clsMean!=null&&learners.length>1?`<div class="small" style="margin-top:3px">Class spread (Std Dev): ${clsSD.toFixed(1)} · "Vs class mean" = points above (+) or below (−) the class average.</div>`:''}
+  </div>` : '';
   const html = `
   <div class="report-card print-only-block">
     <div class="rc-topband"></div>
@@ -8894,20 +9080,21 @@ function buildReportHTML(school, sid, examId){
         <div class="rc-sub">${meanPct.toFixed(1)}% Mean &nbsp;·&nbsp; ${totalPts} Pts</div>
       </div>
     </div>
-    <table class="rc-table"><tr><th>Learning Area</th><th>Marks</th><th>%</th><th>Level</th><th>Points</th><th>Teacher</th></tr>
+    <table class="rc-table"><tr><th>Learning Area</th><th>Marks</th><th>%</th><th>Level</th><th>Points</th><th>Class Avg</th><th>+/−</th><th>Teacher</th></tr>
     ${subjectRows.map(r=>`<tr><td style="text-align:left">${escapeHtml(r.name)}</td><td>${r.score??'-'}/${r.max}</td><td>${r.pct!=null?r.pct.toFixed(1)+'%':'-'}</td>
-    <td>${r.g?raBadge(school,cls.id,r.g.level):'-'}</td><td>${r.g?r.g.points:'-'}</td><td>${escapeHtml(r.teacher)}</td></tr>`).join('')}
+    <td>${r.g?raBadge(school,cls.id,r.g.level):'-'}</td><td>${r.g?r.g.points:'-'}</td><td>${r.cavg!=null?r.cavg.toFixed(1)+'%':'-'}</td><td>${r.dev!=null?sgn(r.dev):'-'}</td><td>${escapeHtml(r.teacher)}</td></tr>`).join('')}
     <tr class="rc-total"><td style="text-align:left">TOTAL / MEAN</td><td>${totalScore}</td><td>${meanPct.toFixed(1)}%</td>
-    <td>${raBadge(school,cls.id,overallGrade.level)}</td><td>${totalPts}</td><td>-</td></tr>
+    <td>${raBadge(school,cls.id,overallGrade.level)}</td><td>${totalPts}</td><td>${clsMean!=null?clsMean.toFixed(1)+'%':'-'}</td><td>${clsMean!=null?sgn(meanPct-clsMean):'-'}</td><td>-</td></tr>
     </table>
     ${(!allMarked && !scoped) ? `<p class="small" style="color:#9c2c2c">⚠ Assessment incomplete: only ${n} of ${areas.length} learning area(s) marked so far. The Mean % and overall level above already reflect this — they are based on general performance across ALL learning areas for this grade, so they will read low/blank until every learning area is entered.</p>` : ''}
     ${scoped ? `<p class="small">Learning Area report — shows only the learning area(s) assigned to the issuing teacher. Mean, points and position are based on these only.</p>` : ''}
     <div class="rc-chartwrap"><span class="rc-chart-label">Performance Trend</span>
     <canvas id="${chartId}" width="760" height="340"></canvas></div>
+    ${analysisHtml}
     <div class="rc-remark"><b>Grade Teacher's Remark:</b> ${escapeHtml(remark)}</div>
     ${metaLine}
     <div class="rc-sigrow">
-      ${sigBox('Grade Teacher: '+escapeHtml(classTeacher))}
+      ${sigBox('Grade Teacher: '+escapeHtml(classTeacher), ctSigImg(school, exam.classId))}
       ${sigBox('Head of Institution: '+escapeHtml(school.hoiName), hoiSigImg(school))}
       ${sigBox('Parent / Guardian Signature')}
     </div>
