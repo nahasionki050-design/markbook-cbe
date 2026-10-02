@@ -14,13 +14,22 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <script>
-/* Installed app (APK / Add to Home Screen): remember the last role link and reopen it, so a teacher or
-   DOS/HOI who opened the app does not land on the Parent Portal. Admin ?key= links are never stored. */
+/* Installed app (APK / Add to Home Screen): remember the link used for EACH portal (owner/admin,
+   DOS/HOI, teacher, school admin, parent). With one remembered portal the installed app reopens it;
+   with several it shows a chooser (see pwaChooser). The keys below mirror the *_ACCESS_KEY constants;
+   if those are ever changed, change them here too. */
 (function(){try{
+  var K={a:'nmVoCBopKpciLvsmCD9EuXTk',d:'LUg35O6eNUautNpN8PsphJIM',t:'HreuYy1Wap0C9cEWzrrDg4y2',s:'e2veN5DHB1chCEZp8HOcMg2I'};
   var st=(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||window.navigator.standalone===true||/^android-app:/.test(document.referrer||'');
   var q=location.search;
-  if(/[?&](school|p|role)=/.test(q)&&!/[?&]key=/.test(q)){ localStorage.setItem('edutrackLastLink',location.pathname+q); }
-  else if(st&&!q){ var l=localStorage.getItem('edutrackLastLink'); if(l&&l.charAt(0)==='/'&&l.charAt(1)!=='/'){ location.replace(l); } }
+  function role(qs){ var g=function(n){var r=new RegExp('[?&]'+n+'=([^&]*)').exec(qs);return r?decodeURIComponent(r[1]):'';};
+    if(g('key')===K.a) return 'admin'; var p=g('p'); if(p===K.d) return 'dos'; if(p===K.t) return 'teacher'; if(p===K.s) return 'sadmin';
+    if(g('school')||g('role')==='parent') return 'parent'; return ''; }
+  var links={}; try{ links=JSON.parse(localStorage.getItem('edutrackLinks')||'{}')||{}; }catch(e){}
+  try{ var old=localStorage.getItem('edutrackLastLink'); if(old&&!Object.keys(links).length){ var oq=old.indexOf('?')>-1?old.slice(old.indexOf('?')):''; var orr=role(oq); if(orr){ links[orr]=old; localStorage.setItem('edutrackLinks',JSON.stringify(links)); } } }catch(e){}
+  var r=role(q);
+  if(r){ links[r]=location.pathname+q; localStorage.setItem('edutrackLinks',JSON.stringify(links)); }
+  else if(st&&!q){ var ks=Object.keys(links); if(ks.length===1){ var l=links[ks[0]]; if(l&&l.charAt(0)==='/'&&l.charAt(1)!=='/'){ location.replace(l); } } }
   if('serviceWorker' in navigator&&/^https?:/.test(location.protocol)){ window.addEventListener('load',function(){ navigator.serviceWorker.register('/sw.js').catch(function(){}); }); }
 }catch(e){}})();
 </script>
@@ -2267,7 +2276,7 @@ window.addEventListener('appinstalled', ()=>{ _pwaEvt = null; pwaFillInstall(); 
 function pwaInstall(){ if(!_pwaEvt) return; _pwaEvt.prompt(); _pwaEvt.userChoice.finally(()=>{ _pwaEvt = null; pwaFillInstall(); }); }
 async function pwaFillInstall(){
   const box = qs('#installBox'); if(!box) return;
-  if(pwaStandalone()){ box.innerHTML=''; return; }
+  if(pwaStandalone()){ box.innerHTML = Object.keys(pwaLinks()).length>1 ? '<a href="/">🔁 Switch portal</a>' : ''; return; }
   const ua = navigator.userAgent||'', android = /Android/i.test(ua), ios = /iPhone|iPad|iPod/i.test(ua);
   let h = '';
   if(_pwaEvt) h += `<button class="ghost" style="margin:4px" onclick="pwaInstall()">📲 Install app on this device</button>`;
@@ -2280,7 +2289,19 @@ async function pwaFillInstall(){
   }
   const b = qs('#installBox'); if(b) b.innerHTML = h;
 }
+const PWA_LBL = {admin:'🛠 Owner / Admin', dos:'🏫 DOS / HOI', teacher:'👩‍🏫 Teacher', sadmin:'🧾 School Admin', parent:'👪 Parent Portal'};
+function pwaLinks(){ try{ return JSON.parse(localStorage.getItem('edutrackLinks')||'{}')||{}; }catch(e){ return {}; } }
+function pwaChooser(L){
+  const order = ['admin','dos','teacher','sadmin','parent'].filter(k=>L[k]);
+  const btn = (href,txt)=>`<a href="${escapeHtml(href)}" style="display:block;margin:10px 0;padding:14px;border-radius:12px;background:var(--navy);color:#fff;text-align:center;font-weight:700;text-decoration:none;font-size:16px">${txt}</a>`;
+  app.innerHTML = `<div class="login-page"><div class="login-hero"><p class="login-hero-greet">${greetingText()},<br><span class="accent">Choose your portal</span></p></div>
+    <div class="login-card"><p class="login-brand">EduTrack CBC</p>
+    ${order.map(k=>btn(L[k],PWA_LBL[k])).join('')}
+    ${L.parent?'':btn('/?parent=1',PWA_LBL.parent)}
+    <p class="small" style="text-align:center">Only portals already opened on this device are listed. To add one, open its link once.</p></div></div>`;
+}
 function renderLogin(){
+  if(pwaStandalone() && !location.search){ const L = pwaLinks(); if(Object.keys(L).length>1){ pwaChooser(L); return; } }
   const qp = getQueryParams();
   const prefillCode = qp.school || '';
   const restricted = !!qp.school;
