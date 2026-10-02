@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.netlify.edutrack_cbc.twa",
+        "sha256_cert_fingerprints": ["2A:93:C8:FC:EB:78:8F:AC:BA:B9:ED:C6:48:5A:1E:67:C3:6B:9E:4C:B3:B7:FF:6C:49:69:21:97:B2:A9:4F:4B"]
+      }
+    }]
