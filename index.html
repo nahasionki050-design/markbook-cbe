@@ -11,7 +11,19 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="EduTrack CBC">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23123a63'/%3E%3Cstop offset='1' stop-color='%230d2c4d'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='22' fill='url(%23g)'/%3E%3Cpath d='M14 78 L14 60 L32 60 L32 42 L50 42 L50 24 L64 24 L74 40 L90 10' stroke='%23d9a441' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23123a63'/%3E%3Cstop offset='1' stop-color='%230d2c4d'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='22' fill='url(%23g)'/%3E%3Cpath d='M14 78 L14 60 L32 60 L32 42 L50 42 L50 24 L64 24 L74 40 L90 10' stroke='%23d9a441' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<script>
+/* Installed app (APK / Add to Home Screen): remember the last role link and reopen it, so a teacher or
+   DOS/HOI who opened the app does not land on the Parent Portal. Admin ?key= links are never stored. */
+(function(){try{
+  var st=(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||window.navigator.standalone===true||/^android-app:/.test(document.referrer||'');
+  var q=location.search;
+  if(/[?&](school|p|role)=/.test(q)&&!/[?&]key=/.test(q)){ localStorage.setItem('edutrackLastLink',location.pathname+q); }
+  else if(st&&!q){ var l=localStorage.getItem('edutrackLastLink'); if(l&&l.charAt(0)==='/'&&l.charAt(1)!=='/'){ location.replace(l); } }
+  if('serviceWorker' in navigator&&/^https?:/.test(location.protocol)){ window.addEventListener('load',function(){ navigator.serviceWorker.register('/sw.js').catch(function(){}); }); }
+}catch(e){}})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
@@ -2246,6 +2258,28 @@ function loginStepBack(){
   s2.style.display = 'none'; s1.style.display = 'block';
   const msg = qs('#loginMsg'); if(msg) msg.innerHTML = '';
 }
+/* --- Install / Android app prompt (login screen) --- */
+const APK_URL = '/downloads/edutrack-cbc.apk';
+let _pwaEvt = null;
+const pwaStandalone = ()=> (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone===true || /^android-app:/.test(document.referrer||'');
+window.addEventListener('beforeinstallprompt', e=>{ e.preventDefault(); _pwaEvt = e; pwaFillInstall(); });
+window.addEventListener('appinstalled', ()=>{ _pwaEvt = null; pwaFillInstall(); });
+function pwaInstall(){ if(!_pwaEvt) return; _pwaEvt.prompt(); _pwaEvt.userChoice.finally(()=>{ _pwaEvt = null; pwaFillInstall(); }); }
+async function pwaFillInstall(){
+  const box = qs('#installBox'); if(!box) return;
+  if(pwaStandalone()){ box.innerHTML=''; return; }
+  const ua = navigator.userAgent||'', android = /Android/i.test(ua), ios = /iPhone|iPad|iPod/i.test(ua);
+  let h = '';
+  if(_pwaEvt) h += `<button class="ghost" style="margin:4px" onclick="pwaInstall()">📲 Install app on this device</button>`;
+  else if(ios) h += `<div class="small">📲 To install on iPhone/iPad: tap <b>Share</b> → <b>Add to Home Screen</b>.</div>`;
+  if(android){
+    try{
+      const r = await fetch(APK_URL,{method:'HEAD',cache:'no-store'});
+      if(r.ok && !/text\/html/i.test(r.headers.get('content-type')||'')) h += `<div style="margin:4px"><a href="${APK_URL}" download>⬇ Download Android app (APK)</a><div class="small">After downloading, open the file and allow "Install unknown apps" if Android asks. Or just keep using this link — both work the same.</div></div>`;
+    }catch(e){}
+  }
+  const b = qs('#installBox'); if(b) b.innerHTML = h;
+}
 function renderLogin(){
   const qp = getQueryParams();
   const prefillCode = qp.school || '';
@@ -2293,7 +2327,9 @@ function renderLogin(){
       <div id="loginForm"></div>
     </div>
     <p class="login-footnote">EduTrack CBC v${APP_VERSION} · Your data stays on this device unless your school turns on Multi-Device Sync</p>
+    <div id="installBox" class="no-print" style="text-align:center;margin-top:6px"></div>
   </div>`;
+  pwaFillInstall();
   function renderForm(){
     const f = qs('#loginForm');
     if(activeRole==='admin'){
