@@ -4,7 +4,7 @@
    Only same-origin GET requests are handled; cloud sync, email/SMS and AI API calls (other
    origins) and the APK download are never touched or cached. */
 const CACHE = 'edutrack-v1';
-const CORE = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
+const CORE = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE).catch(() => {})).then(() => self.skipWaiting()));
 });
