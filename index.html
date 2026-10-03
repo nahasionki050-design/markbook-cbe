@@ -134,6 +134,48 @@ tr:hover td{background:#eef4fb;}
 .login-step-label a{color:var(--gold2);font-weight:700;text-decoration:none;margin-left:4px;}
 .login-back{display:block;text-align:center;font-size:12.5px;margin-top:12px;color:#7186a0;}
 .login-footnote{text-align:center;font-size:11px;color:#8a97a8;margin:16px 0 0;padding:0 20px;}
+/* ===== Glowing animated login (neon card with a travelling light border) ===== */
+:root{--neon-cyan:#22f3ee;--neon-pink:#ff2b7f;--glow-bg:#0b0e17;--glow-card:#141824;}
+body:has(.login-page){background:radial-gradient(1200px 600px at 50% -10%,#1b2340 0%,var(--glow-bg) 60%) fixed;}
+.login-page{background:transparent;max-width:440px;padding:18px 16px 36px;min-height:100vh;box-sizing:border-box;}
+.login-hero{background:none;padding:26px 8px 22px;}
+.login-hero::before,.login-hero::after{display:none;}
+.login-hero-greet{color:#fff;text-shadow:0 0 16px rgba(34,243,238,.35);}
+.login-hero-greet .accent{color:var(--neon-cyan);text-shadow:0 0 14px rgba(34,243,238,.65);}
+.login-card{background:var(--glow-card);border-radius:22px;margin-top:0;padding:30px 22px 26px;overflow:hidden;isolation:isolate;
+  box-shadow:inset 0 10px 24px rgba(0,0,0,.45),0 18px 46px rgba(0,0,0,.6),0 0 30px rgba(255,43,127,.18),0 0 44px rgba(34,243,238,.12);
+  animation:ln-glow 5s ease-in-out infinite alternate;}
+.login-card::before{content:'';position:absolute;inset:-70%;z-index:-2;animation:ln-spin 7s linear infinite;
+  background:conic-gradient(from 0deg,transparent 0 62%,var(--neon-pink) 72%,transparent 80%,transparent 88%,var(--neon-cyan) 95%,transparent 100%);}
+.login-card::after{content:'';position:absolute;inset:3px;border-radius:19px;background:var(--glow-card);z-index:-1;}
+@keyframes ln-spin{to{transform:rotate(360deg);}}
+@keyframes ln-glow{from{box-shadow:inset 0 10px 24px rgba(0,0,0,.45),0 18px 46px rgba(0,0,0,.6),0 0 26px rgba(255,43,127,.22),0 0 40px rgba(34,243,238,.08);}
+  to{box-shadow:inset 0 10px 24px rgba(0,0,0,.45),0 18px 46px rgba(0,0,0,.6),0 0 26px rgba(255,43,127,.08),0 0 44px rgba(34,243,238,.22);}}
+.login-card .login-logo{top:0;margin:0 auto 12px;box-shadow:0 0 22px rgba(255,43,127,.55);}
+.login-card .login-brand{margin:0 0 4px;color:#fff;letter-spacing:3px;text-shadow:0 0 12px rgba(255,43,127,.7);}
+.login-card .login-role,.login-card .login-step-label{color:#e9edf6;}
+.login-card .login-step-label b{color:#fff;}
+.login-card .login-sub{color:#aab4c6;}
+.login-card .login-field input,.login-card .login-field select,.login-card input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]),.login-card select,.login-card textarea{
+  background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.55);border-radius:999px;transition:border-color .25s,box-shadow .25s;}
+.login-card textarea{border-radius:18px;}
+.login-card .login-field input::placeholder,.login-card input::placeholder,.login-card textarea::placeholder{color:rgba(255,255,255,.5);}
+.login-card .login-field input:focus,.login-card .login-field select:focus,.login-card input:focus,.login-card select:focus,.login-card textarea:focus{
+  background:rgba(34,243,238,.05);border-color:var(--neon-cyan);box-shadow:0 0 14px rgba(34,243,238,.55);outline:none;}
+.login-card select option{background:#141824;color:#fff;}
+.login-card .login-field .ico{filter:brightness(0) invert(1);opacity:.7;}
+.login-card label{color:#cfd6e4;}
+.login-card .small{color:#9aa6bb;}
+.login-card .login-continue{border-radius:999px;background:var(--neon-cyan);color:#05232a;font-weight:800;letter-spacing:.3px;
+  box-shadow:0 0 22px rgba(34,243,238,.6);animation:ln-pulse 2.6s ease-in-out infinite;transition:transform .15s,box-shadow .2s;}
+.login-card .login-continue:hover{box-shadow:0 0 32px rgba(34,243,238,.9);}
+.login-card .login-continue:active{transform:translateY(1px) scale(.99);}
+@keyframes ln-pulse{0%,100%{box-shadow:0 0 16px rgba(34,243,238,.5);}50%{box-shadow:0 0 30px rgba(34,243,238,.85);}}
+.login-card .login-back,.login-card .login-footnote{color:#cfd6e4;}
+.login-card a,.login-card .login-back a,.login-card .login-step-label a{color:var(--neon-pink);font-weight:700;text-shadow:0 0 10px rgba(255,43,127,.45);}
+.login-card button.ghost{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.5);border-radius:999px;}
+.login-page .login-footnote{color:#7d89a3;}
+@media (prefers-reduced-motion:reduce){.login-card,.login-card::before,.login-card .login-continue{animation:none;}}
 .app-footer{text-align:center;font-size:11px;color:#8a9bad;margin-top:22px;line-height:1.6;}
 .center{text-align:center;}
 .msg{padding:8px 10px;border-radius:7px;font-size:13px;margin:8px 0;}
@@ -2293,7 +2335,7 @@ const PWA_LBL = {admin:'🛠 Owner / Admin', dos:'🏫 DOS / HOI', teacher:'👩
 function pwaLinks(){ try{ return JSON.parse(localStorage.getItem('edutrackLinks')||'{}')||{}; }catch(e){ return {}; } }
 function pwaChooser(L){
   const order = ['admin','dos','teacher','sadmin','parent'].filter(k=>L[k]);
-  const btn = (href,txt)=>`<a href="${escapeHtml(href)}" style="display:block;margin:10px 0;padding:14px;border-radius:12px;background:var(--navy);color:#fff;text-align:center;font-weight:700;text-decoration:none;font-size:16px">${txt}</a>`;
+  const btn = (href,txt)=>`<a class="login-continue" href="${escapeHtml(href)}" style="display:block;margin:12px 0;text-align:center;text-decoration:none;color:#05232a;text-shadow:none">${txt}</a>`;
   app.innerHTML = `<div class="login-page"><div class="login-hero"><p class="login-hero-greet">${greetingText()},<br><span class="accent">Choose your portal</span></p></div>
     <div class="login-card"><p class="login-brand">EduTrack CBC</p>
     ${order.map(k=>btn(L[k],PWA_LBL[k])).join('')}
