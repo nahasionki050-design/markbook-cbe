@@ -797,7 +797,7 @@ let firebaseApp = null, fbDb = null;
 // Last copy of each school's (non-marks) data seen in the cloud — the common ancestor used to merge
 // two people's simultaneous edits instead of letting one overwrite the other.
 const syncBase = {};
-const syncState = { enabled:false, connectedCode:null, pushTimer:null, marksReady:false, dataReady:false, marksListenerRef:null, dataListenerRef:null, sdkLoading:null };
+const syncState = { enabled:false, connectedCode:null, pushTimer:null, marksReady:false, dataReady:false, marksListenerRef:null, dataListenerRef:null, dataListenerFn:null, examListeners:{}, examReady:{}, triedClosed:{}, keepAlive:[], keepTimer:null, dataFetchTimer:null, sdkLoading:null };
 
 function loadFirebaseSdk(cb){
   if(window.firebase && window.firebase.database){ cb(); return; }
@@ -967,14 +967,28 @@ function clearLocalParentAttempts(code){ try{ localStorage.removeItem(localParen
    path convention) stops being optional. That change has to be made in the Firebase console
    for this project — it cannot be enforced from inside this HTML file. */
 async function parentCloudLookup(code, config){
+  // Downloads only the school's non-marks data. The marks are fetched afterwards by
+  // parentLoadMarks(), and only for the exams this one learner actually needs.
   await initSync(config);
-  const [dataSnap, marksSnap] = await Promise.all([
-    schoolDataRef(code).once('value'),
-    schoolMarksRef(code).once('value')
-  ]);
+  const dataSnap = await schoolDataRef(code).once('value');
   const remote = dataSnap.val();
   if(!remote) return null;
-  return ensureSchoolShape(Object.assign({}, remote, {marks: marksSnap.val()||{}, smsCredits:0}));
+  const sc = ensureSchoolShape(Object.assign({}, remote, {marks:{}, smsCredits:0}));
+  sc._parentMarksLazy = true;
+  return sc;
+}
+// Fetch marks only for the learner's own class exams (needed for class position) plus any
+// other visible exam this learner actually sat (checked with a tiny one-leaf read first).
+async function parentLoadMarks(code, school, student){
+  if(!school._parentMarksLazy) return;
+  const vis = e=>examVisibleToParent(school, e);
+  const mine = school.exams.filter(e=>e.classId===student.classId && vis(e));
+  const others = school.exams.filter(e=>e.classId!==student.classId && vis(e));
+  const sat = await Promise.all(others.map(e=>examMarksRef(code, e.id).child(student.id).once('value').then(x=>x.exists())));
+  const ids = mine.map(e=>e.id).concat(others.filter((e,i)=>sat[i]).map(e=>e.id));
+  const snaps = await Promise.all(ids.map(id=>examMarksRef(code, id).once('value')));
+  ids.forEach((id,i)=>{ const v = snaps[i].val(); if(v) school.marks[id] = v; });
+  delete school._parentMarksLazy;
 }
 function buildParentSafeSchool(fullSchool, student){
   const cls = fullSchool.classes.find(c=>c.id===student.classId);
@@ -1500,16 +1514,16 @@ function mergeExamStates(base, other){
   });
   return changed;
 }
-function mergeMarksFromCloud(code, remote){
+function mergeExamMarksFromCloud(code, examId, remote){
   const school = DB.schools[code]; if(!school) return;
-  const incoming = remote || {};
-  const changed = !deepEqual(school.marks||{}, incoming);
-  if(changed){
-    school.marks = incoming;
-    saveDB(DB, {skipCloud:true});
-    if(syncState.marksReady){ toast('🔄 Marks updated from another device'); softRefresh(['marks']); }
-  }
-  syncState.marksReady = true;
+  if(!school.marks) school.marks = {};
+  const first = !syncState.examReady[examId];
+  syncState.examReady[examId] = true;
+  const cur = school.marks[examId] || {}, incoming = remote || {};
+  if(deepEqual(cur, incoming)) return;
+  if(remote) school.marks[examId] = incoming; else delete school.marks[examId];
+  saveDB(DB, {skipCloud:true});
+  if(!first){ toast('🔄 Marks updated from another device'); softRefresh(['marks']); }
 }
 function mergeDataFromCloud(code, remote){
   if(!remote){ syncState.dataReady = true; return; }
@@ -1538,6 +1552,7 @@ function mergeDataFromCloud(code, remote){
   }
   if(changed.length && syncState.dataReady){ toast('🔄 Updated from another device'); softRefresh(changed); }
   syncState.dataReady = true;
+  syncExamMarksListeners(code);   // exams may have been added / closed / reopened
   enforceAccessForActiveSession(code);
 }
 function withTimeout(promise, ms, label){
@@ -1561,44 +1576,104 @@ function setLoginBusy(busy, text){
     if(b.dataset.origLabel) b.textContent = b.dataset.origLabel;
   }
 }
+// An exam's marks stay live (listened to) while it can still change: open, or with an edit request
+// pending/approved. Closed exams are downloaded once, cached on the device, and not re-downloaded.
+function examIsLive(e){ return !e.closed || (e.editRequests||[]).some(r=>r.status==='pending'||r.status==='approved'); }
+function examMarksRef(code, examId){ return fbDb.ref('schools/'+code+'/marks/'+examId); }
+// Holds a location open so the live listener attached right afterwards reuses the same download
+// instead of fetching it a second time (a once() on its own drops the cache when it finishes).
+function holdForLive(ref, isData){
+  const fn = ()=>{}; ref.on('value', fn); syncState.keepAlive.push({ref, fn, isData:!!isData});
+  clearTimeout(syncState.keepTimer); syncState.keepTimer = setTimeout(releaseKeepAlive, 30000);
+}
+function releaseKeepAlive(keepData){
+  const keep = [];
+  syncState.keepAlive.splice(0).forEach(k=>{ if(keepData && k.isData){ keep.push(k); return; } try{ k.ref.off('value', k.fn); }catch(e){} });
+  syncState.keepAlive.push(...keep);
+  clearTimeout(syncState.keepTimer);
+  if(keep.length) syncState.keepTimer = setTimeout(()=>releaseKeepAlive(false), 30000);
+}
 async function bootstrapFromCloudIfNeeded(code, config){
   if(!config) return;
   try{
     await initSync(config);
-    const [dataSnap, marksSnap] = await Promise.all([
-      schoolDataRef(code).once('value'),
-      schoolMarksRef(code).once('value')
-    ]);
-    const remote = dataSnap.val();
-    const remoteMarks = marksSnap.val();
+    releaseKeepAlive();
+    const dRef = schoolDataRef(code), local0 = DB.schools[code];
+    // Ask the cloud only for the tiny _updatedAt stamp first. If this device's copy already has
+    // the same stamp, the (much larger) data node is not downloaded at all.
+    let current = false;
+    if(local0 && local0._updatedAt){ const ts = (await dRef.child('_updatedAt').once('value')).val(); current = ts!=null && ts===local0._updatedAt; }
+    let remote = null;
+    if(current){ syncBase[code] = JSON.parse(JSON.stringify(stripForMerge(local0))); }
+    else { holdForLive(dRef, true); remote = (await dRef.once('value')).val(); }
+    const local = DB.schools[code];
+    const exams = (remote && remote.exams) || (local && local.exams) || [];
+    const localMarks = (local && local.marks) || {};
+    const fetchIds = [];
+    exams.forEach(e=>{ if(examIsLive(e)){ holdForLive(examMarksRef(code, e.id)); fetchIds.push(e.id); } else if(!localMarks[e.id]) fetchIds.push(e.id); });
+    const snaps = await Promise.all(fetchIds.map(id=>examMarksRef(code, id).once('value')));
+    const fresh = {}; fetchIds.forEach((id,i)=>{ const v = snaps[i].val(); if(v) fresh[id] = v; });
+    const buildMarks = base=>{ const m = {}; exams.forEach(e=>{ const v = fetchIds.includes(e.id) ? (fresh[e.id] || (base||{})[e.id]) : (base||{})[e.id]; if(v) m[e.id] = v; }); return m; };
     if(remote){
-      const local = DB.schools[code];
       const localTime = local ? (local._updatedAt||0) : -1;
       if(!local || (remote._updatedAt||0) >= localTime){
-        DB.schools[code] = ensureSchoolShape(Object.assign({}, remote, {marks: remoteMarks||{}, syncConfig:{enabled:true, config}, smsCredits: local ? (local.smsCredits||0) : 0}));
+        DB.schools[code] = ensureSchoolShape(Object.assign({}, remote, {marks: buildMarks(localMarks), syncConfig:{enabled:true, config}, smsCredits: local ? (local.smsCredits||0) : 0}));
       } else {
-        local.marks = remoteMarks || local.marks;
+        local.marks = buildMarks(localMarks);
         ensureSchoolShape(local);
       }
     } else if(DB.schools[code]){
-      DB.schools[code].marks = remoteMarks || DB.schools[code].marks;
+      DB.schools[code].marks = buildMarks(localMarks);
       ensureSchoolShape(DB.schools[code]);
     }
+    if(remote) syncBase[code] = JSON.parse(JSON.stringify(stripForMerge(remote)));
     if(DB.schools[code]){ DB.schools[code].syncConfig = {enabled:true, config}; saveDB(DB, {skipCloud:true}); }
   }catch(e){ console.warn('Cloud bootstrap failed (offline, or bad config?)', e); }
 }
+function syncExamMarksListeners(code){
+  const school = DB.schools[code];
+  if(!school || !fbDb || !syncState.dataListenerFn || syncState.connectedCode!==code) return;
+  const live = new Set(), closedMissing = [];
+  (school.exams||[]).forEach(e=>{ if(examIsLive(e)) live.add(e.id); else if(!(school.marks||{})[e.id] && !syncState.triedClosed[e.id]) closedMissing.push(e.id); });
+  Object.keys(syncState.examListeners).forEach(id=>{
+    if(live.has(id)) return;
+    const l = syncState.examListeners[id]; try{ l.ref.off('value', l.fn); }catch(e){}
+    delete syncState.examListeners[id]; delete syncState.examReady[id];
+  });
+  live.forEach(id=>{
+    if(syncState.examListeners[id]) return;
+    const ref = examMarksRef(code, id), fn = snap=>mergeExamMarksFromCloud(code, id, snap.val());
+    syncState.examListeners[id] = {ref, fn}; ref.on('value', fn);
+  });
+  closedMissing.forEach(id=>{
+    syncState.triedClosed[id] = true;
+    examMarksRef(code, id).once('value').then(snap=>{ if(snap.val()){ mergeExamMarksFromCloud(code, id, snap.val()); syncState.examReady[id]=false; } }).catch(()=>{ delete syncState.triedClosed[id]; });
+  });
+}
 function attachLiveListeners(school){
   if(!syncState.enabled || !fbDb) return;
-  detachLiveListeners();
+  detachLiveListeners(true);
   syncState.marksReady=false; syncState.dataReady=false;
-  syncState.marksListenerRef = schoolMarksRef(school.code);
-  syncState.marksListenerRef.on('value', snap=>mergeMarksFromCloud(school.code, snap.val()));
-  syncState.dataListenerRef = schoolDataRef(school.code);
-  syncState.dataListenerRef.on('value', snap=>mergeDataFromCloud(school.code, snap.val()));
+  const code = school.code;
+  syncState.dataListenerRef = schoolDataRef(code).child('_updatedAt');
+  syncState.dataListenerFn = snap=>{
+    const ts = snap.val(), loc = DB.schools[code];
+    if(loc && ts!=null && ts===loc._updatedAt && syncBase[code]){ syncState.dataReady = true; return; }   // already up to date
+    clearTimeout(syncState.dataFetchTimer);
+    syncState.dataFetchTimer = setTimeout(()=>{
+      schoolDataRef(code).once('value').then(sn=>mergeDataFromCloud(code, sn.val())).catch(e=>console.warn('Data refresh failed', e));
+    }, syncState.dataReady ? 1500 : 0);   // bursts of edits are fetched once
+  };
+  syncState.dataListenerRef.on('value', syncState.dataListenerFn);
+  syncExamMarksListeners(code);
+  releaseKeepAlive(true);   // exam listeners now hold their data; the data hold expires on its own
 }
-function detachLiveListeners(){
-  if(syncState.marksListenerRef){ syncState.marksListenerRef.off(); syncState.marksListenerRef=null; }
-  if(syncState.dataListenerRef){ syncState.dataListenerRef.off(); syncState.dataListenerRef=null; }
+function detachLiveListeners(keepHeld){
+  clearTimeout(syncState.dataFetchTimer);
+  if(syncState.dataListenerRef){ try{ syncState.dataListenerRef.off('value', syncState.dataListenerFn); }catch(e){} syncState.dataListenerRef=null; syncState.dataListenerFn=null; }
+  Object.keys(syncState.examListeners).forEach(id=>{ const l = syncState.examListeners[id]; try{ l.ref.off('value', l.fn); }catch(e){} });
+  syncState.examListeners = {}; syncState.examReady = {}; syncState.triedClosed = {};
+  if(!keepHeld) releaseKeepAlive();
 }
 function ensureSyncConnected(school){
   if(!school || !school.syncConfig || !school.syncConfig.enabled){ updateSyncBadge(null); return; }
@@ -2948,6 +3023,10 @@ async function doParentLogin(){
     qs('#loginMsg').innerHTML=`<div class="msg err">${failMsg}</div>`;
     return;
   }
+  if(fullSchool._parentMarksLazy){
+    try{ await withTimeout(parentLoadMarks(code, fullSchool, student), 10000, 'Sync'); }
+    catch(e){ console.warn('Parent marks load failed', e); setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">Could not load results — please check your connection and try again.</div>'; return; }
+  }
   parentSchoolData = buildParentSafeSchool(fullSchool, student);
   setSession({role:'parent', schoolCode:code, studentId:student.id, label:`${student.name} (Parent) · ${fullSchool.name}`});
   clearParentAttempts(code, config);
@@ -3400,7 +3479,7 @@ const ttOv=(l,s,e)=>(l||[]).some(x=>s<x[1]&&e>x[0]);
 function ttData(s){if(!s.timetable||typeof s.timetable!=='object')s.timetable={};const t=s.timetable;if(!Array.isArray(t.sections))t.sections=[];if(!Array.isArray(t.remedials))t.remedials=[];if(!Array.isArray(t.exams))t.exams=[];if(!t.tconf||typeof t.tconf!=='object')t.tconf={};return t;}
 function ttSave(){ttData(currentSchool()).stamp=Date.now();saveDB(DB);}
 function ttRedraw(){redrawKeepingState(renderDOS);}
-function ttNorm(p){p.days=p.days||[];p.breaks=p.breaks||[];p.classIds=p.classIds||[];p.load=p.load||{};p.rules=p.rules||{};p.cells=p.cells||{};return p;}
+function ttNorm(p){p.days=p.days||[];p.breaks=p.breaks||[];p.classIds=p.classIds||[];p.load=p.load||{};p.rules=p.rules||{};p.cells=p.cells||{};p.skip=p.skip||{};return p;}
 function ttNew(name,lv,kind){const low=lv==='pre'||lv==='lower',rem=kind==='rem';
   return {id:(lv&&lv!=='user'&&!rem)?'tt_'+lv:uid('tt_'),name,kind:kind||'sec',lv:lv||'user',days:rem?[6]:[1,2,3,4,5],start:rem?'09:00':'08:00',mins:low?30:40,lessons:rem?4:(low?7:8),
     breaks:rem?[{after:2,mins:15,label:'Break'}]:[{after:3,mins:20,label:'Tea Break'},{after:5,mins:60,label:'Lunch'}],classIds:[],load:{},rules:{},cells:{},published:false};}
@@ -3439,7 +3518,7 @@ function ttAttempt(s,p,L,B,N,days,cls,ext,keep){const cells={},busy={},placed={}
   const cnt=(c,a,dk)=>Object.values(day(c,dk)).filter(v=>v.a===a).length;
   const tl=t=>Object.values(busy[t]||{}).reduce((x,y)=>x+y.length,0);
   if(keep)cls.forEach(c=>Object.keys(p.cells[c]||{}).forEach(dk=>Object.keys(p.cells[c][dk]||{}).forEach(pk=>{const v=p.cells[c][dk][pk];if(v&&v.l&&v.a&&L[+pk.slice(1)-1]&&days.includes(+dk.slice(1))){put(c,dk,pk,{a:v.a,t:v.t||'',l:1});placed[c+'|'+v.a]=(placed[c+'|'+v.a]||0)+1;}})));
-  const items=[];cls.forEach(c=>{const ld=p.load[c]||{};areasForClass(s,c).forEach(a=>{const need=(+ld[a.id]||0)-(placed[c+'|'+a.id]||0);if(need<=0)return;const d=Math.min(+R(p,a.id).dbl||0,need>>1);for(let i=0;i<d;i++)items.push({c,a:a.id,z:2,sp:R(p,a.id).dmode==='split'?1:0});for(let i=0;i<need-2*d;i++)items.push({c,a:a.id,z:1});});});
+  const items=[];cls.forEach(c=>{const ld=p.load[c]||{};areasForClass(s,c).forEach(a=>{if(p.skip&&p.skip[a.id])return;const need=(+ld[a.id]||0)-(placed[c+'|'+a.id]||0);if(need<=0)return;const d=Math.min(+R(p,a.id).dbl||0,need>>1);for(let i=0;i<d;i++)items.push({c,a:a.id,z:2,sp:R(p,a.id).dmode==='split'?1:0});for(let i=0;i<need-2*d;i++)items.push({c,a:a.id,z:1});});});
   items.forEach(it=>{const r=R(p,it.a);it.k=(it.z===2?-100:0)+(r.per.length?r.per.length*2:N*2)+Math.random()*4;});items.sort((x,y)=>x.k-y.k);
   const un=[];
   items.forEach(it=>{const r=R(p,it.a),ts=ttTeach(s,it.c,it.a);let bc=null;
@@ -3468,7 +3547,7 @@ function ttAttempt(s,p,L,B,N,days,cls,ext,keep){const cells={},busy={},placed={}
   return {cells,un,pen};}
 // ---- Health check: load mismatches, missing teachers, teacher double-booking, per-day limits ----
 function ttIssues(s,p){ttNorm(p);const out=[],bad={},L=ttSlots(p).L,ext=ttExt(s,p),mine={};
-  p.classIds.forEach(c=>{areasForClass(s,c).forEach(a=>{const need=+(p.load[c]||{})[a.id]||0;if(!need)return;let got=0;Object.keys(p.cells[c]||{}).forEach(dk=>Object.values(p.cells[c][dk]||{}).forEach(v=>{if(v&&v.a===a.id)got++;}));
+  p.classIds.forEach(c=>{areasForClass(s,c).forEach(a=>{if(p.skip&&p.skip[a.id])return;const need=+(p.load[c]||{})[a.id]||0;if(!need)return;let got=0;Object.keys(p.cells[c]||{}).forEach(dk=>Object.values(p.cells[c][dk]||{}).forEach(v=>{if(v&&v.a===a.id)got++;}));
     if(got!==need)out.push(`${ttCn(s,c)} · ${a.name}: ${got} of ${need} lessons placed`);if(!ttTeach(s,c,a.id).length)out.push(`${ttCn(s,c)} · ${a.name}: no teacher assigned (Teachers & Permissions)`);});
     Object.keys(p.cells[c]||{}).forEach(dk=>{const m={};Object.keys(p.cells[c][dk]||{}).forEach(pk=>{const v=p.cells[c][dk][pk],sl=L[+pk.slice(1)-1];if(!v||!v.a)return;m[v.a]=(m[v.a]||0)+1;if(v.t&&sl){const k=v.t+'|'+dk;(mine[k]=mine[k]||[]).push({c,pk,s:sl.s,e:sl.e});}});
       Object.keys(m).forEach(a=>{const r=R(p,a);if(m[a]>Math.max(+r.max||2,r.dbl?2:1))out.push(`${ttCn(s,c)} · ${ttAn(s,a)}: ${m[a]} lessons on ${TT_D[+dk.slice(1)]} (limit ${r.max})`);});});});
@@ -3541,9 +3620,9 @@ function ttDay(id,d,on){const p=ttFind(id);p.days=on?[...new Set(p.days.concat(d
 function ttBrk(id,i,k,v){ttFind(id).breaks[i][k]=v;ttSave();ttRedraw();}
 function ttBrkAdd(id){const p=ttFind(id);p.breaks.push({after:Math.max(1,p.lessons-1),mins:15,label:'Break'});ttSave();ttRedraw();}
 function ttBrkDel(id,i){ttFind(id).breaks.splice(i,1);ttSave();ttRedraw();}
-function ttLoad(id,c,a,v){const p=ttFind(id);(p.load[c]=p.load[c]||{})[a]=Math.max(0,+v||0);ttSave();ttRedraw();}
-function ttDefaults(id){const s=currentSchool(),p=ttFind(id);p.classIds.forEach(c=>{p.load[c]=p.load[c]||{};areasForClass(s,c).forEach(a=>{p.load[c][a.id]=p.kind==='rem'?2:ttDef(a.name);});});ttSave();ttRedraw();toast('Suggested lessons per week filled in — adjust as needed');}
-function ttCopyFirst(id){const s=currentSchool(),p=ttFind(id),f=p.load[p.classIds[0]]||{};p.classIds.slice(1).forEach(c=>{p.load[c]=p.load[c]||{};areasForClass(s,c).forEach(a=>{if(f[a.id]!=null)p.load[c][a.id]=f[a.id];});});ttSave();ttRedraw();}
+function ttSkip(id,a,inc){const p=ttFind(id);if(!p)return;if(inc)delete p.skip[a];else p.skip[a]=1;ttSave();ttRedraw();toast(inc?'Included in automatic timetables':'Left out of automatic timetables (exams are not affected)');}
+function ttDefaults(id){const s=currentSchool(),p=ttFind(id);p.classIds.forEach(c=>{p.load[c]=p.load[c]||{};areasForClass(s,c).forEach(a=>{if(p.skip&&p.skip[a.id])return;p.load[c][a.id]=p.kind==='rem'?2:ttDef(a.name);});});ttSave();ttRedraw();toast('Suggested lessons per week filled in — adjust as needed');}
+function ttCopyFirst(id){const s=currentSchool(),p=ttFind(id),f=p.load[p.classIds[0]]||{};p.classIds.slice(1).forEach(c=>{p.load[c]=p.load[c]||{};areasForClass(s,c).forEach(a=>{if(p.skip&&p.skip[a.id])return;if(f[a.id]!=null)p.load[c][a.id]=f[a.id];});});ttSave();ttRedraw();}
 function ttRule(id,a,k,v){const p=ttFind(id);p.rules[a]=Object.assign({},R(p,a),{[k]:v});ttSave();toast('Rule saved');}
 function ttRulePer(id,a,n,on){const p=ttFind(id),r=R(p,a);p.rules[a]=Object.assign({},r,{per:(on?[...new Set(r.per.concat(n))]:r.per.filter(x=>x!==n)).sort((x,y)=>x-y)});ttSave();}
 function ttMove(c,sid){const t=ttData(currentSchool());t.sections.forEach(p=>{p.classIds=(p.classIds||[]).filter(x=>x!==c);});ttFind(sid).classIds.push(c);ttSave();ttRedraw();}
@@ -3600,12 +3679,35 @@ function ttTabBell(s,p){const {L}=ttSlots(p);return `${p.kind==='rem'?`<div clas
   <label>Days</label><div>${[1,2,3,4,5,6,7].map(d=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${p.days.includes(d)?'checked':''} onchange="ttDay('${p.id}',${d},this.checked)">${TT_D[d]}</label>`).join(' ')}</div>
   <label style="margin-top:8px">Breaks</label><table><tr><th>After lesson</th><th>Minutes</th><th>Name</th><th></th></tr>${p.breaks.map((b,i)=>`<tr><td><input type="number" min="1" value="${b.after}" onchange="ttBrk('${p.id}',${i},'after',+this.value)"></td><td><input type="number" min="5" value="${b.mins}" onchange="ttBrk('${p.id}',${i},'mins',+this.value)"></td><td><input value="${escapeHtml(b.label||'')}" onchange="ttBrk('${p.id}',${i},'label',this.value)"></td><td><button class="danger" onclick="ttBrkDel('${p.id}',${i})">✕</button></td></tr>`).join('')}</table>
   <button class="ghost" onclick="ttBrkAdd('${p.id}')">+ Add break</button><p class="small">Day runs ${L.length?fm(L[0].s)+' – '+fm(L[L.length-1].e):'—'}.</p>`;}
-function ttTabLoad(s,p){const areas=ttAreas(s,p),cap=p.days.length*p.lessons;
-  return `<p class="small">Lessons per week for each learning area in each class. 0 or blank = not timetabled.</p><div class="flexbtns"><button class="ghost" onclick="ttDefaults('${p.id}')">✨ Suggest defaults</button><button class="ghost" onclick="ttCopyFirst('${p.id}')">Copy first class to all</button></div>
-  <div class="ttw"><table><tr><th>Learning area</th>${p.classIds.map(c=>`<th>${escapeHtml(ttCn(s,c))}</th>`).join('')}</tr>${areas.map(a=>`<tr><td>${escapeHtml(a.name)}</td>${p.classIds.map(c=>areasForClass(s,c).some(x=>x.id===a.id)?`<td><input type="number" min="0" max="20" style="width:64px" value="${(p.load[c]||{})[a.id]??''}" onchange="ttLoad('${p.id}','${c}','${a.id}',this.value)"></td>`:'<td>—</td>').join('')}</tr>`).join('')}
-  <tr><th>Total / ${cap}</th>${p.classIds.map(c=>{const sum=Object.values(p.load[c]||{}).reduce((x,y)=>x+(+y||0),0);return `<th style="${sum>cap?'background:#d1473f':''}">${sum}</th>`;}).join('')}</tr></table></div>${p.classIds.length?'':'<p class="small">Add classes first.</p>'}`;}
+// ---- Lessons per week: totals only count what is really timetabled (class takes the area AND it is ticked "Include") ----
+const ttCap=p=>(p.days||[]).length*(+p.lessons||0);
+function ttSum(s,p,c){const ld=p.load[c]||{};return areasForClass(s,c).reduce((x,a)=>x+(p.skip[a.id]?0:(+ld[a.id]||0)),0);}
+function ttTeachCap(s,p,t){const cf=(ttData(s).tconf||{})[t]||{},ds=(p.days||[]).filter(d=>!(cf.off||[]).includes(d)).length,per=+cf.max?Math.min(+cf.max,+p.lessons||0):(+p.lessons||0);return ds*per;}
+// Things that make a timetable impossible or untidy BEFORE generating: shown live under the table.
+function ttLoadWarns(s,p){const out=[],cap=ttCap(p),tl={};
+  p.classIds.forEach(c=>{const sum=ttSum(s,p,c),ld=p.load[c]||{};
+    if(sum>cap)out.push({bad:1,t:`${ttCn(s,c)}: ${sum} lessons asked for but only ${cap} periods exist each week — remove ${sum-cap}.`});
+    areasForClass(s,c).forEach(a=>{if(p.skip[a.id])return;const n=+ld[a.id]||0;if(!n)return;const r=R(p,a.id),mx=(r.dbl?Math.max(+r.max||2,2):(+r.max||2))*p.days.length;
+      if(n>mx)out.push({bad:1,t:`${ttCn(s,c)} · ${a.name}: ${n}/week cannot fit — max ${r.max}/day × ${p.days.length} days = ${mx}. Raise "Max per day" in Rules.`});
+      const ts=ttTeach(s,c,a.id);if(!ts.length)out.push({t:`${ttCn(s,c)} · ${a.name}: no teacher assigned yet (Teachers & Permissions).`});else if(ts.length===1)tl[ts[0]]=(tl[ts[0]]||0)+n;});});
+  Object.keys(tl).forEach(t=>{const tc=ttTeachCap(s,p,t);if(tl[t]>tc)out.push({bad:1,t:`${ttTn(s,t)} would teach ${tl[t]} lessons here but can only fit ${tc} (days available × lessons/day).`});});
+  return out;}
+function ttLoadWarnHtml(s,p){const w=ttLoadWarns(s,p);return w.length?`<details class="card" open style="margin:8px 0;padding:8px 12px"><summary><b>⚠️ ${w.length} thing(s) to fix before generating</b></summary><ul class="small">${w.map(x=>`<li style="${x.bad?'color:#b3261e':''}">${escapeHtml(x.t)}</li>`).join('')}</ul></details>`:'<p class="small" style="color:#1b7f3b">✅ Every class fits within the week.</p>';}
+function ttTotHtml(s,p,c){const sum=ttSum(s,p,c),cap=ttCap(p),free=cap-sum,bg=free<0?'#d1473f':free===0?'#1b7f3b':'#123a63';return `<span style="display:block;padding:2px 0">${sum} / ${cap}</span>`;}
+function ttFreeHtml(s,p,c){const free=ttCap(p)-ttSum(s,p,c);return free<0?`<b style="color:#b3261e">Over by ${-free}</b>`:free===0?'<b style="color:#1b7f3b">Full ✓</b>':`${free} free`;}
+function ttLoadRefresh(s,p){const g=i=>document.getElementById(i);p.classIds.forEach(c=>{const t=g('ttSum_'+c),f=g('ttFree_'+c);if(t){t.innerHTML=ttTotHtml(s,p,c);t.style.background=ttCap(p)-ttSum(s,p,c)<0?'#d1473f':'';}if(f)f.innerHTML=ttFreeHtml(s,p,c);});
+  ttAreas(s,p).forEach(a=>{const e=g('ttAr_'+a.id);if(e)e.textContent=p.skip[a.id]?'—':p.classIds.reduce((x,c)=>x+(areasForClass(s,c).some(y=>y.id===a.id)?(+(p.load[c]||{})[a.id]||0):0),0);});
+  const w=g('ttLoadWarn');if(w)w.innerHTML=ttLoadWarnHtml(s,p);}
+function ttLoadLive(id,c,a,v){const s=currentSchool(),p=ttFind(id);if(!p)return;(p.load[c]=p.load[c]||{})[a]=Math.max(0,Math.min(20,Math.round(+v||0)));ttLoadRefresh(s,p);}
+function ttLoad(id,c,a,v){const s=currentSchool(),p=ttFind(id);if(!p)return;const n=Math.max(0,Math.min(20,Math.round(+v||0)));(p.load[c]=p.load[c]||{})[a]=n;ttSave();ttLoadRefresh(s,p);}
+function ttTabLoad(s,p){const areas=ttAreas(s,p),cap=ttCap(p);
+  return `<p class="small">Lessons per week for each learning area in each class. 0 or blank = not timetabled. <b>Untick “Include in timetable”</b> for subjects that are taught under another learning area and only appear separately on exams (e.g. Reading under English) so the automatic generator leaves them out. A week has <b>${cap}</b> periods (${p.days.length} days × ${p.lessons} lessons). Totals update as you type.</p><div class="flexbtns"><button class="ghost" onclick="ttDefaults('${p.id}')">✨ Suggest defaults</button><button class="ghost" onclick="ttCopyFirst('${p.id}')">Copy first class to all</button></div>
+  <div class="ttw"><table><tr><th>Include in timetable</th><th>Learning area</th>${p.classIds.map(c=>`<th>${escapeHtml(ttCn(s,c))}</th>`).join('')}<th>All classes</th></tr>${areas.map(a=>{const off=!!p.skip[a.id],tot=off?'—':p.classIds.reduce((x,c)=>x+(areasForClass(s,c).some(y=>y.id===a.id)?(+(p.load[c]||{})[a.id]||0):0),0);return `<tr style="${off?'opacity:.55;background:#f3f3f3':''}"><td style="text-align:center"><input type="checkbox" style="width:auto" ${off?'':'checked'} title="Untick to keep this out of automatic timetables" onchange="ttSkip('${p.id}','${a.id}',this.checked)"></td><td>${escapeHtml(a.name)}${off?' <span class="small">· not timetabled</span>':''}</td>${p.classIds.map(c=>areasForClass(s,c).some(x=>x.id===a.id)?(off?'<td>—</td>':`<td><input id="ttL_${c}_${a.id}" type="number" min="0" max="20" style="width:64px" value="${(p.load[c]||{})[a.id]??''}" oninput="ttLoadLive('${p.id}','${c}','${a.id}',this.value)" onchange="ttLoad('${p.id}','${c}','${a.id}',this.value)"></td>`):'<td>—</td>').join('')}<td style="text-align:center;font-weight:700" id="ttAr_${a.id}">${tot}</td></tr>`;}).join('')}
+  <tr><th></th><th>Total / ${cap}</th>${p.classIds.map(c=>`<th id="ttSum_${c}" style="${cap-ttSum(s,p,c)<0?'background:#d1473f':''}">${ttTotHtml(s,p,c)}</th>`).join('')}<th></th></tr>
+  <tr><td></td><td><b>Periods left</b></td>${p.classIds.map(c=>`<td id="ttFree_${c}" style="text-align:center">${ttFreeHtml(s,p,c)}</td>`).join('')}<td></td></tr></table></div>${p.classIds.length?'':'<p class="small">Add classes first.</p>'}
+  <div id="ttLoadWarn">${p.classIds.length?ttLoadWarnHtml(s,p):''}</div>`;}
 function ttTabRules(s,p){const chip='class="chip" style="cursor:pointer"',cb='style="width:auto;display:inline-block;margin-right:4px"';
-  return `<p class="small">Conditions per learning area. <b>Max per day</b> caps how often it appears in one day; <b>periods allowed</b> = lesson numbers it may use (none ticked = any).</p>`+ttAreas(s,p).map(a=>{const r=R(p,a.id);return `<details class="card" style="margin:6px 0;padding:8px 12px"><summary><b>${escapeHtml(a.name)}</b> <span class="small">· max ${r.max}/day${r.dbl?` · ${r.dbl} double(s)${r.dmode==='split'?' (separate)':''}`:''}${r.per.length?' · periods '+r.per.join(','):''}${r.pref?' · '+r.pref:''}${r.nolast?' · not last':''}</span></summary>
+  return `<p class="small">Conditions per learning area. <b>Max per day</b> caps how often it appears in one day; <b>periods allowed</b> = lesson numbers it may use (none ticked = any).</p>`+ttAreas(s,p).filter(a=>!p.skip[a.id]).map(a=>{const r=R(p,a.id);return `<details class="card" style="margin:6px 0;padding:8px 12px"><summary><b>${escapeHtml(a.name)}</b> <span class="small">· max ${r.max}/day${r.dbl?` · ${r.dbl} double(s)${r.dmode==='split'?' (separate)':''}`:''}${r.per.length?' · periods '+r.per.join(','):''}${r.pref?' · '+r.pref:''}${r.nolast?' · not last':''}</span></summary>
   <div class="row"><div><label>Max lessons per day</label><input type="number" min="1" max="6" value="${r.max}" onchange="ttRule('${p.id}','${a.id}','max',+this.value)"></div><div><label>Double lessons / week</label><input type="number" min="0" max="5" value="${r.dbl}" onchange="ttRule('${p.id}','${a.id}','dbl',+this.value)"></div><div><label>Doubles are</label><select onchange="ttRule('${p.id}','${a.id}','dmode',this.value)"><option value="block" ${r.dmode!=='split'?'selected':''}>Back-to-back (one block)</option><option value="split" ${r.dmode==='split'?'selected':''}>Same day, separate (not back-to-back)</option></select></div><div><label>Best time of day</label><select onchange="ttRule('${p.id}','${a.id}','pref',this.value)"><option value="" ${!r.pref?'selected':''}>Any</option><option value="morning" ${r.pref==='morning'?'selected':''}>Morning (first half)</option><option value="afternoon" ${r.pref==='afternoon'?'selected':''}>Afternoon (second half)</option></select></div></div>
   <label>Periods allowed</label><div>${Array.from({length:p.lessons},(_,i)=>i+1).map(n=>`<label ${chip}><input type="checkbox" ${cb} ${r.per.includes(n)?'checked':''} onchange="ttRulePer('${p.id}','${a.id}',${n},this.checked)">${n}</label>`).join(' ')}</div>
   <label ${chip}><input type="checkbox" ${cb} ${r.nolast?'checked':''} onchange="ttRule('${p.id}','${a.id}','nolast',this.checked)">Never the last lesson of the day</label></details>`;}).join('')||'<p class="small">Add classes first.</p>';}
@@ -4766,21 +4868,32 @@ function tplSchoolProfile(school){
    Read as a data URL (like the HOI signature) rather than kept as a File, so it's a plain
    JSON-serializable string that survives saveDB/localStorage and cloud sync the same way
    everything else in the school object does. */
+function shrinkImage(file, maxDim, mime, quality, ok, fail){
+  const url = URL.createObjectURL(file), img = new Image();
+  img.onload = ()=>{
+    const k = Math.min(1, maxDim/Math.max(img.width, img.height));
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.width*k)); c.height = Math.max(1, Math.round(img.height*k));
+    const x = c.getContext('2d');
+    if(mime==='image/jpeg'){ x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); }
+    x.drawImage(img, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(url); ok(c.toDataURL(mime, quality));
+  };
+  img.onerror = ()=>{ URL.revokeObjectURL(url); fail(); };
+  img.src = url;
+}
 function uploadSchoolLogo(input){
   const file = input.files && input.files[0];
   if(!file) return;
   if(!file.type.startsWith('image/')){ qs('#profLogoMsg').innerHTML = '<div class="msg err">Please choose an image file.</div>'; return; }
   if(file.size > 2*1024*1024){ qs('#profLogoMsg').innerHTML = '<div class="msg err">Image is too large — please use one under 2MB.</div>'; return; }
-  const reader = new FileReader();
-  reader.onload = ()=>{
+  // Resized to at most 500px so the logo stays small (it is downloaded by every device and parent).
+  shrinkImage(file, 500, 'image/png', undefined, dataUrl=>{
     const school = currentSchool();
-    school.logo = reader.result;
+    school.logo = dataUrl;
     saveDB(DB);
     toast('School logo saved — it will now appear on every report and sheet');
     renderDOS();
-  };
-  reader.onerror = ()=>{ qs('#profLogoMsg').innerHTML = '<div class="msg err">Could not read that image — please try another file.</div>'; };
-  reader.readAsDataURL(file);
+  }, ()=>{ qs('#profLogoMsg').innerHTML = '<div class="msg err">Could not read that image — please try another file.</div>'; });
 }
 function removeSchoolLogo(){
   if(!confirm('Remove the saved school logo? Reports will go back to a plain text header until a new one is uploaded.')) return;
@@ -9572,10 +9685,7 @@ function addAssignment(){
   if(file){
     if(!file.type.startsWith('image/')){ msgEl.innerHTML = '<div class="msg err">Attachment must be an image file.</div>'; return; }
     if(file.size > 2*1024*1024){ msgEl.innerHTML = '<div class="msg err">Image is too large — please use one under 2MB.</div>'; return; }
-    const reader = new FileReader();
-    reader.onload = ()=>finish(reader.result);
-    reader.onerror = ()=>{ msgEl.innerHTML = '<div class="msg err">Could not read that image — please try another file.</div>'; };
-    reader.readAsDataURL(file);
+    shrinkImage(file, 1400, 'image/jpeg', 0.82, finish, ()=>{ msgEl.innerHTML = '<div class="msg err">Could not read that image — please try another file.</div>'; });
   } else finish('');
 }
 function toggleAssignmentVisible(id){
