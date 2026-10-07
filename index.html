@@ -3658,12 +3658,19 @@ function ttMaster(s,p,d,bad,edit,fit){const cols=ttRows(p),n=p.classIds.length;
 function ttItems(s,tid,plans){const it=[];plans.forEach(p=>{ttNorm(p);const L=ttSlots(p).L;Object.keys(p.cells).forEach(c=>Object.keys(p.cells[c]||{}).forEach(dk=>Object.keys(p.cells[c][dk]||{}).forEach(pk=>{const v=p.cells[c][dk][pk],sl=L[+pk.slice(1)-1];if(v&&v.t===tid&&sl)it.push({d:+dk.slice(1),s:sl.s,e:sl.e,c,a:v.a});})));});return it;}
 // Teacher timetable: DAYS down the side, lesson TIMES across, with a daily total.
 function ttTeacherGrid(s,tid,plans,fit){const it=ttItems(s,tid,plans);if(!it.length)return '<p class="small">No lessons scheduled.</p>';
-  const days=[...new Set([1,2,3,4,5].concat(it.map(i=>i.d)))].sort((a,b)=>a-b),iv=[...new Set(it.map(i=>i.s+'-'+i.e))].sort((a,b)=>parseInt(a)-parseInt(b));
+  const days=[...new Set([1,2,3,4,5].concat(it.map(i=>i.d)))].sort((a,b)=>a-b),nd=days.length;
+  // Columns = every lesson period AND every break of the timetables this teacher is in, so free periods and breaks
+  // show exactly like the class and master timetables (not only the periods where the teacher has a lesson).
+  const cm={};plans.filter(p=>ttItems(s,tid,[p]).length).forEach(p=>{ttNorm(p);ttRows(p).forEach(r=>{const k=r.t+r.s+'-'+r.e,c=cm[k]||(cm[k]={t:r.t,s:r.s,e:r.e,label:r.label||'',days:new Set()});p.days.forEach(d=>c.days.add(+d));});});
+  const cols=Object.values(cm).sort((a,b)=>a.s-b.s||a.e-b.e);
   const nw={d:new Date().getDay()||7,m:new Date().getHours()*60+new Date().getMinutes()};
-  const head=`<tr><th class="dy">Day</th>${iv.map(k=>{const [a,b]=k.split('-').map(Number);return `<th>${fm(a)}<span class="ta">${fm(b)}</span></th>`;}).join('')}<th class="tth">Lessons</th></tr>`;
-  const body=days.map(d=>`<tr><th class="dy${ttTd(d,fit)}">${TT_DF[d]}</th>${iv.map(k=>{const [a,b]=k.split('-').map(Number),x=it.filter(i=>i.d===d&&i.s===a&&i.e===b);
-    return `<td class="tc${!fit&&d===nw.d&&nw.m>=a&&nw.m<b?' nw':''}"${x.length?` style="background:${ttCol(x[0].a)}"`:''}>${x.map(i=>`<b>${escapeHtml(ttCn(s,i.c))}</b><span class="ta">${escapeHtml(ttAn(s,i.a))}</span>`).join('')||'<span class="ta">—</span>'}</td>`;}).join('')}<td class="tt">${it.filter(i=>i.d===d).length}</td></tr>`).join('');
-  return ttTbl(head+body,'',fit,iv.length+2,days.length+1);}
+  const head=`<tr><th class="dy">Day</th>${cols.map(c=>c.t==='B'?`<th class="tbh">${fm(c.s)}<span class="ta">${fm(c.e)}</span></th>`:`<th>${fm(c.s)}<span class="ta">${fm(c.e)}</span></th>`).join('')}<th class="tth">Lessons</th></tr>`;
+  const body=days.map((d,i)=>`<tr><th class="dy${ttTd(d,fit)}">${TT_DF[d]}</th>${cols.map(c=>{
+    if(c.t==='B'){if(days.every(x=>c.days.has(x)))return i===0?`<td class="tb" rowspan="${nd}"><span class="vt">${escapeHtml(c.label)}</span></td>`:'';
+      return `<td class="tb">${c.days.has(d)?`<span class="ta">${escapeHtml(c.label)}</span>`:''}</td>`;}
+    const x=it.filter(l=>l.d===d&&l.s===c.s&&l.e===c.e);
+    return `<td class="tc${!fit&&d===nw.d&&nw.m>=c.s&&nw.m<c.e?' nw':''}"${x.length?` style="background:${ttCol(x[0].a)}"`:''}>${x.map(l=>`<b>${escapeHtml(ttCn(s,l.c))}</b><span class="ta">${escapeHtml(ttAn(s,l.a))}</span>`).join('')||'<span class="ta">—</span>'}</td>`;}).join('')}<td class="tt">${it.filter(l=>l.d===d).length}</td></tr>`).join('');
+  return ttTbl(head+body,'',fit,cols.length+2,nd+1);}
 // ---- Printing: every page is one A4 sheet (landscape by default) that the table stretches to fill ----
 // Shrinks (font first, then scales) any printed grid that would not fit its page, so nothing is cut off.
 function ttAutoFit(a){const prev=a.getAttribute('style')||'';a.style.cssText=prev+';display:block;position:fixed;left:-20000px;top:0;visibility:hidden';
