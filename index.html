@@ -181,6 +181,16 @@ table.rc-table tr.rc-total td{background:#fdf6e5;font-weight:800;border-top:2px 
 .rc-remark{margin-top:12px;background:#fbf8ef;border-left:4px solid var(--gold);border-radius:0 8px 8px 0;padding:10px 14px;font-size:14px;line-height:1.5;}
 .rc-analysis{margin-top:12px;border:1px solid #d9e1ec;border-radius:8px;padding:8px 10px;font-size:13px;line-height:1.45;}
 .rc-analysis h4{margin:0 0 6px;color:var(--navy);font-size:14px;}
+.rc-pathway{margin-top:12px;border:1px solid #d9e1ec;border-radius:8px;padding:8px 10px;font-size:13px;line-height:1.45;}
+.rc-pathway h4{margin:0 0 6px;color:var(--navy);font-size:14px;}
+.rc-pathway .rc-table{margin:4px 0;}
+.rc-pw-best td{background:#e7f6ec;font-weight:700;}
+.rc-table td.rc-cmt{text-align:left;font-size:11px;line-height:1.25;min-width:110px;}
+.rc-qrrow{display:flex;align-items:flex-end;gap:10px;margin-top:6px;}
+.rc-qrrow .rc-issued{margin-left:auto;}
+.rc-qr{display:flex;align-items:center;gap:8px;font-size:11px;color:#345;max-width:68%;line-height:1.3;}
+.rc-qr svg{width:86px;height:86px;flex:none;border:1px solid #cdd8e4;background:#fff;}
+.rc-pw-banner{margin:6px 0 3px;padding:6px 10px;border-radius:6px;background:#1b7f55;color:#fff;font-size:13px;}
 .rc-tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:6px;}
 .rc-tile{background:#f4f7fb;border-radius:6px;padding:5px 6px;text-align:center;}
 .rc-tile b{display:block;font-size:15px;color:var(--navy);}
@@ -259,7 +269,8 @@ canvas{max-width:100%;}
   body.print-bw .print-only-block .badge{background:#fff !important;color:#000 !important;border:2px solid #000 !important;font-weight:800 !important;}
   body.print-bw .rc-total td,body.print-bw .rc-total th{background:#e6e6e6 !important;}
   body.print-bw .report-header{border-bottom:3px double #000 !important;}
-  body.print-bw .rc-overall-box,body.print-bw .rc-tile,body.print-bw .rc-remark,body.print-bw .rc-analysis,body.print-bw .rc-info-grid,body.print-bw .rc-key{border:1.5px solid #000 !important;}
+  body.print-bw .rc-pw-banner{background:#fff !important;color:#000 !important;border:1.5px solid #000;}body.print-bw .rc-pw-best td{background:#fff !important;}
+  body.print-bw .rc-overall-box,body.print-bw .rc-tile,body.print-bw .rc-remark,body.print-bw .rc-analysis,body.print-bw .rc-pathway,body.print-bw .rc-info-grid,body.print-bw .rc-key{border:1.5px solid #000 !important;}
   body.print-bw .print-only-block img,body.print-bw .print-only-block canvas{filter:grayscale(1) contrast(1.5);}
   body.print-bw .rc-sigrow .sig-line{border-top:1.5px solid #000 !important;}
   .ink-pick{display:none !important;}
@@ -295,6 +306,11 @@ canvas{max-width:100%;}
   .rc-remark{font-size:12.5px;padding:6px 9px;}
   .rc-analysis{font-size:11.5px;padding:5px 8px;margin-top:6px;line-height:1.3;}
   .rc-analysis h4{font-size:11.5px;margin-bottom:3px;}
+  .rc-pathway{font-size:11px;padding:5px 8px;margin-top:6px;line-height:1.3;}
+  .rc-pathway h4{font-size:11.5px;margin-bottom:3px;}
+  .rc-pw-banner{font-size:11.5px;padding:4px 8px;margin:4px 0 2px;}
+  .rc-table td.rc-cmt{font-size:9.5px;line-height:1.2;min-width:90px;}
+  .rc-qr{font-size:9.5px;gap:6px;} .rc-qr svg{width:68px;height:68px;}
   .rc-tiles{gap:4px;margin-bottom:3px;}
   .rc-tile{padding:2px 4px;}
   .rc-tile b{font-size:12px;}
@@ -516,6 +532,13 @@ function ensureSchoolShape(s){
   // feeOnReportRules: exceptions to that default, each {classId?, term?, year?, show}. Most specific wins: grade+term > grade > term > default.
   if(!Array.isArray(s.feeOnReportRules)) s.feeOnReportRules = [];
   if(!s.notTaking || typeof s.notTaking!=='object') s.notTaking = {};
+  // Pathway Performance Profile on report cards: pathwayShow = 'junior' (Grades 7-9, default) | 'all' | 'off';
+  // pathwayMap = {learningAreaId: pathway name or ''}. Unmapped areas fall back to a name-based suggestion.
+  if(!['off','junior','all'].includes(s.pathwayShow)) s.pathwayShow = 'junior';
+  if(!s.pathwayMap || typeof s.pathwayMap!=='object') s.pathwayMap = {};
+  // Report-card extras (both on by default): a QR code that opens the Parent Portal, and an automatic comment per learning area.
+  if(typeof s.qrOnReport!=='boolean') s.qrOnReport = true;
+  if(typeof s.areaComments!=='boolean') s.areaComments = true;
   // feePublish[examId] = true once the finance office has released that term's next-term invoices to the Parent Portal.
   if(!s.feePublish || typeof s.feePublish!=='object') s.feePublish = {};
   // feeTerms: fee periods that stand on their own (Term + Year + Grade) -- no exam needed. Fee records, structures,
@@ -1049,7 +1072,7 @@ function buildParentSafeSchool(fullSchool, student){
     exams, marks, students, teachers, dos: [], attendance, assignments, remarks,
     // Fees: ONLY this learner's own record, payments and the fee structure of the exams in scope --
     // never a classmate's balance.
-    fees, payments, feeStructure, feeTerms: feeTermsOut.filter(t=>fees[t.id]), payInstructions: fullSchool.payInstructions||'', invoiceNote: fullSchool.invoiceNote||'', feeOnReport: fullSchool.feeOnReport!==false, feeOnReportRules: fullSchool.feeOnReportRules||[], notTaking: fullSchool.notTaking||{}, parentDetails: fullSchool.parentDetails!==false
+    fees, payments, feeStructure, feeTerms: feeTermsOut.filter(t=>fees[t.id]), payInstructions: fullSchool.payInstructions||'', invoiceNote: fullSchool.invoiceNote||'', feeOnReport: fullSchool.feeOnReport!==false, feeOnReportRules: fullSchool.feeOnReportRules||[], notTaking: fullSchool.notTaking||{}, parentDetails: fullSchool.parentDetails!==false, pathwayShow: fullSchool.pathwayShow||'junior', pathwayMap: fullSchool.pathwayMap||{}, qrOnReport: fullSchool.qrOnReport!==false, areaComments: fullSchool.areaComments!==false
   });
 }
 
@@ -2169,7 +2192,7 @@ function toast(msg,type='ok'){
 }
 function getQueryParams(){
   const p = new URLSearchParams(location.search);
-  return {school:p.get('school'), role:p.get('role'), sync:p.get('sync'), key:p.get('key'), p:p.get('p')};
+  return {school:p.get('school'), role:p.get('role'), sync:p.get('sync'), key:p.get('key'), p:p.get('p'), adm:p.get('adm')};
 }
 // Figures out which Firebase config (if any) should be used to bootstrap a login: a sync
 // link the person opened, a Sync Code they pasted on the login form, or a config this
@@ -2600,7 +2623,7 @@ function renderLogin(){
         <p class="login-sub">Please enter your child's admission number to access their results.</p>
         <div id="loginStep1">
           ${prefillCode ? `<input type="hidden" id="pcode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="pcode" placeholder="School Code" maxlength="20"></div>`}
-          <div class="login-field">${HASH_ICO}<input class="login-id-field" id="padm" placeholder="Admission Number" onkeydown="if(event.key==='Enter')loginStep2()"></div>
+          <div class="login-field">${HASH_ICO}<input class="login-id-field" id="padm" placeholder="Admission Number" value="${escapeHtml(qp.adm||'')}" onkeydown="if(event.key==='Enter')loginStep2()"></div>
           <button class="login-continue" onclick="loginStep2()">Continue</button>
         </div>
         <div id="loginStep2" style="display:none">
@@ -9495,6 +9518,8 @@ function tplReportsPicker(school){
     <div><label>Learner</label><select id="repLearner"></select></div>
     ${genderPickerHTML('repGender')}
   </div>
+  ${reportExtrasSettingsHTML(school)}
+  ${pathwaySettingsHTML(school)}
   <div class="flexbtns no-print">
     <button onclick="generateReport(qs('#repLearner').value, qs('#repExam').value)">Generate Individual Report</button>
     <button class="ghost" onclick="generateAllReports(qs('#repClass').value, qs('#repExam').value)">Generate All (Whole Grade)</button>
@@ -9517,6 +9542,128 @@ function fillRepExams(){
   const exams = school.exams.filter(e=>e.classId===classId);
   qs('#repExam').innerHTML = exams.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this grade</option>';
 }
+/* ============================= PATHWAY PERFORMANCE PROFILE =============================
+   CBC senior-school pathways. Each learning area counts towards ONE pathway (set under Report Cards ->
+   Pathway settings; unset areas get a name-based suggestion). A pathway's performance is the learner's
+   total marks in its marked areas divided by their total maximum, so the areas are weighted by their max
+   marks. The report shows each pathway and names the strongest one. Guidance only. */
+/* ============================= QR CODE GENERATOR (no libraries, works offline) =============================
+   Byte mode, error-correction level M (falls back to L for longer text), versions 1-10, best of the 8 masks.
+   qrSvg(text) returns an inline <svg> string, or '' if the text is too long. Used for the report-card QR code. */
+const QR_ECC = {                       // [ecc codewords per block, number of blocks] by version 1..10
+  M: {e:[0,10,16,26,18,24,16,18,22,22,26], b:[0,1,1,1,2,2,4,4,4,5,5], fmt:0},
+  L: {e:[0, 7,10,15,20,26,18,20,24,30,18], b:[0,1,1,1,1,1,2,2,2,2,4], fmt:1}
+};
+function qrRawModules(v){ let r=(16*v+128)*v+64; if(v>=2){ const n=Math.floor(v/7)+2; r-=(25*n-10)*n-55; if(v>=7) r-=36; } return r; }
+function qrCapacity(v,lv){ const raw=Math.floor(qrRawModules(v)/8), d=raw-QR_ECC[lv].e[v]*QR_ECC[lv].b[v]; return d-(v<10?2:3); }
+function qrMul(x,y){ let z=0; for(let i=7;i>=0;i--){ z=(z<<1)^((z>>>7)*0x11D); z^=((y>>>i)&1)*x; } return z; }
+function qrRS(data,n){
+  const g=new Array(n).fill(0); g[n-1]=1; let root=1;
+  for(let i=0;i<n;i++){ for(let j=0;j<n;j++){ g[j]=qrMul(g[j],root); if(j+1<n) g[j]^=g[j+1]; } root=qrMul(root,2); }
+  const res=new Array(n).fill(0);
+  data.forEach(b=>{ const f=b^res.shift(); res.push(0); g.forEach((c,i)=>{ res[i]^=qrMul(c,f); }); });
+  return res;
+}
+function qrMatrix(text){
+  const bytes=Array.from(new TextEncoder().encode(String(text)));
+  let lv='M', ver=0;
+  for(const L of ['M','L']){ for(let v=1;v<=10;v++){ if(qrCapacity(v,L)>=bytes.length){ lv=L; ver=v; break; } } if(ver) break; }
+  if(!ver) return null;
+  const cfg=QR_ECC[lv], eccLen=cfg.e[ver], nBlocks=cfg.b[ver], raw=Math.floor(qrRawModules(ver)/8), dataCw=raw-eccLen*nBlocks;
+  // ---- bit stream: mode 0100, length, bytes, terminator, padding ----
+  const bits=[]; const put=(val,len)=>{ for(let i=len-1;i>=0;i--) bits.push((val>>>i)&1); };
+  put(4,4); put(bytes.length, ver<10?8:16); bytes.forEach(b=>put(b,8));
+  put(0,Math.min(4,dataCw*8-bits.length)); while(bits.length%8) bits.push(0);
+  for(let pad=0xEC; bits.length<dataCw*8; pad^=0xEC^0x11) put(pad,8);
+  const data=[]; for(let i=0;i<bits.length;i+=8){ let b=0; for(let j=0;j<8;j++) b=(b<<1)|bits[i+j]; data.push(b); }
+  // ---- split into blocks, add Reed-Solomon codewords, interleave ----
+  const shortN=nBlocks-raw%nBlocks, shortLen=Math.floor(raw/nBlocks), blocks=[];
+  for(let i=0,k=0;i<nBlocks;i++){ const dat=data.slice(k,k+shortLen-eccLen+(i<shortN?0:1)); k+=dat.length; const ecc=qrRS(dat,eccLen); if(i<shortN) dat.push(0); blocks.push(dat.concat(ecc)); }
+  const all=[]; for(let i=0;i<blocks[0].length;i++) blocks.forEach((bl,j)=>{ if(i!==shortLen-eccLen||j>=shortN) all.push(bl[i]); });
+  // ---- draw function patterns ----
+  const size=ver*4+17, m=[], fn=[]; for(let y=0;y<size;y++){ m.push(new Array(size).fill(false)); fn.push(new Array(size).fill(false)); }
+  const setF=(x,y,d)=>{ m[y][x]=d; fn[y][x]=true; };
+  for(let i=0;i<size;i++){ setF(6,i,i%2===0); setF(i,6,i%2===0); }
+  const finder=(cx,cy)=>{ for(let dy=-4;dy<=4;dy++) for(let dx=-4;dx<=4;dx++){ const d=Math.max(Math.abs(dx),Math.abs(dy)),x=cx+dx,y=cy+dy; if(x>=0&&x<size&&y>=0&&y<size) setF(x,y,d!==2&&d!==4); } };
+  finder(3,3); finder(size-4,3); finder(3,size-4);
+  let pos=[]; if(ver>1){ const n=Math.floor(ver/7)+2, step=Math.ceil((ver*4+4)/(n*2-2))*2; pos=[6]; for(let p=size-7;pos.length<n;p-=step) pos.splice(1,0,p); }
+  pos.forEach((px,i)=>pos.forEach((py,j)=>{ if((i===0&&j===0)||(i===0&&j===pos.length-1)||(i===pos.length-1&&j===0)) return; for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++) setF(px+dx,py+dy,Math.max(Math.abs(dx),Math.abs(dy))!==1); }));
+  const bit=(x,i)=>((x>>>i)&1)!==0;
+  const drawFormat=mask=>{ const d=(cfg.fmt<<3)|mask; let r=d; for(let i=0;i<10;i++) r=(r<<1)^((r>>>9)*0x537); const b=((d<<10)|r)^0x5412;
+    for(let i=0;i<=5;i++) setF(8,i,bit(b,i)); setF(8,7,bit(b,6)); setF(8,8,bit(b,7)); setF(7,8,bit(b,8)); for(let i=9;i<15;i++) setF(14-i,8,bit(b,i));
+    for(let i=0;i<8;i++) setF(size-1-i,8,bit(b,i)); for(let i=8;i<15;i++) setF(8,size-15+i,bit(b,i)); setF(8,size-8,true); };
+  drawFormat(0);
+  if(ver>=7){ let r=ver; for(let i=0;i<12;i++) r=(r<<1)^((r>>>11)*0x1F25); const b=(ver<<12)|r; for(let i=0;i<18;i++){ const c=bit(b,i),a=size-11+i%3,bb=Math.floor(i/3); setF(a,bb,c); setF(bb,a,c); } }
+  // ---- place data codewords in the zig-zag order ----
+  let bi=0; for(let right=size-1;right>=1;right-=2){ if(right===6) right=5;
+    for(let vert=0;vert<size;vert++) for(let j=0;j<2;j++){ const x=right-j, up=((right+1)&2)===0, y=up?size-1-vert:vert;
+      if(!fn[y][x]&&bi<all.length*8){ m[y][x]=bit(all[bi>>>3],7-(bi&7)); bi++; } } }
+  // ---- choose the mask with the lowest penalty ----
+  const cond=[(x,y)=>(x+y)%2===0,(x,y)=>y%2===0,(x,y)=>x%3===0,(x,y)=>(x+y)%3===0,(x,y)=>(Math.floor(x/3)+Math.floor(y/2))%2===0,(x,y)=>x*y%2+x*y%3===0,(x,y)=>(x*y%2+x*y%3)%2===0,(x,y)=>((x+y)%2+x*y%3)%2===0];
+  const apply=k=>{ for(let y=0;y<size;y++) for(let x=0;x<size;x++) if(!fn[y][x]&&cond[k](x,y)) m[y][x]=!m[y][x]; };
+  const penalty=()=>{ let p=0; const lines=[]; for(let y=0;y<size;y++){ lines.push(m[y].slice()); } for(let x=0;x<size;x++){ lines.push(m.map(r=>r[x])); }
+    lines.forEach(l=>{ let run=1; for(let i=1;i<=size;i++){ if(i<size&&l[i]===l[i-1]) run++; else { if(run>=5) p+=3+run-5; run=1; } }
+      const s=l.map(v=>v?1:0).join(''); for(let i=0;i+11<=size;i++){ const w=s.substr(i,11); if(w==='10111010000'||w==='00001011101') p+=40; } });
+    for(let y=0;y<size-1;y++) for(let x=0;x<size-1;x++){ const c=m[y][x]; if(c===m[y][x+1]&&c===m[y+1][x]&&c===m[y+1][x+1]) p+=3; }
+    let dark=0; m.forEach(r=>r.forEach(v=>{ if(v) dark++; })); p+=(Math.ceil(Math.abs(dark*20-size*size*10)/(size*size))-1)*10; return p; };
+  let best=0, bestP=Infinity; for(let k=0;k<8;k++){ apply(k); drawFormat(k); const p=penalty(); if(p<bestP){ bestP=p; best=k; } apply(k); }
+  apply(best); drawFormat(best);
+  return m;
+}
+function qrSvg(text){
+  const m=qrMatrix(text); if(!m) return '';
+  const n=m.length, q=4; let d='';
+  m.forEach((row,y)=>row.forEach((v,x)=>{ if(v) d+=`M${x+q},${y+q}h1v1h-1z`; }));
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n+2*q} ${n+2*q}" shape-rendering="crispEdges"><rect width="${n+2*q}" height="${n+2*q}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+}
+
+/* ============================= AUTOMATIC LEARNING-AREA COMMENTS =============================
+   One short comment per learning area, chosen from the learner's level in the class's own grading table
+   (top / meeting / approaching / below) and whether the % rose or fell since the previous exam in that area.
+   Several wordings per case are rotated by learner so a whole class does not read identically. */
+function areaComment(school,classId,r,sid){
+  if(r.pct==null||!r.g) return '';
+  const tbl=gradingFor(school,classId).slice().sort((a,b)=>b.points-a.points), n=tbl.length, idx=tbl.findIndex(x=>x.level===r.g.level);
+  const tier=n<=1||idx<=0?0:idx>=n-1?3:(idx<=(n-1)/2?1:2);
+  const d=r.prevPct!=null?r.pct-r.prevPct:null, mode=d==null?'base':d>=3?'up':d<=-5?'down':'base', x=d==null?0:Math.round(Math.abs(d));
+  const T=[
+    {base:['Excellent work. Keep it up.','Outstanding performance. Well done.','Exceptional results. Keep soaring.'],up:['Excellent and still improving. Keep it up.','A great result and rising. Well done.'],down:[`Still excellent, but down ${x} points. Stay focused.`,'Very strong; revise to regain your best.']},
+    {base:['Good work. Aim higher.','Good progress. Keep pushing.','Meeting expectations. A little more effort will lift it.'],up:['Good improvement. Keep going.','Improving well. Keep it up.'],down:[`Good, but dropped ${x} points. Revise regularly.`,'Slipped a little. Revise and practise more.']},
+    {base:['Fair effort. More practice is needed.','Approaching expectations. Revise regularly.','Work on the weak topics and practise daily.'],up:['Improving. Keep practising.','Better than before. Keep working hard.'],down:[`Dropped ${x} points. Revise the topics covered.`,'Needs more revision. Ask for help where unsure.']},
+    {base:['Needs urgent support. Practise daily.','Struggling in this area. Extra help advised.','Below expectation. Close follow-up needed.'],up:['Slight improvement, but still needs close support.','Improving. Keep going with extra practice.'],down:['Dropped further. Needs urgent support.','Declining. Extra lessons and practice advised.']}
+  ];
+  let h=0; (String(sid)+String(r.aid||'')).split('').forEach(ch=>{ h=(h*31+ch.charCodeAt(0))>>>0; });
+  const list=T[tier][mode]; return list[h%list.length];
+}
+function reportExtrasSettingsHTML(school){
+  if(!canEdit()) return '';
+  return `<details class="no-print" style="margin:6px 0"><summary class="small" style="cursor:pointer">🧩 Report card extras (settings)</summary>
+  <label class="small" style="display:flex;gap:6px;align-items:flex-start;margin:6px 0"><input type="checkbox" style="width:auto;margin:3px 0 0" ${school.areaComments!==false?'checked':''} onchange="setReportExtra('areaComments',this.checked)"> <span><b>Automatic teacher's comment for every learning area</b> — worked out from the learner's level and whether they improved or dropped since the last exam.</span></label>
+  <label class="small" style="display:flex;gap:6px;align-items:flex-start;margin:6px 0"><input type="checkbox" style="width:auto;margin:3px 0 0" ${school.qrOnReport!==false?'checked':''} onchange="setReportExtra('qrOnReport',this.checked)"> <span><b>QR code on each report</b> — parents scan it to open the Parent Portal with the school code and admission number filled in (they still need the learner's name and Parent PIN). It only prints when the app is opened from its online address, not from a file on a computer.</span></label></details>`;
+}
+function setReportExtra(key,on){ if(!canEdit()){noEdit();return;} if(key!=='areaComments'&&key!=='qrOnReport') return; currentSchool()[key]=!!on; saveDB(DB); toast('Saved — generate the reports again to update'); }
+const PATHWAYS=['STEM','Arts & Sports','Social Sciences'];
+function pathwayDefault(name){
+  const n=String(name||'');
+  if(/\barts?\b|creative|music|sport|physical|\bpe\b|drama|dance|visual|performing/i.test(n)) return 'Arts & Sports';
+  if(/math|science|pre.?tech|agri|nutrition|computer|\bict\b|technolog|engineering|\bstem\b/i.test(n)) return 'STEM';
+  if(/english|kiswahili|kenyan sign|\bksl\b|social|\bcre\b|\bire\b|\bhre\b|religio|christian|islamic|hindu|business|histor|geograph|literature|language|french|german|arabic|mandarin/i.test(n)) return 'Social Sciences';
+  return '';
+}
+function pathwayFor(school,area){ const m=school.pathwayMap||{}; return Object.prototype.hasOwnProperty.call(m,area.id)?m[area.id]:pathwayDefault(area.name); }
+function pathwayShowFor(school,className){ const mode=school.pathwayShow||'junior'; return mode==='all' || (mode==='junior' && ttLevel(className)==='junior'); }
+function pathwaySettingsHTML(school){
+  if(!canEdit()) return '';
+  const mode=school.pathwayShow||'junior';
+  return `<details class="no-print" style="margin:6px 0"><summary class="small" style="cursor:pointer">🧭 Pathway Performance Profile on report cards (settings)</summary>
+  <p class="small">Adds a table to each report showing how the learner performs in the STEM, Arts &amp; Sports and Social Sciences pathways and which is strongest. Choose which pathway each learning area counts towards. Generate the reports again after changing anything.</p>
+  <div class="row"><div><label>Show on reports</label><select onchange="setPathwayShow(this.value)"><option value="junior" ${mode==='junior'?'selected':''}>Junior School only (Grades 7–9)</option><option value="all" ${mode==='all'?'selected':''}>All grades</option><option value="off" ${mode==='off'?'selected':''}>Off</option></select></div></div>
+  <div class="ttw"><table><tr><th>Learning area</th><th>Counts towards</th></tr>${school.learningAreas.map(a=>{const cur=pathwayFor(school,a);return `<tr><td>${escapeHtml(a.name)}</td><td><select onchange="setPathwayArea('${a.id}',this.value)"><option value="" ${!cur?'selected':''}>— not in a pathway —</option>${PATHWAYS.map(p=>`<option value="${escapeHtml(p)}" ${cur===p?'selected':''}>${escapeHtml(p)}</option>`).join('')}</select></td></tr>`;}).join('')}</table></div>
+  <div class="flexbtns"><button class="ghost" onclick="resetPathwayMap()">Reset to suggested</button></div></details>`;
+}
+function setPathwayShow(v){ if(!canEdit()){noEdit();return;} currentSchool().pathwayShow=['off','all','junior'].includes(v)?v:'junior'; saveDB(DB); toast('Saved — generate the reports again to update'); }
+function setPathwayArea(id,v){ if(!canEdit()){noEdit();return;} const s=currentSchool(); s.pathwayMap=s.pathwayMap||{}; s.pathwayMap[id]=PATHWAYS.includes(v)?v:''; saveDB(DB); toast('Saved — generate the reports again to update'); }
+function resetPathwayMap(){ if(!canEdit()){noEdit();return;} currentSchool().pathwayMap={}; saveDB(DB); renderDOS(); toast('Pathways reset to the suggested grouping'); }
 function buildReportHTML(school, sid, examId){
   const student = school.students.find(s=>s.id===sid);
   const exam = school.exams.find(e=>e.id===examId);
@@ -9532,7 +9679,7 @@ function buildReportHTML(school, sid, examId){
     if(takes && score!=null){ pct=pctOf(score,max); g=gradeFor(school,pct,exam.classId); totalScore+=score; totalPts+=g.points; sumPct+=pct; n++; }
     // teacher for this area/class
     const teacher = school.teachers.find(t=>(t.assignments||[]).some(x=>x.classId===exam.classId && x.areaId===a.id));
-    return {name:a.name, score: takes?score:null, max, pct, g, na:!takes, teacher: teacher?teacher.name:'-'};
+    return {name:a.name, aid:a.id, score: takes?score:null, max, pct, g, na:!takes, teacher: teacher?teacher.name:'-'};
   });
   // Overall performance is averaged across EVERY learning area assigned to the learner's grade — not just
   // the ones marked so far — so a single strong subject can't make an otherwise-unassessed learner look
@@ -9594,6 +9741,7 @@ function buildReportHTML(school, sid, examId){
   const clsSD=raSD(lMeans.map(x=>x.m));
   const beatPct=lMeans.length>1?Math.round(lMeans.filter(x=>x.m<meanPct-1e-9).length/(lMeans.length-1)*100):null;
   const curIdx=historyExams.findIndex(e=>e.id===examId), prevEx=curIdx>0?historyExams[curIdx-1]:null;
+  subjectRows.forEach(r=>{ r.prevPct=null; if(prevEx && r.aid && !r.na){ const ps=((school.marks[prevEx.id]||{})[sid]||{})[r.aid]; if(ps!=null) r.prevPct=pctOf(ps,prevEx.maxMarksByArea[r.aid]??100); } });
   let prevMean=null;
   if(prevEx){ const mk=school.marks[prevEx.id][sid]||{}; let t=0,c=0; areas.forEach(a=>{ if(!takesArea(school,sid,a.id)) return; const sc=mk[a.id]; if(sc!=null){ t+=pctOf(sc,prevEx.maxMarksByArea[a.id]??100); c++; } }); if(c) prevMean=t/nTaken; }
   const markedRows=subjectRows.filter(r=>r.pct!=null).sort((a,b)=>b.pct-a.pct);
@@ -9623,6 +9771,56 @@ function buildReportHTML(school, sid, examId){
     <ul>${notes.map(x=>'<li>'+x+'</li>').join('')}</ul>
     ${clsMean!=null&&learners.length>1?`<div class="small" style="margin-top:3px">Class spread (Std Dev): ${clsSD.toFixed(1)} · "Vs class mean" = points above (+) or below (−) the class average.</div>`:''}
   </div>` : '';
+  // ---- Total points out of the maximum possible, and the position across ALL streams of the grade ----
+  const topPts = Math.max.apply(null, gradingFor(school,exam.classId).map(g=>g.points));
+  const maxPts = (isFinite(topPts) && topPts>0) ? topPts*nTaken : 0;
+  let gradePosLine = '';
+  if(!scoped){
+    const gl=raGradeLabel(cls.name), sibs=school.classes.filter(c=>c.id!==cls.id && raGradeLabel(c.name)===gl);
+    if(sibs.length){
+      const mean=(l,ar,mk,mx)=>{ let t=0; ar.forEach(a=>{ if(!takesArea(school,l.id,a.id)) return; const sc=(mk[l.id]||{})[a.id]; if(sc!=null) t+=pctOf(sc,mx[a.id]??100); }); const tc=takenCount(school,l.id,ar); return tc?t/tc:0; };
+      const all=learners.map(l=>({id:l.id,m:mean(l,areas,marksForExam,exam.maxMarksByArea)}));
+      let sibN=0;
+      sibs.forEach(c=>{ const e2=school.exams.find(e=>e.classId===c.id && e.name===exam.name && e.term===exam.term && String(e.year)===String(exam.year)); if(!e2) return; sibN++;
+        const ar2=areasForClass(school,c.id), mk2=school.marks[e2.id]||{}; studentsForExam(school,e2).forEach(l=>all.push({id:l.id,m:mean(l,ar2,mk2,e2.maxMarksByArea)})); });
+      const me=all.find(x=>x.id===sid);
+      if(sibN && me) gradePosLine = `<div><b>${escapeHtml(gl)} Position (all streams):</b> ${1+all.filter(x=>x.m>me.m+1e-9).length} of ${all.length}</div>`;
+    }
+  }
+  const cmtOn = school.areaComments!==false;
+  // ---- QR code: opens the Parent Portal for this school with the admission number filled in (no secrets in it) ----
+  const qrHtml = (()=>{
+    if(scoped || school.qrOnReport===false) return '';
+    const base=location.href.split(/[?#]/)[0]; if(!/^https?:/i.test(base)) return '';
+    const url=base+'?school='+encodeURIComponent(school.code)+'&role=parent'+(student.adm?'&adm='+encodeURIComponent(student.adm):'');
+    const svg=qrSvg(url); if(!svg) return '';
+    return `<div class="rc-qr">${svg}<div><b>Scan to view results online</b><br>Opens the Parent Portal. Log in with the learner's name and the Parent PIN given by the school.</div></div>`;
+  })();
+  // ---- Pathway Performance Profile ----
+  const pathHtml = (()=>{
+    if(scoped || !pathwayShowFor(school,cls.name)) return '';
+    const g={}; PATHWAYS.forEach(n=>{ g[n]=[]; });
+    subjectRows.forEach(r=>{ if(r.na) return; const pn=pathwayFor(school,{id:r.aid,name:r.name}); if(g[pn]) g[pn].push(r); });
+    const rows=PATHWAYS.map(pn=>{ const u=g[pn], m=u.filter(r=>r.pct!=null), sc=m.reduce((t,r)=>t+r.score,0), mx=m.reduce((t,r)=>t+r.max,0), perf=mx?sc/mx*100:null;
+      return {pn,u,m,sc,mx,perf,lv:perf!=null?gradeFor(school,perf,exam.classId):null}; }).filter(x=>x.u.length);
+    const ranked=rows.filter(x=>x.perf!=null).sort((a,b)=>b.perf-a.perf);
+    if(!ranked.length) return '';
+    const top=ranked[0], nxt=ranked[1], low=ranked.length>2?ranked[ranked.length-1]:null;
+    let verdict='Only one pathway has marks so far, so the pathways cannot be compared yet.';
+    if(nxt){
+      const gap=top.perf-nxt.perf, lead=top.m.slice().sort((a,b)=>b.pct-a.pct).slice(0,2).map(r=>escapeHtml(r.name)+' ('+r.pct.toFixed(0)+'%)').join(', ');
+      verdict = gap<3 ? `Results are balanced between <b>${escapeHtml(top.pn)}</b> and <b>${escapeHtml(nxt.pn)}</b> (only ${gap.toFixed(1)} points apart) — interests and career goals should guide the choice.`
+        : `The learner shows a strong inclination towards the <b>${escapeHtml(top.pn)}</b> pathway, led by ${lead}, and is ${gap.toFixed(1)} points ahead of ${escapeHtml(nxt.pn)}.`;
+      if(low && low.perf<top.perf-10) verdict += ` Most support is needed towards the <b>${escapeHtml(low.pn)}</b> pathway (${low.perf.toFixed(1)}%).`;
+    }
+    const partial=rows.some(x=>x.m.length<x.u.length);
+    return `<div class="rc-pathway"><h4>🧭 Pathway Performance Profile</h4>
+    <table class="rc-table"><tr><th>Pathway</th><th>Learning areas used</th><th>Score</th><th>Performance</th><th>Level</th></tr>
+    ${rows.map(x=>`<tr class="${nxt&&x===top?'rc-pw-best':''}"><td style="text-align:left">${escapeHtml(x.pn)}${nxt&&x===top?' ★':''}</td><td style="text-align:left">${x.u.map(r=>r.pct!=null?escapeHtml(r.name):'<i>'+escapeHtml(r.name)+'</i>').join(', ')}</td><td>${x.perf!=null?Number(x.sc.toFixed(1))+'/'+x.mx:'-'}</td><td>${x.perf!=null?x.perf.toFixed(1)+'%':'-'}</td><td>${x.lv?raBadge(school,cls.id,x.lv.level):'-'}</td></tr>`).join('')}</table>
+    ${nxt?`<div class="rc-pw-banner">🏆 Strongest pathway: <b>${escapeHtml(top.pn)}</b> (${top.perf.toFixed(1)}%)</div>`:''}
+    <div>${verdict}</div>
+    <div class="small" style="margin-top:3px">${partial?'Pathway scores use only the learning areas marked so far (unmarked areas in italics). ':''}Guidance from this assessment only — the final pathway choice also considers the learner's interests, talents and career goals.</div></div>`;
+  })();
   const html = `
   <div class="report-card print-only-block">
     <div class="rc-topband"></div>
@@ -9643,17 +9841,18 @@ function buildReportHTML(school, sid, examId){
         ${(school.parentDetails!==false && student.parentName)?`<div><b>Parent/Guardian:</b> ${escapeHtml(student.parentName)}</div>`:''}
         ${student.gender?`<div><b>Gender:</b> ${genderLabel(student.gender)}</div>`:''}
         <div><b>Position:</b> ${position} of ${learners.length}</div>
+        ${gradePosLine}
       </div>
       <div class="rc-overall-box">
         <div class="rc-grade">${overallGrade.level}</div>
-        <div class="rc-sub">${meanPct.toFixed(1)}% Mean &nbsp;·&nbsp; ${totalPts} Pts</div>
+        <div class="rc-sub">${meanPct.toFixed(1)}% Mean &nbsp;·&nbsp; ${totalPts}${maxPts?' / '+maxPts:''} Pts</div>
       </div>
     </div>
-    <table class="rc-table"><tr><th>Learning Area</th><th>Marks</th><th>%</th><th>Level</th><th>Points</th><th>Class Avg</th><th>+/−</th><th>Teacher</th></tr>
-    ${subjectRows.map(r=>r.na?`<tr><td style="text-align:left">${escapeHtml(r.name)}</td><td colspan="6" style="font-style:italic">N/A &mdash; not taking this learning area</td><td>${escapeHtml(r.teacher)}</td></tr>`:`<tr><td style="text-align:left">${escapeHtml(r.name)}</td><td>${r.score??'-'}/${r.max}</td><td>${r.pct!=null?r.pct.toFixed(1)+'%':'-'}</td>
-    <td>${r.g?raBadge(school,cls.id,r.g.level):'-'}</td><td>${r.g?r.g.points:'-'}</td><td>${r.cavg!=null?r.cavg.toFixed(1)+'%':'-'}</td><td>${r.dev!=null?sgn(r.dev):'-'}</td><td>${escapeHtml(r.teacher)}</td></tr>`).join('')}
+    <table class="rc-table"><tr><th>Learning Area</th><th>Marks</th><th>%</th><th>Level</th><th>Points</th><th>Class Avg</th><th>+/−</th><th>Teacher</th>${cmtOn?'<th>Teacher\'s Comment</th>':''}</tr>
+    ${subjectRows.map(r=>r.na?`<tr><td style="text-align:left">${escapeHtml(r.name)}</td><td colspan="6" style="font-style:italic">N/A &mdash; not taking this learning area</td><td>${escapeHtml(r.teacher)}</td>${cmtOn?'<td class="rc-cmt">-</td>':''}</tr>`:`<tr><td style="text-align:left">${escapeHtml(r.name)}</td><td>${r.score??'-'}/${r.max}</td><td>${r.pct!=null?r.pct.toFixed(1)+'%':'-'}</td>
+    <td>${r.g?raBadge(school,cls.id,r.g.level):'-'}</td><td>${r.g?r.g.points:'-'}</td><td>${r.cavg!=null?r.cavg.toFixed(1)+'%':'-'}</td><td>${r.dev!=null?sgn(r.dev):'-'}</td><td>${escapeHtml(r.teacher)}</td>${cmtOn?`<td class="rc-cmt">${escapeHtml(areaComment(school,exam.classId,r,sid))||'-'}</td>`:''}</tr>`).join('')}
     <tr class="rc-total"><td style="text-align:left">TOTAL / MEAN</td><td>${totalScore}</td><td>${meanPct.toFixed(1)}%</td>
-    <td>${raBadge(school,cls.id,overallGrade.level)}</td><td>${totalPts}</td><td>${clsMean!=null?clsMean.toFixed(1)+'%':'-'}</td><td>${clsMean!=null?sgn(meanPct-clsMean):'-'}</td><td>-</td></tr>
+    <td>${raBadge(school,cls.id,overallGrade.level)}</td><td>${totalPts}</td><td>${clsMean!=null?clsMean.toFixed(1)+'%':'-'}</td><td>${clsMean!=null?sgn(meanPct-clsMean):'-'}</td><td>-</td>${cmtOn?'<td class="rc-cmt">-</td>':''}</tr>
     </table>
     ${subjectRows.some(r=>r.na)?'<p class="small">N/A = this learner does not take that learning area. It is left out of the total, mean, points and position.</p>':''}
     ${(!allMarked && !scoped) ? `<p class="small" style="color:#9c2c2c">⚠ Assessment incomplete: only ${n} of ${nTaken} learning area(s) marked so far. The Mean % and overall level above already reflect this — they are based on general performance across ALL learning areas for this grade, so they will read low/blank until every learning area is entered.</p>` : ''}
@@ -9661,6 +9860,7 @@ function buildReportHTML(school, sid, examId){
     <div class="rc-chartwrap"><span class="rc-chart-label">Performance Trend</span>
     <canvas id="${chartId}" width="760" height="340"></canvas></div>
     ${analysisHtml}
+    ${pathHtml}
     <div class="rc-remark"><b>Grade Teacher's Remark:</b> ${escapeHtml(remark)}</div>
     ${metaLine}
     <div class="rc-sigrow has-stamp">
@@ -9669,7 +9869,7 @@ function buildReportHTML(school, sid, examId){
       ${sigBox('Parent / Guardian Signature')}
       <div class="rc-stamp">School<br>stamp</div>
     </div>
-    <div class="rc-issued">Date issued: ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</div>
+    <div class="rc-qrrow">${qrHtml}<div class="rc-issued">Date issued: ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</div></div>
     ${gradingKey}
     <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
     </div>
