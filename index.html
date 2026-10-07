@@ -1340,6 +1340,8 @@ function softRefresh(changed){
     if(teacherSig(currentSchool(), _t)!==_teacherSig){ calmRedraw(renderTeacher); toast('Your access was updated by the DOS/HOI'); return; }
     if(teacherTab==='timetable' || teacherTab==='examtt' || teacherTab==='dashboard' || teacherTab==='qbank' || teacherTab==='sow'){ calmRedraw(renderTeacher); return; }
     try{ renderTeacherApprovals(); }catch(e){}
+    // An exam just released by the DOS/HOI drops out of the teacher's exam list straight away.
+    if(teacherTab==='marks'){ try{ const x=document.activeElement; if(!(x && (x.id==='tExam'||x.id==='tArea'||x.id==='tClass'))) renderTeacherAreaOptions(); }catch(e){} }
     softRefreshMarksGrid('#marksGridArea', ()=>({examId: qs('#tExam')&&qs('#tExam').value, areaId: qs('#tArea')&&qs('#tArea').value, classId: qs('#tClass')&&qs('#tClass').value}), loadMarksGrid);
   } else if(session.role==='dos'){
     if(dosTab==='marks'){
@@ -1363,6 +1365,11 @@ function softRefreshMarksGrid(containerSel, readSelection, fullReloadFn){
   const exam = school.exams.find(e=>e.id===examId);
   const inputs = container.querySelectorAll('.markInput');
   const learners = studentsInClass(school, classId);
+  if(exam && examParts(exam,areaId).length){
+    const ae = document.activeElement;
+    if(!(ae && container.contains(ae) && ae.tagName==='INPUT')){ try{ fullReloadFn(); }catch(e){} }
+    return;
+  }
   if(!exam || inputs.length !== learners.length){
     // The roster or exam changed under us (a learner was added/removed elsewhere) — a
     // patch can't safely add/remove rows, so fall back to a full reload just this once.
@@ -1476,6 +1483,10 @@ function mergeSchoolData(base, local, remote, remoteNewer){
 function touchExam(e){ e.stateAt = Date.now(); }
 // Is this exam's result allowed out to parents / teacher-printed reports?
 function examReleased(school, e){ return !school.requireApproval || e.resultsApproval==='approved'; }
+// Finished = entry closed AND results released. Teachers no longer see these in Enter Marks, so
+// once Assessment 2 opens they only work on the current exam. A closed exam still waiting for
+// release (or disapproved and reopened) stays visible, so corrections can still be requested.
+function examFinishedForTeacher(school, e){ return isExamClosed(e) && examReleased(school, e) && e.resultsApproval!=='disapproved'; }
 // Whether THIS exam should reach the Parent Portal specifically — everything examReleased()
 // already requires (results out of approval-hold), PLUS the exam's own parentVisible flag
 // (a DOS/HOI can hide one exam from parents, e.g. a mock, without touching its approval
@@ -1838,10 +1849,29 @@ function uid(prefix){ return prefix + Math.random().toString(36).slice(2,9); }
 // parentCandidateMatches. 5 digits (10000–99999): easy enough to write on a slip of paper
 // or read out, and combined with the login lockout, not practical to brute-force blind.
 function genParentPin(){ return String(Math.floor(10000 + Math.random()*90000)); }
+// Unbiased random integer in [0,n) from the browser's cryptographic generator (Math.random is predictable).
+function secureRandInt(n){
+  const a = new Uint32Array(1), lim = Math.floor(4294967296/n)*n; let x;
+  do{ crypto.getRandomValues(a); x = a[0]; }while(x>=lim);
+  return x % n;
+}
+// The school code is the only thing standing between a school's data and anyone who has the Firebase
+// config, so easy-to-guess codes are rejected: too short, one repeated character, a run like 12345678,
+// a repeating block (12341234), or letters only (a name).
+function codeWeakReason(code){
+  code = String(code||'');
+  if(code.length<8) return 'it is shorter than 8 characters';
+  if(/^(.)\1+$/.test(code)) return 'it is one repeated character';
+  if(/^\d+$/.test(code) && ('0123456789'.includes(code) || '9876543210'.includes(code))) return 'it is a number sequence';
+  if(/^(.{1,4})\1+$/.test(code)) return 'it is a repeating pattern';
+  if(!/\d/.test(code)) return 'it has no digits (names and words are easy to guess)';
+  return '';
+}
+function codeIsWeak(code){ return !!codeWeakReason(code); }
 function gen8DigitCode(){
   let code;
-  do{ code = String(Math.floor(10000000 + Math.random()*90000000)); }
-  while(DB.schools[code]);
+  do{ code = String(10000000 + secureRandInt(90000000)); }
+  while(DB.schools[code] || codeIsWeak(code));
   return code;
 }
 
@@ -1867,6 +1897,7 @@ function newSchool(name, dosUsername, dosPassword, hoiName, address, email, phon
   const trialDays = DB.settings.trialDays || 14;
   DB.schools[code] = {
     code, name,
+    strictCode: true,   // created after the stronger-code rules: applies only to schools made from now on
     hoiName: hoiName || 'Head of Institution',
     hoiSignature: '', // data URL of the HOI's saved signature, drawn once and reused on every report
     logo: '', // data URL of the school badge/crest, shown on every printed report and sheet header
@@ -2498,7 +2529,7 @@ function renderLogin(){
       f.innerHTML = `
         <p class="login-sub">Please enter your username to access your account.</p>
         <div id="loginStep1">
-          ${prefillCode ? `<input type="hidden" id="scode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="scode" placeholder="School Code (8-digit)" maxlength="8"></div>`}
+          ${prefillCode ? `<input type="hidden" id="scode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="scode" placeholder="School Code" maxlength="20"></div>`}
           <div class="login-field">${PERSON_ICO}<input class="login-id-field" id="duser" placeholder="Username" onkeydown="if(event.key==='Enter')loginStep2()"></div>
           <button class="login-continue" onclick="loginStep2()">Continue</button>
         </div>
@@ -2515,7 +2546,7 @@ function renderLogin(){
       f.innerHTML = `
         <p class="login-sub">Please enter your username to access your account.</p>
         <div id="loginStep1">
-          ${prefillCode ? `<input type="hidden" id="scode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="scode" placeholder="School Code (8-digit)" maxlength="8"></div>`}
+          ${prefillCode ? `<input type="hidden" id="scode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="scode" placeholder="School Code" maxlength="20"></div>`}
           <div class="login-field">${PERSON_ICO}<input class="login-id-field" id="tuser" placeholder="Username" onkeydown="if(event.key==='Enter')loginStep2()"></div>
           <button class="login-continue" onclick="loginStep2()">Continue</button>
         </div>
@@ -2532,7 +2563,7 @@ function renderLogin(){
       f.innerHTML = `
         <p class="login-sub">Please enter your username to access your account.</p>
         <div id="loginStep1">
-          ${prefillCode ? `<input type="hidden" id="scode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="scode" placeholder="School Code (8-digit)" maxlength="8"></div>`}
+          ${prefillCode ? `<input type="hidden" id="scode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="scode" placeholder="School Code" maxlength="20"></div>`}
           <div class="login-field">${PERSON_ICO}<input class="login-id-field" id="fuser" placeholder="Username" onkeydown="if(event.key==='Enter')loginStep2()"></div>
           <button class="login-continue" onclick="loginStep2()">Continue</button>
         </div>
@@ -2547,7 +2578,7 @@ function renderLogin(){
       f.innerHTML = `
         <p class="login-sub">Please enter your username to access your account.</p>
         <div id="loginStep1">
-          ${prefillCode ? `<input type="hidden" id="scode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="scode" placeholder="School Code (8-digit)" maxlength="8"></div>`}
+          ${prefillCode ? `<input type="hidden" id="scode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="scode" placeholder="School Code" maxlength="20"></div>`}
           <div class="login-field">${PERSON_ICO}<input class="login-id-field" id="suser" placeholder="Username" onkeydown="if(event.key==='Enter')loginStep2()"></div>
           <button class="login-continue" onclick="loginStep2()">Continue</button>
         </div>
@@ -2568,7 +2599,7 @@ function renderLogin(){
       f.innerHTML = `
         <p class="login-sub">Please enter your child's admission number to access their results.</p>
         <div id="loginStep1">
-          ${prefillCode ? `<input type="hidden" id="pcode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="pcode" placeholder="School Code (8-digit)" maxlength="8"></div>`}
+          ${prefillCode ? `<input type="hidden" id="pcode" value="${escapeHtml(prefillCode)}">` : `<div class="login-field plain"><input id="pcode" placeholder="School Code" maxlength="20"></div>`}
           <div class="login-field">${HASH_ICO}<input class="login-id-field" id="padm" placeholder="Admission Number" onkeydown="if(event.key==='Enter')loginStep2()"></div>
           <button class="login-continue" onclick="loginStep2()">Continue</button>
         </div>
@@ -3392,11 +3423,15 @@ async function deleteSchool(code){
 async function editSchoolCode(oldCode){
   const s = DB.schools[oldCode];
   if(!s) return;
-  const input = prompt(`Enter the new school code for "${s.name}".\n\nThis replaces the current code (${oldCode}). Any login link already shared using the old code will stop working — you'll need to share the new one from "🪪 Credentials" afterwards.`, oldCode);
+  const strict = !!s.strictCode;   // older schools keep the original, unchanged behaviour
+  const weakNow = strict ? codeWeakReason(oldCode) : '';
+  const input = prompt(`Enter the new school code for "${s.name}".\n\nThis replaces the current code (${oldCode}). Any login link already shared using the old code will stop working — you'll need to share the new one from "🪪 Credentials" afterwards.\n\n${weakNow?`⚠ The current code is easy to guess (${weakNow}). A random one is suggested below.`:(strict?'Tip: the random 8-digit code is the safest. A code the school chooses is easier for others to guess.':'')}${strict?'\nRules: 8–20 letters/numbers (- and _ allowed), including at least one digit.':''}`, weakNow ? gen8DigitCode() : oldCode);
   if(input==null) return; // cancelled
   const newCode = input.trim();
   if(!newCode){ toast('School code cannot be empty','err'); return; }
   if(!/^[A-Za-z0-9_-]+$/.test(newCode)){ toast('School code can only contain letters, numbers, - and _','err'); return; }
+  if(newCode.length>20){ toast('School code can be at most 20 characters','err'); return; }
+  if(strict && newCode!==oldCode){ const why = codeWeakReason(newCode); if(why){ toast('That code is too easy to guess — '+why,'err'); return; } }
   if(newCode===oldCode) return;
   if(DB.schools[newCode]){ toast('That school code is already in use by another school','err'); return; }
   if(!confirm(`Change school code from ${oldCode} to ${newCode}? Existing login links using ${oldCode} will stop working.`)) return;
@@ -3509,7 +3544,7 @@ function ttExt(s,p){const t=ttData(s),ext={};const plans=p.kind==='rem'?(p.avoid
 // ---- Automatic generator: randomised greedy placement, many restarts, keeps the best result ----
 function ttGen(s,p,keep){ttNorm(p);const {L,B}=ttSlots(p),N=L.length,days=p.days.slice().sort(),cls=p.classIds.filter(c=>s.classes.some(x=>x.id===c)),ext=ttExt(s,p);let best=null;
   for(let at=0;at<40;at++){const r=ttAttempt(s,p,L,B,N,days,cls,ext,keep);if(!best||r.un.length<best.un.length||(r.un.length===best.un.length&&r.pen<best.pen))best=r;if(!best.un.length&&at>=4)break;}return best;}
-function ttAttempt(s,p,L,B,N,days,cls,ext,keep){const cells={},busy={},placed={};let pen=0;
+function ttAttempt(s,p,L,B,N,days,cls,ext,keep){const cells={},busy={},placed={},fix=new Set(),key=(c,dk,pk)=>c+'|'+dk+'|'+pk;let pen=0;
   const bz=(t,dk)=>{const o=busy[t]||(busy[t]={});return o[dk]||(o[dk]=[]);};
   const tcf=ttData(s).tconf||{},offD=(t,dk)=>!!(t&&tcf[t]&&(tcf[t].off||[]).includes(+dk.slice(1))),dayN=(t,dk)=>((busy[t]&&busy[t][dk])||[]).length+((ext[t]&&ext[t][dk])||[]).length,capOk=(t,dk,z)=>!t||!tcf[t]||!(+tcf[t].max)||dayN(t,dk)+z<=+tcf[t].max;
   const free=(t,dk,sl)=>!t||(!ttOv(ext[t]&&ext[t][dk],sl.s,sl.e)&&!ttOv(busy[t]&&busy[t][dk],sl.s,sl.e));
@@ -3519,7 +3554,8 @@ function ttAttempt(s,p,L,B,N,days,cls,ext,keep){const cells={},busy={},placed={}
   const tl=t=>Object.values(busy[t]||{}).reduce((x,y)=>x+y.length,0);
   if(keep)cls.forEach(c=>Object.keys(p.cells[c]||{}).forEach(dk=>Object.keys(p.cells[c][dk]||{}).forEach(pk=>{const v=p.cells[c][dk][pk];if(v&&v.l&&v.a&&L[+pk.slice(1)-1]&&days.includes(+dk.slice(1))){put(c,dk,pk,{a:v.a,t:v.t||'',l:1});placed[c+'|'+v.a]=(placed[c+'|'+v.a]||0)+1;}})));
   const items=[];cls.forEach(c=>{const ld=p.load[c]||{};areasForClass(s,c).forEach(a=>{if(p.skip&&p.skip[a.id])return;const need=(+ld[a.id]||0)-(placed[c+'|'+a.id]||0);if(need<=0)return;const d=Math.min(+R(p,a.id).dbl||0,need>>1);for(let i=0;i<d;i++)items.push({c,a:a.id,z:2,sp:R(p,a.id).dmode==='split'?1:0});for(let i=0;i<need-2*d;i++)items.push({c,a:a.id,z:1});});});
-  items.forEach(it=>{const r=R(p,it.a);it.k=(it.z===2?-100:0)+(r.per.length?r.per.length*2:N*2)+Math.random()*4;});items.sort((x,y)=>x.k-y.k);
+  const dem={};items.forEach(it=>{const t=ttTeach(s,it.c,it.a);if(t.length===1)dem[t[0]]=(dem[t[0]]||0)+it.z;});
+  items.forEach(it=>{const r=R(p,it.a),t=ttTeach(s,it.c,it.a);it.k=(it.z===2?-100:0)+(r.per.length?r.per.length*2:N*2)-(t.length===1?(dem[t[0]]||0)*.25:0)+Math.random()*4;});items.sort((x,y)=>x.k-y.k);
   const un=[];
   items.forEach(it=>{const r=R(p,it.a),ts=ttTeach(s,it.c,it.a);let bc=null;
     if(it.sp){let b2=null;days.forEach(d=>{const dk='d'+d,same=cnt(it.c,it.a,dk);if(same+2>Math.max(+r.max||2,2))return;const dl=Object.keys(day(it.c,dk)).length,dd=day(it.c,dk);
@@ -3532,7 +3568,7 @@ function ttAttempt(s,p,L,B,N,days,cls,ext,keep){const cells={},busy={},placed={}
         if(r.pref==='morning'&&n1>N/2)sc+=6;if(r.pref==='afternoon'&&n2<=N/2)sc+=6;
         [d-1,d+1].forEach(x=>{if(cnt(it.c,it.a,'d'+x)>0)sc+=1.5;});
         if(!b2||sc<b2.sc)b2={sc,dk,n1,n2,tid};}});
-    if(!b2){un.push(it);return;}pen+=b2.sc;put(it.c,b2.dk,'p'+b2.n1,{a:it.a,t:b2.tid});put(it.c,b2.dk,'p'+b2.n2,{a:it.a,t:b2.tid});return;}
+    if(!b2){un.push(it);return;}pen+=b2.sc;put(it.c,b2.dk,'p'+b2.n1,{a:it.a,t:b2.tid});put(it.c,b2.dk,'p'+b2.n2,{a:it.a,t:b2.tid});fix.add(key(it.c,b2.dk,'p'+b2.n1));fix.add(key(it.c,b2.dk,'p'+b2.n2));return;}
         days.forEach(d=>{const dk='d'+d,same=cnt(it.c,it.a,dk);if(same+it.z>Math.max(+r.max||2,it.z))return;const dl=Object.keys(day(it.c,dk)).length;
       for(let n=1;n<=N-(it.z-1);n++){
         if(r.per.length&&!(r.per.includes(n)&&(it.z===1||r.per.includes(n+1))))continue;
@@ -3543,12 +3579,55 @@ function ttAttempt(s,p,L,B,N,days,cls,ext,keep){const cells={},busy={},placed={}
         if(r.pref==='morning'&&n>N/2)sc+=6;if(r.pref==='afternoon'&&n<=N/2)sc+=6;
         [d-1,d+1].forEach(x=>{if(cnt(it.c,it.a,'d'+x)>0)sc+=1.5;});
         if(!bc||sc<bc.sc)bc={sc,dk,n,tid};}});
-    if(!bc){un.push(it);return;}pen+=bc.sc;for(let z=0;z<it.z;z++)put(it.c,bc.dk,'p'+(bc.n+z),{a:it.a,t:bc.tid});});
-  return {cells,un,pen};}
+    if(!bc){un.push(it);return;}pen+=bc.sc;for(let z=0;z<it.z;z++){put(it.c,bc.dk,'p'+(bc.n+z),{a:it.a,t:bc.tid});if(it.z===2)fix.add(key(it.c,bc.dk,'p'+(bc.n+z)));}});
+  // ---- Repair pass: a lesson that found no free slot may still fit if ONE or TWO already-placed lessons move elsewhere
+  //      (typical case: the class has an empty period but the teacher is busy with another class at that time). Every trial is undone if it fails. ----
+  const prot=new Set();let log=[];
+  const rawDel=(c,dk,pk)=>{const v=cells[c]&&cells[c][dk]&&cells[c][dk][pk];if(!v)return null;delete cells[c][dk][pk];if(v.t){const sl=L[+pk.slice(1)-1],arr=(busy[v.t]||{})[dk]||[],i=arr.findIndex(x=>x[0]===sl.s&&x[1]===sl.e);if(i>=0)arr.splice(i,1);}return v;};
+  const rp=(c,dk,pk,v)=>{put(c,dk,pk,v);log.push(['p',c,dk,pk]);prot.add(key(c,dk,pk));};
+  const rd=(c,dk,pk)=>{const v=rawDel(c,dk,pk);if(v)log.push(['d',c,dk,pk,v]);return v;};
+  const undo=m=>{while(log.length>m){const o=log.pop();if(o[0]==='p'){rawDel(o[1],o[2],o[3]);prot.delete(key(o[1],o[2],o[3]));}else put(o[1],o[2],o[3],o[4]);}};
+  const classOK=(it,dk,n)=>{const r=R(p,it.a);if(cnt(it.c,it.a,dk)+1>Math.max(+r.max||2,1))return false;if(r.per.length&&!r.per.includes(n))return false;if(r.nolast&&n===N)return false;return true;};
+  const scoreAt=(it,dk,n)=>{const r=R(p,it.a),d=+dk.slice(1);let sc=n*.6+Object.keys(day(it.c,dk)).length*1.5+cnt(it.c,it.a,dk)*4+Math.random()*2;if(r.pref==='morning'&&n>N/2)sc+=6;if(r.pref==='afternoon'&&n<=N/2)sc+=6;[d-1,d+1].forEach(x=>{if(cnt(it.c,it.a,'d'+x)>0)sc+=1.5;});return sc;};
+  const tOK=(t,dk,n)=>!offD(t,dk)&&capOk(t,dk,1)&&free(t,dk,L[n-1]);
+  const tryAt=(it,dk,n)=>{if(day(it.c,dk)['p'+n]||!classOK(it,dk,n))return false;const ts=ttTeach(s,it.c,it.a);let tid='';
+    if(ts.length){const f=ts.filter(t=>tOK(t,dk,n));if(!f.length)return false;f.sort((a,b)=>tl(a)-tl(b));tid=f[0];}rp(it.c,dk,'p'+n,{a:it.a,t:tid});return true;};
+  const simple=it=>{let b=null;const ts=ttTeach(s,it.c,it.a);days.forEach(d=>{const dk='d'+d;for(let n=1;n<=N;n++){if(day(it.c,dk)['p'+n]||!classOK(it,dk,n))continue;if(ts.length&&!ts.some(t=>tOK(t,dk,n)))continue;const sc=scoreAt(it,dk,n);if(!b||sc<b.sc)b={sc,dk,n};}});return !!b&&tryAt(it,b.dk,b.n);};
+  const movable=x=>{const v=day(x[0],x[1])[x[2]];return !!v&&!v.l&&!prot.has(key(x[0],x[1],x[2]))&&!fix.has(key(x[0],x[1],x[2]));};
+  const eject=(it,d)=>{if(simple(it))return true;if(d<=0)return false;
+    const ts=ttTeach(s,it.c,it.a),opts=[];
+    days.forEach(dn=>{const dk='d'+dn;for(let n=1;n<=N;n++){const occ=day(it.c,dk)['p'+n];if(occ&&occ.a===it.a)continue;if(!classOK(it,dk,n))continue;
+      (ts.length?ts:['']).forEach(tid=>{const vic=[];if(occ)vic.push([it.c,dk,'p'+n]);
+        if(tid){if(offD(tid,dk)||ttOv(ext[tid]&&ext[tid][dk],L[n-1].s,L[n-1].e))return;cls.forEach(c2=>{if(c2===it.c)return;const v=day(c2,dk)['p'+n];if(v&&v.t===tid)vic.push([c2,dk,'p'+n]);});}
+        if(!vic.length||vic.length>2||!vic.every(movable))return;opts.push({dk,n,vic,sc:vic.length*6+scoreAt(it,dk,n)});});}});
+    opts.sort((a,b)=>a.sc-b.sc);
+    for(const o of opts.slice(0,14)){const m=log.length,vs=o.vic.map(x=>({c:x[0],a:rd(x[0],x[1],x[2]).a}));
+      if(tryAt(it,o.dk,o.n)){let ok=true;for(const v of vs){if(!eject({c:v.c,a:v.a,z:1},d-1)){ok=false;break;}}if(ok)return true;}
+      undo(m);}
+    return false;};
+  const left=[];un.forEach(it=>{if(it.z===1&&!it.sp&&eject(it,2))return;left.push(it);});
+  return {cells,un:left,pen};}
 // ---- Health check: load mismatches, missing teachers, teacher double-booking, per-day limits ----
-function ttIssues(s,p){ttNorm(p);const out=[],bad={},L=ttSlots(p).L,ext=ttExt(s,p),mine={};
+// Explains WHY a lesson could not be placed: counts the empty periods of the class and what blocks each one.
+function ttWhy(s,p,c,a,L,ext,own){
+  const r=R(p,a),ts=ttTeach(s,c,a),tcf=ttData(s).tconf||{},N=L.length;let free=0,rule=0,busy=0,off=0,cap=0,open=0;
+  p.days.forEach(d=>{const dk='d'+d,cd=(p.cells[c]||{})[dk]||{};let same=0;Object.values(cd).forEach(v=>{if(v&&v.a===a)same++;});
+    for(let n=1;n<=N;n++){if(cd['p'+n])continue;free++;
+      if(same+1>Math.max(+r.max||2,1)||(r.per.length&&!r.per.includes(n))||(r.nolast&&n===N)){rule++;continue;}
+      if(!ts.length){open++;continue;}
+      const sl=L[n-1],why=ts.map(t=>{const cf=tcf[t]||{};if((cf.off||[]).includes(d))return 'off';
+        if(ttOv(ext[t]&&ext[t][dk],sl.s,sl.e)||ttOv(own[t]&&own[t][dk],sl.s,sl.e))return 'busy';
+        if(+cf.max&&(((own[t]&&own[t][dk])||[]).length+((ext[t]&&ext[t][dk])||[]).length)>=+cf.max)return 'cap';return '';});
+      if(why.some(x=>!x))open++;else if(why.every(x=>x==='off'))off++;else if(why.includes('busy'))busy++;else cap++;}});
+  if(!free)return 'the class timetable is already full — raise lessons per day or lower other subjects';
+  let over='';if(ts.length===1){const t=ts[0];let tot=0;p.classIds.forEach(c2=>areasForClass(s,c2).forEach(a2=>{if(p.skip&&p.skip[a2.id])return;const q=ttTeach(s,c2,a2.id);if(q.length===1&&q[0]===t)tot+=+(p.load[c2]||{})[a2.id]||0;}));const tc=ttTeachCap(s,p,t);if(tot>tc)over=`⚠ ${ttTn(s,t)} is given ${tot} lessons but can only fit ${tc} (days available × lessons per day) — lower the lessons per week or assign another teacher. `;}
+  const bits=[];if(busy)bits.push(`${busy} where the teacher is teaching another class`);if(off)bits.push(`${off} on the teacher's day off`);if(cap)bits.push(`${cap} where the teacher has reached the daily limit`);if(rule)bits.push(`${rule} blocked by this subject's rules (max per day / allowed periods)`);
+  return `${over}${free} empty period${free>1?'s':''} in this class: ${bits.join(', ')||'none blocked'}${open?`; ${open} look open — press Generate again or place it by hand`:''}`;
+}
+function ttIssues(s,p){ttNorm(p);const out=[],bad={},L=ttSlots(p).L,ext=ttExt(s,p),mine={},own={};
+  p.classIds.forEach(c=>Object.keys(p.cells[c]||{}).forEach(dk=>Object.keys(p.cells[c][dk]||{}).forEach(pk=>{const v=p.cells[c][dk][pk],sl=L[+pk.slice(1)-1];if(v&&v.t&&sl)((own[v.t]=own[v.t]||{})[dk]=(own[v.t][dk]||[])).push([sl.s,sl.e]);})));
   p.classIds.forEach(c=>{areasForClass(s,c).forEach(a=>{if(p.skip&&p.skip[a.id])return;const need=+(p.load[c]||{})[a.id]||0;if(!need)return;let got=0;Object.keys(p.cells[c]||{}).forEach(dk=>Object.values(p.cells[c][dk]||{}).forEach(v=>{if(v&&v.a===a.id)got++;}));
-    if(got!==need)out.push(`${ttCn(s,c)} · ${a.name}: ${got} of ${need} lessons placed`);if(!ttTeach(s,c,a.id).length)out.push(`${ttCn(s,c)} · ${a.name}: no teacher assigned (Teachers & Permissions)`);});
+    if(got!==need)out.push(`${ttCn(s,c)} · ${a.name}: ${got} of ${need} lessons placed`+(got<need?` — ${ttWhy(s,p,c,a.id,L,ext,own)}`:''));if(!ttTeach(s,c,a.id).length)out.push(`${ttCn(s,c)} · ${a.name}: no teacher assigned (Teachers & Permissions)`);});
     Object.keys(p.cells[c]||{}).forEach(dk=>{const m={};Object.keys(p.cells[c][dk]||{}).forEach(pk=>{const v=p.cells[c][dk][pk],sl=L[+pk.slice(1)-1];if(!v||!v.a)return;m[v.a]=(m[v.a]||0)+1;if(v.t&&sl){const k=v.t+'|'+dk;(mine[k]=mine[k]||[]).push({c,pk,s:sl.s,e:sl.e});}});
       Object.keys(m).forEach(a=>{const r=R(p,a);if(m[a]>Math.max(+r.max||2,r.dbl?2:1))out.push(`${ttCn(s,c)} · ${ttAn(s,a)}: ${m[a]} lessons on ${TT_D[+dk.slice(1)]} (limit ${r.max})`);});});});
   Object.keys(mine).forEach(k=>{const [tid,dk]=k.split('|');mine[k].forEach((x,i)=>{if(mine[k].some((y,j)=>j!==i&&x.s<y.e&&x.e>y.s)||ttOv(ext[tid]&&ext[tid][dk],x.s,x.e))bad[x.c+'|'+dk+'|'+x.pk]=1;});});
@@ -4782,7 +4861,7 @@ const HELP_SECTIONS = [
     <p><b>3. Build paper.</b> Choose grade, learning area, total marks and time. The app picks questions to reach the marks for each section, mixes easy, medium and hard questions as you set, spreads the topics and avoids questions used in earlier papers. Swap (&#8635;) or remove any question, then print the paper or the marking scheme. If the bank runs short, it offers to write more with AI.</p>
     <p><b>4. Saved papers.</b> Save a paper to reopen, edit or reprint it later.</p>` },
   { title: '🛠 Troubleshooting &amp; FAQ', body: `
-    <p><b>"School code not found."</b> — Double-check the 8-digit School Code. If the school was only just created
+    <p><b>"School code not found."</b> — Double-check the School Code. If the school was only just created
     on another device and Multi-Device Sync isn't on yet, it may take a moment to appear on this one.</p>
     <p><b>"Email codes aren't set up for this deployment yet."</b> — The person has an email on file, but this
     deployment hasn't had email delivery configured; use a registered phone number instead if SMS is configured.</p>
@@ -5837,10 +5916,11 @@ function tplExamCard(school, e){
   <details style="margin:0 0 10px">
     <summary class="small" style="cursor:pointer">✏️ Edit Max Marks per Learning Area</summary>
     <div class="row" style="margin-top:6px">
-      ${areasForClass(school,e.classId).map(a=>`<div><label>${escapeHtml(a.name)}</label><input type="number" min="1" value="${e.maxMarksByArea[a.id]??100}" onchange="updExamMaxMarks('${e.id}','${a.id}',this.value)"></div>`).join('') || '<p class="small">No learning areas assigned to this grade.</p>'}
+      ${areasForClass(school,e.classId).map(a=>`<div><label>${escapeHtml(a.name)}</label><input type="number" min="1" value="${e.maxMarksByArea[a.id]??100}" ${paperLocked(e,a.id)?'disabled title="Set automatically from the papers total"':''} onchange="updExamMaxMarks('${e.id}','${a.id}',this.value)"></div>`).join('') || '<p class="small">No learning areas assigned to this grade.</p>'}
     </div>
     <p class="small">Scores aren't rescaled — lowering the max below entered scores pushes their % above 100.</p>
   </details>
+  ${paperDefHTML(school,e)}
   <details style="margin:0 0 10px">
     <summary class="small" style="cursor:pointer">🗓 Report Card Dates &amp; Attendance</summary>
     <div class="row" style="margin-top:6px">
@@ -5899,8 +5979,8 @@ function tplExamCard(school, e){
     ${pending.map(r=>{
       const stu = school.students.find(s=>s.id===r.sid);
       const area = school.learningAreas.find(a=>a.id===r.areaId);
-      const current = ((school.marks[e.id]||{})[r.sid]||{})[r.areaId];
-      return `<tr><td>${escapeHtml(r.teacherName)}</td><td>${stu?escapeHtml(stu.name):'-'}</td><td>${area?escapeHtml(area.name):'-'}</td>
+      const current = ((school.marks[e.id]||{})[r.sid]||{})[reqKey(r)];
+      return `<tr><td>${escapeHtml(r.teacherName)}</td><td>${stu?escapeHtml(stu.name):'-'}</td><td>${area?escapeHtml(area.name)+paperTag(e,r):'-'}</td>
       <td>${current??'-'}</td><td><b>${r.newVal}</b></td>
       <td><button onclick="approveEditRequest('${e.id}','${r.id}')">✅</button> <button class="danger" onclick="rejectEditRequest('${e.id}','${r.id}')">✕</button></td></tr>`;
     }).join('')}
@@ -5909,7 +5989,7 @@ function tplExamCard(school, e){
   ${(()=>{ const done=(e.editRequests||[]).filter(r=>r.status!=='pending'); return done.length ? `<details style="margin-top:8px"><summary class="small" style="cursor:pointer">Decided edit requests (${done.length})</summary>
     <table><tr><th>Teacher</th><th>Learner</th><th>Learning Area</th><th>Requested</th><th>Decision</th><th>Note</th></tr>
     ${done.map(r=>{ const stu=school.students.find(x=>x.id===r.sid), area=school.learningAreas.find(x=>x.id===r.areaId);
-      return `<tr><td>${escapeHtml(r.teacherName)}</td><td>${stu?escapeHtml(stu.name):'-'}</td><td>${area?escapeHtml(area.name):'-'}</td><td>${r.newVal}</td>
+      return `<tr><td>${escapeHtml(r.teacherName)}</td><td>${stu?escapeHtml(stu.name):'-'}</td><td>${area?escapeHtml(area.name)+paperTag(e,r):'-'}</td><td>${r.newVal}</td>
       <td>${r.status==='approved'?'<span class="badge EE">✅ Approved</span>':'<span class="badge BE">❌ Rejected</span>'}<div class="small">${r.decidedAt?new Date(r.decidedAt).toLocaleDateString():''}${r.decidedBy?' · '+escapeHtml(r.decidedBy):''}</div></td><td class="small">${escapeHtml(r.note||'')}</td></tr>`; }).join('')}
     </table></details>` : ''; })()}
   </div>`;
@@ -6049,12 +6129,13 @@ function approveEditRequest(examId,reqId){
   const req = (e.editRequests||[]).find(r=>r.id===reqId); if(!req || req.status!=='pending') return;
   school.marks[examId] = school.marks[examId] || {};
   school.marks[examId][req.sid] = school.marks[examId][req.sid] || {};
-  school.marks[examId][req.sid][req.areaId] = req.newVal;
+  school.marks[examId][req.sid][reqKey(req)] = req.newVal;
+  if(req.pid) paperRecompute(school, e, req.sid, req.areaId);
   req.status = 'approved'; req.decidedAt = new Date().toISOString(); req.decidedBy = approverDisplayName(school);
   // The marks changed, so any earlier results approval no longer covers them.
   if(e.resultsApproval==='approved'){ e.resultsApproval = 'pending'; e.approvedBy = ''; e.approvalAt = ''; }
   touchExam(e);
-  saveDB(DB); pushMarkToCloud(school.code, examId, req.sid, req.areaId, req.newVal);
+  saveDB(DB); pushMarkToCloud(school.code, examId, req.sid, reqKey(req), req.newVal);
   toast('Edit approved & applied'); renderCurrentPortal();
 }
 function rejectEditRequest(examId,reqId){
@@ -6065,6 +6146,131 @@ function rejectEditRequest(examId,reqId){
   if(note===null) return;
   req.status = 'rejected'; req.note = note.trim(); req.decidedAt = new Date().toISOString(); req.decidedBy = approverDisplayName(school);
   touchExam(e); saveDB(DB); toast('Edit request rejected','err'); renderCurrentPortal();
+}
+/* ============================= MULTI-PAPER LEARNING AREAS =============================
+   A learning area (e.g. English) can be split into several papers/components inside ONE exam
+   (English + Reading, or PP1/PP2/PP3). Each paper's mark is stored beside the area's mark as
+   marks[exam][learner]["<areaId>~<paperId>"]; the combined learning-area score is worked out
+   automatically and written to marks[exam][learner][areaId] — the key every report, ranking,
+   sheet and parent view already reads — so nothing downstream needed to change.
+   mode "sum": total = papers added together, out of the sum of the papers' maxes (may be above or below 100).
+   mode "avg": each paper's % is averaged, then scaled to the area's own max. */
+const PAPER_UI={open:{}};
+const paperKey=(a,p)=>a+'~'+p;
+function examParts(e,a){const d=e&&e.papers&&e.papers[a];return d&&Array.isArray(d.parts)&&d.parts.length>=2?d.parts:[];}
+function examPaperMode(e,a){const d=e&&e.papers&&e.papers[a];return d&&d.mode==='avg'?'avg':'sum';}
+function paperLocked(e,a){return examParts(e,a).length>0&&examPaperMode(e,a)==='sum';}
+function reqKey(r){return r.pid?paperKey(r.areaId,r.pid):r.areaId;}
+function paperTag(e,r){if(!r||!r.pid)return '';const d=(e.papers||{})[r.areaId],p=d&&(d.parts||[]).find(x=>x.id===r.pid);return p?` <span class="small">· ${escapeHtml(p.name)}</span>`:'';}
+function paperCombine(e,sid,areaId,mk){
+  const parts=examParts(e,areaId);if(!parts.length)return null;
+  let got=0,sum=0,pc=0;
+  parts.forEach(p=>{const v=(mk||{})[paperKey(areaId,p.id)];if(v!=null&&v!==''&&!isNaN(v)){got++;sum+=+v;pc+=(+v)/p.max*100;}});
+  return {got,n:parts.length,sum:Math.round(sum*100)/100,avgPct:got?pc/got:0};
+}
+// Re-works the learner's combined learning-area score from their paper marks.
+// Returns the combined score, null when incomplete, undefined when no paper mark exists (left untouched).
+function paperRecompute(school,e,sid,areaId){
+  const mkAll=(school.marks[e.id]=school.marks[e.id]||{}),mk=mkAll[sid]||{},c=paperCombine(e,sid,areaId,mk);
+  if(!c||!c.got)return undefined;
+  mkAll[sid]=mk;
+  let val=null;
+  if(c.got===c.n){const max=e.maxMarksByArea[areaId]??100;val=examPaperMode(e,areaId)==='sum'?c.sum:Math.round(c.avgPct*max/100*10)/10;}
+  if(val==null){if(mk[areaId]!=null){delete mk[areaId];pushMarkToCloud(school.code,e.id,sid,areaId,null);}}
+  else if(mk[areaId]!==val){mk[areaId]=val;pushMarkToCloud(school.code,e.id,sid,areaId,val);}
+  return val;
+}
+function paperRowCells(school,e,areaId,sid){
+  const mk=(school.marks[e.id]||{})[sid]||{},c=paperCombine(e,sid,areaId,mk),max=e.maxMarksByArea[areaId]??100;
+  if(!c||!c.got)return {tot:'-',pct:'-',lvl:'-'};
+  if(c.got<c.n)return {tot:`<span class="small">${c.got}/${c.n} papers in</span>`,pct:'-',lvl:'-'};
+  const v=mk[areaId];if(v==null)return {tot:'-',pct:'-',lvl:'-'};
+  const p=pctOf(v,max);
+  return {tot:examPaperMode(e,areaId)==='sum'?`<b>${v}</b> / ${max}`:`<b>${v}</b> / ${max}<div class="small">avg ${c.avgPct.toFixed(1)}%</div>`,pct:p.toFixed(1)+'%',lvl:levelBadge(school,p,e.classId)};
+}
+function paperRefreshRow(school,e,areaId,sid){
+  const r=paperRowCells(school,e,areaId,sid),q=s=>document.querySelector(s+sid);
+  if(q('.totCell-'))q('.totCell-').innerHTML=r.tot;if(q('.pctCell-'))q('.pctCell-').textContent=r.pct.replace(/<[^>]*>/g,'');if(q('.lvlCell-'))q('.lvlCell-').innerHTML=r.lvl;
+}
+function paperReopen(e){if(e.resultsApproval==='approved'){e.resultsApproval='pending';e.approvedBy='';e.approvalAt='';touchExam(e);}}
+function paperEdit(examId,areaId,op,arg,val){
+  const school=currentSchool(),e=school.exams.find(x=>x.id===examId);if(!e)return;
+  e.papers=e.papers||{};const d=(e.papers[areaId]=e.papers[areaId]||{mode:'sum',parts:[]});PAPER_UI.open[examId]=true;
+  const wipe=ids=>{Object.keys(school.marks[examId]||{}).forEach(sid=>ids.forEach(pid=>{const k=paperKey(areaId,pid),m=school.marks[examId][sid];if(m&&m[k]!=null){delete m[k];pushMarkToCloud(school.code,examId,sid,k,null);}}));
+    e.editRequests=(e.editRequests||[]).filter(r=>!(r.areaId===areaId&&ids.includes(r.pid)&&r.status==='pending'));};
+  if(op==='add'){d.parts.push({id:uid('pp_'),name:'Paper '+(d.parts.length+1),max:100});}
+  else if(op==='del'){if(!confirm('Remove this paper? Marks already entered for it will be deleted.'))return;d.parts=d.parts.filter(p=>p.id!==arg);wipe([arg]);}
+  else if(op==='clear'){if(!confirm('Remove ALL papers for this learning area?\n\nPaper marks are deleted. The combined learning-area scores stay as they are, and you can enter that area as a single mark again.'))return;wipe(d.parts.map(p=>p.id));d.parts=[];}
+  else if(op==='name'){const p=d.parts.find(x=>x.id===arg);if(p)p.name=String(val).trim()||p.name;}
+  else if(op==='max'){const p=d.parts.find(x=>x.id===arg);if(p)p.max=Math.max(1,Number(val)||1);}
+  else if(op==='mode'){d.mode=val==='avg'?'avg':'sum';}
+  if(d.parts.length>=2){
+    if(d.mode!=='avg')e.maxMarksByArea[areaId]=Math.max(1,d.parts.reduce((x,p)=>x+(+p.max||0),0));
+    Object.keys(school.marks[examId]||{}).forEach(sid=>paperRecompute(school,e,sid,areaId));
+  }
+  paperReopen(e);touchExam(e);saveDB(DB);renderDOS();
+}
+function paperDefHTML(school,e){
+  const areas=areasForClass(school,e.classId),fl='display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin:4px 0';
+  return `<details style="margin:0 0 10px" ${PAPER_UI.open[e.id]?'open':''}>
+    <summary class="small" style="cursor:pointer">📑 Papers per Learning Area (e.g. English + Reading, or PP1 / PP2 / PP3)</summary>
+    <p class="small" style="margin:6px 0">Split a learning area into papers that are marked separately. Teachers then enter a mark for <b>each paper</b> and the learning-area total is worked out automatically. Reports and rankings use that total. Need at least 2 papers.</p>
+    ${areas.map(a=>{const d=(e.papers||{})[a.id]||{mode:'sum',parts:[]},n=d.parts.length,act=n>=2,mx=e.maxMarksByArea[a.id]??100,sm=d.parts.reduce((x,p)=>x+(+p.max||0),0);
+      return `<div class="card" style="padding:8px 10px;margin:6px 0"><b>${escapeHtml(a.name)}</b> ${act?`<span class="chip">${n} papers · out of ${mx}</span>`:'<span class="small">single mark (no papers)</span>'}
+      ${d.parts.map(p=>`<div style="${fl}"><div><label>Paper name</label><input value="${escapeHtml(p.name)}" onchange="paperEdit('${e.id}','${a.id}','name','${p.id}',this.value)"></div>
+        <div><label>Out of</label><input type="number" min="1" style="width:80px" value="${p.max}" onchange="paperEdit('${e.id}','${a.id}','max','${p.id}',this.value)"></div>
+        <button class="danger" title="Remove this paper" onclick="paperEdit('${e.id}','${a.id}','del','${p.id}')">✕</button></div>`).join('')}
+      <div style="${fl}"><button class="ghost" onclick="paperEdit('${e.id}','${a.id}','add')">+ Add paper</button>
+        ${n?`<select style="width:auto" onchange="paperEdit('${e.id}','${a.id}','mode','',this.value)"><option value="sum" ${d.mode!=='avg'?'selected':''}>Add papers together (total = sum)</option><option value="avg" ${d.mode==='avg'?'selected':''}>Average of papers (scaled to area max)</option></select><button class="ghost" onclick="paperEdit('${e.id}','${a.id}','clear')">Remove papers</button>`:''}</div>
+      ${act?(d.mode==='avg'?`<p class="small" style="margin:2px 0">Each paper's % is averaged, then scaled to the area's max of <b>${mx}</b> (change it in “Edit Max Marks” above).</p>`:`<p class="small" style="margin:2px 0">Total = ${d.parts.map(p=>p.max).join(' + ')} = <b>${sm}</b>. The total may be above or below 100 — the % is the total ÷ ${sm}.</p>`):(n?'<p class="small" style="color:#b3261e;margin:2px 0">Add at least one more paper to switch this on.</p>':'')}</div>`;}).join('')||'<p class="small">No learning areas assigned to this grade.</p>'}
+  </details>`;
+}
+// Marks grid for an area split into papers: one box per paper, then Total, % and Level.
+function paperGridHTML(school,exam,classId,areaId,learners,o){
+  o=o||{};const parts=examParts(exam,areaId),mode=examPaperMode(exam,areaId),max=exam.maxMarksByArea[areaId]??100,an=hasAssessNo(learners),examId=exam.id;
+  school.marks[examId]=school.marks[examId]||{};
+  const closed=!!o.teacher&&isExamClosed(exam),mine=(exam.editRequests||[]).filter(r=>r.status==='pending'&&r.areaId===areaId&&r.pid&&r.teacherId===session.userId),pend={};
+  mine.forEach(r=>{pend[r.sid+'|'+r.pid]=r.newVal;});
+  return `<p class="small no-print">This learning area has <b>${parts.length} papers</b>. ${mode==='sum'?`The total is the papers added together, out of <b>${max}</b>.`:`The papers' percentages are averaged and scaled to <b>${max}</b>.`} The total is worked out for you.</p>
+  ${closed?`<div class="msg err no-print">🔒 Entry is closed for this exam. Any change you make below is sent to the DOS/HOI as a request and only applies once approved.${mine.length?` You have ${mine.length} request(s) awaiting approval.`:''}</div>`:''}
+  <div class="print-only-block"><table><tr><th>Adm No.</th>${assessTh(an)}<th>Name</th>${parts.map(p=>`<th>${escapeHtml(p.name)}<div class="small">out of ${p.max}</div></th>`).join('')}<th>Total</th><th>%</th><th>Level</th></tr>
+  ${learners.map(s=>{
+    if(!takesArea(school,s.id,areaId))return `<tr style="background:#f1f3f6"><td>${s.adm?escapeHtml(s.adm):'?'}</td>${assessTd(s,an)}<td>${escapeHtml(s.name)}</td><td colspan="${parts.length+3}" class="small"><i>Not taking this learning area</i></td></tr>`;
+    const mk=school.marks[examId][s.id]||{},r=paperRowCells(school,exam,areaId,s.id);
+    return `<tr><td>${s.adm?escapeHtml(s.adm):'<span class="small">—</span>'}</td>${assessTd(s,an)}<td>${escapeHtml(s.name)}</td>
+    ${parts.map(p=>{const v=mk[paperKey(areaId,p.id)],pv=pend[s.id+'|'+p.id];return `<td><input type="number" min="0" max="${p.max}" step="any" style="width:80px" value="${v??''}" data-sid="${s.id}" class="markInput" onchange="savePaperMark('${examId}','${areaId}','${p.id}',this)">${pv!=null?`<div class="reqTag small">⏳ ${pv} awaiting approval</div>`:''}</td>`;}).join('')}
+    <td class="totCell-${s.id}">${r.tot}</td><td class="pctCell-${s.id}">${r.pct}</td><td class="lvlCell-${s.id}">${r.lvl}</td></tr>`;}).join('')||`<tr><td colspan="${parts.length+5+(an?1:0)}" class="small">No learners in this grade.</td></tr>`}
+  </table></div>${o.print?`<div class="flexbtns no-print">${inkPick()}<button class="gold" onclick="window.print()">🖨 Print This Sheet</button></div>`:''}`;
+}
+function savePaperMark(examId,areaId,pid,input){
+  const school=currentSchool(),exam=school.exams.find(e=>e.id===examId);if(!exam)return;
+  const sid=input.dataset.sid,part=examParts(exam,areaId).find(p=>p.id===pid);if(!part)return;
+  const key=paperKey(areaId,pid),max=part.max;
+  school.marks[examId]=school.marks[examId]||{};
+  const prior=((school.marks[examId][sid]||{})[key]);
+  if(!takesArea(school,sid,areaId)){input.value='';toast('This learner is marked as not taking this learning area','err');return;}
+  if(session.role==='teacher'&&teacherDenied(null,exam.classId,areaId)){input.value=prior??'';return;}
+  const finish=()=>{paperReopen(exam);saveDB(DB);paperRefreshRow(school,exam,areaId,sid);};
+  if(String(input.value).trim()===''&&!(session.role==='teacher'&&isExamClosed(exam))){
+    if(prior!=null){delete school.marks[examId][sid][key];pushMarkToCloud(school.code,examId,sid,key,null);paperRecompute(school,exam,sid,areaId);finish();}
+    return;
+  }
+  let val=Number(input.value);
+  if(val>max){val=max;input.value=max;toast('Score capped at this paper\'s max marks','err');}
+  if(val<0){val=0;input.value=0;}
+  if(session.role==='teacher'&&isExamClosed(exam)){
+    input.value=prior??'';
+    const t=school.teachers.find(x=>x.id===session.userId);exam.editRequests=exam.editRequests||[];
+    const same=exam.editRequests.find(r=>r.status==='pending'&&r.teacherId===t.id&&r.sid===sid&&r.areaId===areaId&&r.pid===pid);
+    if(val===prior){if(same){exam.editRequests=exam.editRequests.filter(r=>r!==same);touchExam(exam);saveDB(DB);setReqTag(input,null);renderTeacherApprovals();toast('Your pending request was withdrawn');}return;}
+    if(same){same.newVal=val;same.requestedAt=new Date().toISOString();}
+    else exam.editRequests.push({id:uid('req_'),teacherId:t.id,teacherName:t.name,sid,areaId,pid,newVal:val,status:'pending',requestedAt:new Date().toISOString()});
+    touchExam(exam);saveDB(DB);setReqTag(input,val);renderTeacherApprovals();
+    toast('Entry is closed for this exam — your change was sent to the DOS/HOI for approval','err');return;
+  }
+  const mk=(school.marks[examId][sid]=school.marks[examId][sid]||{});
+  mk[key]=val;pushMarkToCloud(school.code,examId,sid,key,val);
+  paperRecompute(school,exam,sid,areaId);finish();
 }
 function renderExamAreaInputsHTML(school, classId){
   const areas = classId ? areasForClass(school, classId) : school.learningAreas;
@@ -6571,6 +6777,7 @@ function loadDosMarksGrid(){
   const learners = studentsInClass(school, classId);
   school.marks[examId] = school.marks[examId] || {};
   const an = hasAssessNo(learners);
+  if(examParts(exam,areaId).length){ qs('#dosMarksGridArea').innerHTML = paperGridHTML(school, exam, classId, areaId, learners, {}); return; }
   qs('#dosMarksGridArea').innerHTML = `
   <p class="small">Max marks for this learning area in this exam: <b>${max}</b> (editable by DOS/HOI in the Exams tab)</p>
   <table><tr><th>Adm No.</th>${assessTh(an)}<th>Name</th><th>Score (out of ${max})</th><th>%</th><th>Level</th></tr>
@@ -6685,8 +6892,8 @@ function tplClassTeacherExamCard(school, e, t){
     ${pending.map(r=>{
       const stu = school.students.find(s=>s.id===r.sid);
       const area = school.learningAreas.find(a=>a.id===r.areaId);
-      const current = ((school.marks[e.id]||{})[r.sid]||{})[r.areaId];
-      return `<tr><td>${escapeHtml(r.teacherName)}</td><td>${stu?escapeHtml(stu.name):'-'}</td><td>${area?escapeHtml(area.name):'-'}</td>
+      const current = ((school.marks[e.id]||{})[r.sid]||{})[reqKey(r)];
+      return `<tr><td>${escapeHtml(r.teacherName)}</td><td>${stu?escapeHtml(stu.name):'-'}</td><td>${area?escapeHtml(area.name)+paperTag(e,r):'-'}</td>
       <td>${current??'-'}</td><td><b>${r.newVal}</b></td>
       <td><button onclick="approveEditRequest('${e.id}','${r.id}')">✅</button> <button class="danger" onclick="rejectEditRequest('${e.id}','${r.id}')">✕</button></td></tr>`;
     }).join('')}
@@ -6738,6 +6945,7 @@ function renderTeacher(){
     <div><label>Learning Area</label><select id="tArea"></select></div>
     <div><label>Exam</label><select id="tExam"></select></div>
   </div>
+  <p class="small no-print" id="tExamNote" style="margin:4px 0"></p>
   <div class="flexbtns no-print"><button onclick="loadMarksGrid()">Load Marks Sheet</button></div>
   <div id="marksGridArea"></div>
   </div>
@@ -6914,9 +7122,16 @@ function renderTeacherAreaOptions(){
   const classId = qs('#tClass').value;
   const validIds = new Set(areasForClass(school,classId).map(a=>a.id));
   const areas = [...new Set(t.assignments.filter(a=>a.classId===classId).map(a=>a.areaId))].filter(aid=>validIds.has(aid));
+  const prevArea = qs('#tArea').value;
   qs('#tArea').innerHTML = areas.map(aid=>{const a=school.learningAreas.find(x=>x.id===aid);return `<option value="${aid}">${escapeHtml(a.name)}</option>`;}).join('');
-  const exams = school.exams.filter(e=>e.classId===classId);
-  qs('#tExam').innerHTML = exams.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No exams for this grade</option>';
+  if(prevArea && areas.includes(prevArea)) qs('#tArea').value = prevArea;
+  const all = school.exams.filter(e=>e.classId===classId);
+  const exams = all.filter(e=>!examFinishedForTeacher(school,e)).slice().reverse();   // newest first
+  const hidden = all.length - exams.length, prev = qs('#tExam').value;
+  qs('#tExam').innerHTML = exams.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year}) — ${isExamClosed(e)?'🔒 closed, awaiting release':'🔓 open'}</option>`).join('') || '<option value="">No open exams for this grade</option>';
+  if(prev && exams.some(e=>e.id===prev)) qs('#tExam').value = prev;
+  const note = qs('#tExamNote');
+  if(note) note.innerHTML = hidden ? `${hidden} earlier exam${hidden>1?'s':''} already released ${hidden>1?'are':'is'} hidden here. ${exams.length?'':'No exam is open for marks entry right now.'}` : '';
 }
 function loadMarksGrid(){
   const school = currentSchool();
@@ -6924,12 +7139,14 @@ function loadMarksGrid(){
   if(!examId){ toast('No exam selected/available','err'); return; }
   const exam = school.exams.find(e=>e.id===examId);
   if(!exam || exam.classId!==classId || teacherDenied(null, classId, areaId)) return;
+  if(session.role==='teacher' && examFinishedForTeacher(school, exam)){ toast('This exam has been released — it is no longer open for marks entry','err'); renderTeacherAreaOptions(); qs('#marksGridArea').innerHTML=''; return; }
   const max = exam.maxMarksByArea[areaId] ?? 100;
   const learners = studentsInClass(school, classId);
   school.marks[examId] = school.marks[examId] || {};
   const closed = isExamClosed(exam);
   const myPending = (exam.editRequests||[]).filter(r=>r.status==='pending' && r.areaId===areaId && r.teacherId===session.userId).length;
   const myPend = {}; (exam.editRequests||[]).filter(r=>r.status==='pending' && r.areaId===areaId && r.teacherId===session.userId).forEach(r=>{ myPend[r.sid]=r.newVal; });
+  if(examParts(exam,areaId).length){ qs('#marksGridArea').innerHTML = paperGridHTML(school, exam, classId, areaId, learners, {teacher:true, print:true}); return; }
   qs('#marksGridArea').innerHTML = `
   <p class="small no-print">Max marks for this learning area in this exam: <b>${max}</b> (editable by DOS/HOI in Exams tab)</p>
   ${closed ? `<div class="msg err no-print">🔒 Entry is closed for this exam. Any change you make below is sent to the DOS/HOI as a request and only applies once approved.${myPending?` You have ${myPending} request(s) awaiting approval for this learning area.`:''}</div>` : ''}
@@ -7050,8 +7267,8 @@ function renderTeacherApprovals(){
   <table><tr><th>Exam</th><th>Learner</th><th>Learning Area</th><th>Current</th><th>Requested</th><th>Status</th><th>Sent</th></tr>
   ${rows.map(({e,r})=>{
     const stu = school.students.find(x=>x.id===r.sid), area = school.learningAreas.find(x=>x.id===r.areaId);
-    const cur = ((school.marks[e.id]||{})[r.sid]||{})[r.areaId];
-    return `<tr><td>${escapeHtml(e.name)}</td><td>${stu?escapeHtml(stu.name):'-'}</td><td>${area?escapeHtml(area.name):'-'}</td>
+    const cur = ((school.marks[e.id]||{})[r.sid]||{})[reqKey(r)];
+    return `<tr><td>${escapeHtml(e.name)}</td><td>${stu?escapeHtml(stu.name):'-'}</td><td>${area?escapeHtml(area.name)+paperTag(e,r):'-'}</td>
     <td>${cur??'-'}</td><td><b>${r.newVal}</b></td><td>${stBadge(r.status)}${r.note?`<div class="small">${escapeHtml(r.note)}</div>`:''}</td><td class="small">${r.requestedAt?new Date(r.requestedAt).toLocaleDateString():'-'}</td></tr>`;}).join('')}
   </table>` : ''}`;
 }
