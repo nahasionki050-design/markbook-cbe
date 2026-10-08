@@ -191,6 +191,7 @@ table.rc-table tr.rc-total td{background:#fdf6e5;font-weight:800;border-top:2px 
 .rc-qr{display:flex;align-items:center;gap:8px;font-size:11px;color:#345;max-width:68%;line-height:1.3;}
 .rc-qr svg{width:86px;height:86px;flex:none;border:1px solid #cdd8e4;background:#fff;}
 .rc-pw-banner{margin:6px 0 3px;padding:6px 10px;border-radius:6px;background:#1b7f55;color:#fff;font-size:13px;}
+.rc-note{background:#fff8ea;border-left:3px solid var(--gold);border-radius:4px;padding:4px 8px;color:#5a4a26;}
 .rc-tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:6px;}
 .rc-tile{background:#f4f7fb;border-radius:6px;padding:5px 6px;text-align:center;}
 .rc-tile b{display:block;font-size:15px;color:var(--navy);}
@@ -240,7 +241,7 @@ canvas{max-width:100%;}
   /* Only the generated report/sheet (.print-only-block) should ever hit paper — everything
      else (topbar, tabs, nav/header cards, form controls, history tables) is UI chrome and is
      marked .no-print so it never eats page space or shifts the report onto a later page. */
-  header.topbar,.tabs,.stat-grid,.dos-bar,.dos-drawer,.dos-backdrop,.dos-quick,.no-print,.card>h2 + .no-print{display:none !important;}
+  header.topbar,.tabs,.stat-grid,.dos-bar,.dos-drawer,.dos-backdrop,.dos-quick,.no-print,.card>h2 + .no-print,#toastBox{display:none !important;}
   body{background:#fff;font-size:11px;}
   .container{max-width:100%;padding:0;}
   /* NOTE: page breaks belong on .print-only-block only (below) — a generic .card rule here
@@ -10097,7 +10098,10 @@ function buildReportHTML(school, sid, examId){
     <td>${raBadge(school,cls.id,overallGrade.level)}</td><td>${totalPts}</td><td>${clsMean!=null?clsMean.toFixed(1)+'%':'-'}</td><td>${clsMean!=null?sgn(meanPct-clsMean):'-'}</td><td>-</td>${cmtOn?'<td class="rc-cmt">-</td>':''}</tr>
     </table>
     ${subjectRows.some(r=>r.na)?'<p class="small">N/A = this learner does not take that learning area. It is left out of the total, mean, points and position.</p>':''}
-    ${(!allMarked && !scoped) ? `<p class="small" style="color:#9c2c2c">⚠ Assessment incomplete: only ${n} of ${nTaken} learning area(s) marked so far. The Mean % and overall level above already reflect this — they are based on general performance across ALL learning areas for this grade, so they will read low/blank until every learning area is entered.</p>` : ''}
+    ${(!allMarked && !scoped) ? (()=>{
+      const missing = subjectRows.filter(r=>!r.na && r.score==null).map(r=>r.name);
+      return `<p class="small rc-note"><b>Provisional report:</b> ${n} of ${nTaken} learning area(s) marked so far${missing.length?` — still to enter: ${missing.map(escapeHtml).join(', ')}`:''}. The Mean % and overall level reflect all learning areas and will update as the rest are entered.</p>`;
+    })() : ''}
     ${scoped ? `<p class="small">Learning Area report — shows only the learning area(s) assigned to the issuing teacher. Mean, points and position are based on these only.</p>` : ''}
     <div class="rc-chartwrap"><span class="rc-chart-label">Performance Trend</span>
     <canvas id="${chartId}" width="760" height="340"></canvas></div>
@@ -10189,7 +10193,12 @@ function setRcPaper(v){ if(!RC_PAPERS[v]) return; try{ localStorage.setItem('edu
 function rcPaperPick(){ return `<select class="no-print" onchange="setRcPaper(this.value)" style="width:auto;margin:0" title="Must match the Paper size chosen in the print dialog">${Object.keys(RC_PAPERS).map(k=>`<option value="${k}" ${rcPaper()===k?'selected':''}>Paper: ${k}</option>`).join('')}</select>`; }
 function fitReportCardsToPage(){
   const PX = mm => mm*96/25.4;
-  const PAPER = rcPaper(), PAGE_W = RC_PAPERS[PAPER].w, PAGE_H = RC_PAPERS[PAPER].h;
+  const PAPER = rcPaper(), PAGE_W = RC_PAPERS[PAPER].w;
+  // A few mm of safety margin, subtracted only from the height used to DECIDE scaling (the
+  // card itself still gets the full PAGE_H box below). This absorbs small paper-size mismatches
+  // -- e.g. a phone's print dialog silently printing on Letter when A4 was requested here --
+  // so the report never spills a line or two onto a blank 2nd page.
+  const PAGE_H = RC_PAPERS[PAPER].h - 5;
   const cards = Array.from(document.querySelectorAll('.report-card'));
   resetReportFit();
   if(!cards.length) return;
