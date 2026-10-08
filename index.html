@@ -10204,7 +10204,10 @@ function resetReportFit(){
     el.style.pageBreakInside=''; el.style.breakInside='';
     el.style.removeProperty('--rc-pad'); el.style.removeProperty('--rc-ch');
     const sc=el.querySelector('.rc-scale');
-    if(sc){ sc.style.position=''; sc.style.top=''; sc.style.left=''; sc.style.width=''; sc.style.transform=''; }
+    if(sc){ sc.style.position=''; sc.style.top=''; sc.style.left=''; sc.style.width=''; sc.style.transform=''; sc.style.zoom=''; }
+    // Put the live <canvas> charts back (they were swapped for pictures while printing).
+    el.querySelectorAll('canvas[data-rc-hidden]').forEach(cv=>{ cv.style.display=''; cv.removeAttribute('data-rc-hidden'); });
+    el.querySelectorAll('img.rc-canvas-img').forEach(im=>im.remove());
   });
 }
 // Printable area (mm) for each paper size = paper minus the 8mm @page margins, with 1mm spare height.
@@ -10215,10 +10218,7 @@ function rcPaperPick(){ return `<select class="no-print" onchange="setRcPaper(th
 function fitReportCardsToPage(){
   const PX = mm => mm*96/25.4;
   const PAPER = rcPaper(), PAGE_W = RC_PAPERS[PAPER].w;
-  // A few mm of safety margin, subtracted only from the height used to DECIDE scaling (the
-  // card itself still gets the full PAGE_H box below). This absorbs small paper-size mismatches
-  // -- e.g. a phone's print dialog silently printing on Letter when A4 was requested here --
-  // so the report never spills a line or two onto a blank 2nd page.
+  // A few mm of safety margin so a small paper-size mismatch never pushes a line onto a 2nd page.
   const PAGE_H = RC_PAPERS[PAPER].h - 5;
   const cards = Array.from(document.querySelectorAll('.report-card'));
   resetReportFit();
@@ -10226,6 +10226,15 @@ function fitReportCardsToPage(){
   document.documentElement.style.setProperty('--rc-page-h', PAGE_H+'mm');
   const pg=document.createElement('style'); pg.id='rcPageCss'; pg.textContent='@page{size:'+PAPER+';margin:8mm}'; document.head.appendChild(pg);
   rcPrintSimCSS();
+  // Charts: swap each <canvas> for a picture of itself while printing, so shrinking the card can
+  // never blank or distort the chart. resetReportFit() puts the real canvas back after printing.
+  cards.forEach(el=>el.querySelectorAll('canvas').forEach(cv=>{
+    try{
+      const im=document.createElement('img'); im.className='rc-canvas-img'; im.src=cv.toDataURL('image/png');
+      im.style.cssText='display:block;width:100%;height:var(--rc-ch,120px);object-fit:fill;';
+      cv.setAttribute('data-rc-hidden','1'); cv.style.display='none'; cv.parentNode.insertBefore(im,cv.nextSibling);
+    }catch(e){}
+  }));
   const sim=document.createElement('div');
   sim.className='rcsim';
   sim.style.cssText='position:absolute;left:-10000px;top:0;visibility:hidden;width:'+PAGE_W+'mm;font-size:11px;font-family:var(--font);color:#1c2b3a;line-height:normal;';
@@ -10235,44 +10244,39 @@ function fitReportCardsToPage(){
     c.classList.remove('print-only-block');
     c.style.cssText='height:auto;width:100%;margin:0;';
     sim.appendChild(c);
-    const h=c.scrollHeight;                    // natural height at the real print width/typography
-    sim.removeChild(c);
+    const sc=c.querySelector('.rc-scale');
+    const heightAt=k=>{                          // real laid-out card height when shrunk by k
+      if(sc){ sc.style.zoom=k; }
+      return c.getBoundingClientRect().height;
+    };
+    const h=heightAt(1);                         // natural height at the real print width/typography
+    let k=1, tooBig=false;
     if(h > PX(PAGE_H)){
-      // Never shrink past ~62% (roughly 7px from the 11px base) — smaller than that stops
-      // being legible on paper. Most reports fit one page comfortably within this floor.
-      const MIN_K = 0.62, kRaw = PX(PAGE_H)/h;
-      const scaleEl=el.querySelector('.rc-scale');
-      if(kRaw >= MIN_K){
-        // Fixed page box, clipped — the scaled content is pinned top-left inside it via
-        // transform (see the .rc-scale print-CSS comment above for why transform, not zoom).
-        // The content is laid out PAGE_W/k wide (wider than the page) and then visually
-        // shrunk by k, so after scaling it fills the full page width again — same principle
-        // the old zoom-based code used (inflate, then shrink back to exactly one page).
-        el.style.width=PAGE_W+'mm';
-        el.style.height=PAGE_H+'mm';
-        el.style.overflow='hidden';
-        if(scaleEl){
-          scaleEl.style.position='absolute';
-          scaleEl.style.top='0'; scaleEl.style.left='0';
-          scaleEl.style.width=(PAGE_W/kRaw)+'mm';
-          scaleEl.style.transform='scale('+kRaw+')';
-        }
-      }else{
-        // Exceptionally dense report (many learning areas, long teacher comments, Learner
-        // Analysis + Pathway Profile all present): shrinking enough to fit one page would make
-        // the text unreadably small. Print it at full, legible size and let it spill onto a
-        // 2nd page instead — losing data (e.g. the Pathway Profile table getting clipped off
-        // the bottom) is worse than using an extra sheet of paper.
-        el.style.width=PAGE_W+'mm';
-        el.style.height='auto';
-        el.style.overflow='visible';
-        el.style.pageBreakInside='auto';
-        el.style.breakInside='auto';
+      // Never shrink past ~55%: smaller than that stops being legible on paper.
+      const MIN_K=0.55;
+      if(heightAt(MIN_K) > PX(PAGE_H)){ k=MIN_K; tooBig=true; }
+      else{                                      // largest k in [MIN_K,1] that still fits one page
+        let lo=MIN_K, hi=1;
+        for(let i=0;i<10;i++){ const mid=(lo+hi)/2; if(heightAt(mid) <= PX(PAGE_H)) lo=mid; else hi=mid; }
+        k=lo;
       }
     }
-    // Short report (natural height already under one page): nothing to do — it's left at its
-    // natural size, full width, with any spare page height simply left blank below it rather
-    // than stretched to fill (see the .rc-chartwrap/.rc-sigrow print-CSS comment for why).
+    sim.removeChild(c);
+    const scaleEl=el.querySelector('.rc-scale');
+    el.style.width=PAGE_W+'mm';
+    if(k<1 && scaleEl){
+      // zoom shrinks the real layout box (unlike transform), so the printer sees a card that
+      // genuinely fits the page and nothing gets split off or clipped.
+      scaleEl.style.zoom=k;
+    }
+    if(tooBig){
+      // Exceptionally dense report: print at the smallest legible size and let it flow onto a 2nd
+      // page rather than lose any section.
+      el.style.height='auto'; el.style.overflow='visible';
+      el.style.pageBreakInside='auto'; el.style.breakInside='auto';
+    }else{
+      el.style.height=PAGE_H+'mm'; el.style.overflow='hidden';
+    }
   });
   document.body.removeChild(sim);
 }
