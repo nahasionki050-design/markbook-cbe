@@ -298,6 +298,10 @@ canvas{max-width:100%;}
   .report-card .rc-scale{flex:1;display:flex;flex-direction:column;box-sizing:border-box;transform-origin:top left;}
   .report-card .rc-body{flex:1;display:flex;flex-direction:column;box-sizing:border-box;}
   .rc-body{padding:11px 14px 10px;}
+  /* Only relevant for the rare exceptionally-dense report that fitReportCardsToPage() lets
+     spill onto a 2nd page rather than clip (see the comment there) — keeps a row or a whole
+     block from being sliced in half at the page boundary. */
+  .report-card .rc-table tr,.report-card .rc-analysis,.report-card .rc-pathway,.report-card .rc-remark,.report-card .rc-sigrow{page-break-inside:avoid;break-inside:avoid;}
   .report-card table{font-size:12.5px;}
   .report-card .rc-table th{font-size:11.5px;font-weight:800;}
   .report-card .rc-table td{border-color:#8a9bad;}
@@ -10196,6 +10200,7 @@ function resetReportFit(){
   document.documentElement.style.removeProperty('--rc-page-h');
   document.querySelectorAll('.report-card').forEach(el=>{
     el.style.width=''; el.style.height=''; el.style.position=''; el.style.overflow='';
+    el.style.pageBreakInside=''; el.style.breakInside='';
     el.style.removeProperty('--rc-pad'); el.style.removeProperty('--rc-ch');
     const sc=el.querySelector('.rc-scale');
     if(sc){ sc.style.position=''; sc.style.top=''; sc.style.left=''; sc.style.width=''; sc.style.transform=''; }
@@ -10232,18 +10237,33 @@ function fitReportCardsToPage(){
     const h=c.scrollHeight;                    // natural height at the real print width/typography
     sim.removeChild(c);
     if(h > PX(PAGE_H)){
-      const k=Math.max(0.5, PX(PAGE_H)/h);
-      // Fixed page box, clipped — the scaled content is pinned top-left inside it via
-      // transform (see the .rc-scale print-CSS comment above for why transform, not zoom).
-      el.style.width=PAGE_W+'mm';
-      el.style.height=PAGE_H+'mm';
-      el.style.overflow='hidden';
+      // Never shrink past ~62% (roughly 7px from the 11px base) — smaller than that stops
+      // being legible on paper. Most reports fit one page comfortably within this floor.
+      const MIN_K = 0.62, kRaw = PX(PAGE_H)/h;
       const scaleEl=el.querySelector('.rc-scale');
-      if(scaleEl){
-        scaleEl.style.position='absolute';
-        scaleEl.style.top='0'; scaleEl.style.left='0';
-        scaleEl.style.width=PAGE_W+'mm';
-        scaleEl.style.transform='scale('+k+')';
+      if(kRaw >= MIN_K){
+        // Fixed page box, clipped — the scaled content is pinned top-left inside it via
+        // transform (see the .rc-scale print-CSS comment above for why transform, not zoom).
+        el.style.width=PAGE_W+'mm';
+        el.style.height=PAGE_H+'mm';
+        el.style.overflow='hidden';
+        if(scaleEl){
+          scaleEl.style.position='absolute';
+          scaleEl.style.top='0'; scaleEl.style.left='0';
+          scaleEl.style.width=PAGE_W+'mm';
+          scaleEl.style.transform='scale('+kRaw+')';
+        }
+      }else{
+        // Exceptionally dense report (many learning areas, long teacher comments, Learner
+        // Analysis + Pathway Profile all present): shrinking enough to fit one page would make
+        // the text unreadably small. Print it at full, legible size and let it spill onto a
+        // 2nd page instead — losing data (e.g. the Pathway Profile table getting clipped off
+        // the bottom) is worse than using an extra sheet of paper.
+        el.style.width=PAGE_W+'mm';
+        el.style.height='auto';
+        el.style.overflow='visible';
+        el.style.pageBreakInside='auto';
+        el.style.breakInside='auto';
       }
     }else{
       // Short report: instead of leaving one big empty gap, share ~80% of the spare height between
