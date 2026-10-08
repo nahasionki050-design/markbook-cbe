@@ -283,8 +283,8 @@ canvas{max-width:100%;}
      soak up any spare space as breathing room rather than as dead space below the content.
      A report with too much content still shrinks to fit via fitReportCardsToPage(); this
      flex layout only ever adds space, it never causes overflow. */
-  .report-card{page-break-inside:avoid;break-inside:avoid;border-width:1px;transform-origin:top left;
-    height:280mm;display:flex;flex-direction:column;box-sizing:border-box;margin:0;box-shadow:none;}
+  .report-card{page-break-inside:avoid;break-inside:avoid;border-width:1px;transform-origin:top left;max-width:none !important;
+    height:var(--rc-page-h,280mm);display:flex;flex-direction:column;box-sizing:border-box;margin:0;box-shadow:none;}
   /* No trailing blank page: the very last report must not force a page break after itself. */
   .report-card.print-only-block:has(+ .no-print:last-child){page-break-after:auto;break-after:auto;}
   .report-card .rc-body{flex:1;display:flex;flex-direction:column;box-sizing:border-box;}
@@ -5847,27 +5847,269 @@ function delStudent(id){
 }
 
 /* --- Exams --- */
+/* ============================= EXAMS: create for many grades + organised "sets" + bulk edit =============================
+   An exam SET = every grade's exam that shares the same name + term + year (e.g. "Mid Term CAT 1 · Term 2 2026").
+   - One form creates the exam for all ticked grades at once (max marks the same everywhere, or overridden per grade).
+   - The list is grouped by set; each grade is a one-line row, and its full settings card opens only when asked
+     (so dozens of exams stay quick and readable).
+   - A set toolbar changes dates, entry open/closed, parent visibility, max marks, name/term/year, copies the set
+     to another term, or deletes — for all ticked grades together. */
+const EX_UI={q:'',year:'',term:'',openSet:{},openExam:{},sel:null};
+const EX_LEVELS={pre:'Pre-Primary',lower:'Lower Primary (1–3)',upper:'Upper Primary (4–6)',junior:'Junior (7–9)',senior:'Senior (10–12)',custom:'Other'};
+const exKey=e=>[String(e.name||'').trim().toLowerCase(),e.term,e.year].join('|');
+function exSetId(key){ let h=0; for(const ch of key) h=(h*31+ch.charCodeAt(0))>>>0; return 'xs'+h.toString(36); }
+function exGroups(school){
+  const g={}, order=new Map(school.classes.map((c,i)=>[c.id,i]));
+  school.exams.forEach(e=>{ const k=exKey(e); const x=g[k]||(g[k]={key:k,id:exSetId(k),name:e.name,term:e.term,year:e.year,exams:[],latest:0}); x.exams.push(e); x.latest=Math.max(x.latest,Date.parse(e.date)||0); });
+  return Object.values(g).sort((a,b)=>(b.year-a.year)||String(b.term).localeCompare(String(a.term))||(b.latest-a.latest))
+    .map(x=>{ x.exams.sort((p,q)=>(order.has(p.classId)?order.get(p.classId):99)-(order.has(q.classId)?order.get(q.classId):99)); return x; });
+}
+// ---- creation form: parts that depend on which grades are ticked ----
+function exNewParts(school,sel,dv,ov){
+  const per=sel.map(cid=>({cid,name:(school.classes.find(c=>c.id===cid)||{}).name||'?',areas:areasForClass(school,cid)}));
+  const ids=new Set(); per.forEach(p=>p.areas.forEach(a=>ids.add(a.id)));
+  const areas=school.learningAreas.filter(a=>ids.has(a.id)), noAreas=per.filter(p=>!p.areas.length);
+  const max=areas.map(a=>{ const n=per.filter(p=>p.areas.some(x=>x.id===a.id)).length; return `<div><label>${escapeHtml(a.name)} <span class="small">(${n} grade${n>1?'s':''})</span></label><input type="number" class="exNewMaxIn" min="1" data-area="${a.id}" value="${dv[a.id]??100}" oninput="exNewPh(this)"></div>`; }).join('') || '<p class="small">Tick at least one grade that has learning areas.</p>';
+  const custom = (per.length&&areas.length) ? `<div class="ttw"><table><tr><th>Grade</th>${areas.map(a=>`<th>${escapeHtml(a.name)}</th>`).join('')}</tr>${per.map(p=>`<tr><td style="text-align:left">${escapeHtml(p.name)}</td>${areas.map(a=>p.areas.some(x=>x.id===a.id)?`<td><input type="number" min="1" class="exNewOv" data-cls="${p.cid}" data-area="${a.id}" placeholder="${dv[a.id]??100}" value="${ov[p.cid+'|'+a.id]??''}" style="width:72px"></td>`:'<td>—</td>').join('')}</tr>`).join('')}</table></div><p class="small">Only fill the boxes that should differ — an empty box uses the default above.</p>` : '<p class="small">Tick grades first.</p>';
+  const count = per.length ? `Will create <b>${per.length-noAreas.length}</b> exam${per.length-noAreas.length===1?'':'s'}${noAreas.length?` · <span style="color:#9c2c2c">${noAreas.length} grade(s) have no learning areas and will be skipped</span>`:''}` : 'Tick the grades to create this exam for.';
+  return {max,custom,count};
+}
+function exNewRender(){
+  const school=currentSchool(); if(!qs('#exNewMax')) return;
+  const sel=qsa('.exNewCls:checked').map(i=>i.value); EX_UI.sel=new Set(sel);
+  const dv={},ov={}; qsa('.exNewMaxIn').forEach(i=>{ dv[i.dataset.area]=i.value; }); qsa('.exNewOv').forEach(i=>{ if(i.value!=='') ov[i.dataset.cls+'|'+i.dataset.area]=i.value; });
+  const p=exNewParts(school,sel,dv,ov); qs('#exNewMax').innerHTML=p.max; qs('#exNewCustom').innerHTML=p.custom; qs('#exNewCount').innerHTML=p.count;
+}
+function exNewPh(inp){ qsa('.exNewOv[data-area="'+inp.dataset.area+'"]').forEach(o=>{ o.placeholder=inp.value||100; }); }
+function exNewSel(kind){
+  const school=currentSchool();
+  qsa('.exNewCls').forEach(i=>{ const c=school.classes.find(x=>x.id===i.value); i.checked = kind==='all' ? true : kind==='none' ? false : (c && ttLevel(c.name)===kind); });
+  exNewRender();
+}
+function tplExamCreate(school){
+  const sel=EX_UI.sel||new Set(school.classes.map(c=>c.id));
+  const levels=[...new Set(school.classes.map(c=>ttLevel(c.name)))].filter(l=>EX_LEVELS[l]);
+  const p=exNewParts(school,school.classes.filter(c=>sel.has(c.id)).map(c=>c.id),{},{});
+  return `<div class="row">
+    <div><label>Exam Name</label><input id="exName" placeholder="e.g. Mid Term CAT 1"></div>
+    <div><label>Term</label><select id="exTerm"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>
+    <div><label>Year</label><input id="exYear" type="number" value="${new Date().getFullYear()}"></div>
+  </div>
+  <p class="small" style="margin:8px 0 4px"><b>Create this exam for which grades?</b></p>
+  <div class="flexbtns"><button class="ghost" onclick="exNewSel('all')">✔ All grades</button><button class="ghost" onclick="exNewSel('none')">Clear</button>${levels.map(l=>`<button class="ghost" onclick="exNewSel('${l}')">Only ${EX_LEVELS[l]}</button>`).join('')}</div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin:6px 0">${school.classes.map(c=>`<label class="small" style="display:flex;gap:5px;align-items:center;margin:0"><input type="checkbox" class="exNewCls" style="width:auto;margin:0" value="${c.id}" ${sel.has(c.id)?'checked':''} onchange="exNewRender()"> ${escapeHtml(c.name)}</label>`).join('') || '<span class="small">Add grades first.</span>'}</div>
+  <p class="small" style="margin:8px 0 4px">Maximum marks per learning area — applies to every ticked grade that has the area:</p>
+  <div class="row" id="exNewMax">${p.max}</div>
+  <details style="margin:6px 0"><summary class="small" style="cursor:pointer">✏️ Different max marks for particular grades (optional)</summary><div id="exNewCustom" style="margin-top:6px">${p.custom}</div></details>
+  <details style="margin:6px 0"><summary class="small" style="cursor:pointer">🗓 Set dates &amp; options now (optional — saves editing each exam later)</summary>
+    <div class="row" style="margin-top:6px">
+      <div><label>Entry closing date <span class="small">(auto-closes entry)</span></label><input id="exNewClose" type="date"></div>
+      <div><label>Term closing date</label><input id="exNewTermClose" type="date"></div>
+      <div><label>Next term opens</label><input id="exNewNextTerm" type="date"></div>
+      <div><label>Total school days</label><input id="exNewDays" type="number" min="0" placeholder="e.g. 65"></div>
+    </div>
+    <label class="small" style="display:flex;gap:6px;align-items:center;margin:6px 0"><input type="checkbox" id="exNewParent" style="width:auto;margin:0" checked> Visible to parents in the Parent Portal</label>
+  </details>
+  <div class="flexbtns" style="align-items:center"><button onclick="addExams()">➕ Create Exam(s)</button><span class="small" id="exNewCount">${p.count}</span></div>`;
+}
+function addExams(){
+  if(!canEdit()){ noEdit(); return; }
+  const name=qs('#exName').value.trim(), term=qs('#exTerm').value, year=Number(qs('#exYear').value);
+  const sel=qsa('.exNewCls:checked').map(i=>i.value);
+  if(!name){ toast('Enter the exam name','err'); return; }
+  if(!year){ toast('Enter a valid year','err'); return; }
+  if(!sel.length){ toast('Tick at least one grade','err'); return; }
+  const school=currentSchool(), defaults={}, ov={};
+  qsa('.exNewMaxIn').forEach(i=>{ defaults[i.dataset.area]=Math.max(1,Number(i.value)||100); });
+  qsa('.exNewOv').forEach(i=>{ if(String(i.value).trim()!==''){ (ov[i.dataset.cls]=ov[i.dataset.cls]||{})[i.dataset.area]=Math.max(1,Number(i.value)||1); } });
+  const closingDate=qs('#exNewClose').value||'', termCloseDate=qs('#exNewTermClose').value||'', nextTermDate=qs('#exNewNextTerm').value||'';
+  const totalDays=Math.max(0,Number(qs('#exNewDays').value)||0), parentVisible=qs('#exNewParent').checked;
+  const make=[], dups=[], none=[];
+  sel.forEach(cid=>{ const c=school.classes.find(x=>x.id===cid); if(!c) return;
+    if(!areasForClass(school,cid).length){ none.push(c.name); return; }
+    if(school.exams.some(x=>x.classId===cid&&x.term===term&&x.year===year&&x.name.trim().toLowerCase()===name.toLowerCase())) dups.push(c.name); else make.push(cid); });
+  if(dups.length && !confirm(`"${name}" (${term} ${year}) already exists for: ${dups.join(', ')}.\n\nOK = skip those and create the rest.\nCancel = stop.`)) return;
+  if(!make.length){ toast('Nothing to create'+(dups.length&&none.length?' — the ticked grades already have this exam or have no learning areas':dups.length?' — those grades already have this exam':' — the ticked grades have no learning areas yet'),'err'); return; }
+  make.forEach(cid=>{ const mm={}; areasForClass(school,cid).forEach(a=>{ mm[a.id]=(ov[cid]&&ov[cid][a.id]!=null)?ov[cid][a.id]:(defaults[a.id]??100); });
+    school.exams.push({id:uid('ex_'),name,term,year,classId:cid,maxMarksByArea:mm,date:new Date().toISOString(),closed:false,closingDate,editRequests:[],resultsApproval:'pending',termCloseDate,nextTermDate,totalDays,parentVisible}); });
+  EX_UI.sel=null; EX_UI.openSet[exSetId(exKey({name,term,year}))]=true;
+  saveDB(DB); renderDOS();
+  toast(`Created ${make.length} exam${make.length>1?'s':''}`+(dups.length?` · skipped ${dups.length} that already existed`:'')+(none.length?` · ${none.length} grade(s) had no learning areas`:''));
+}
+// ---- the organised list ----
+function exFilter(field,val){ EX_UI[field]=val; exRenderList(); }
+function exRenderList(){ const el=qs('#examList'); if(el) el.innerHTML=tplExamList(currentSchool()); }
+function exToggle(id){ EX_UI.openExam[id]=!EX_UI.openExam[id]; exRenderList(); }
+function exTickAll(gid,on){ qsa('.exSel[data-set="'+gid+'"]').forEach(i=>{ i.checked=on; }); }
+function exSetHTML(school,g){
+  const n=g.exams.length, closedN=g.exams.filter(e=>isExamClosed(e)).length, appr=g.exams.filter(e=>e.resultsApproval==='approved').length;
+  const pend=g.exams.reduce((t,e)=>t+(e.editRequests||[]).filter(r=>r.status==='pending').length,0);
+  let filled=0,total=0; g.exams.forEach(e=>{ const c=examCompletion(school,e); filled+=c.filled; total+=c.total; });
+  const pct=total?Math.round(filled/total*100):0, areaIds=new Set(); g.exams.forEach(e=>areasForClass(school,e.classId).forEach(a=>areaIds.add(a.id)));
+  const areas=school.learningAreas.filter(a=>areaIds.has(a.id)), id=g.id;
+  const rows=g.exams.map(e=>{
+    const cls=school.classes.find(c=>c.id===e.classId), c=examCompletion(school,e), cl=isExamClosed(e), p=(e.editRequests||[]).filter(r=>r.status==='pending').length;
+    const ap=e.resultsApproval==='approved'?'<span class="badge EE">✅ Approved</span>':e.resultsApproval==='disapproved'?'<span class="badge BE">❌ Disapproved</span>':'<span class="badge AE">⏳ Pending</span>';
+    const open=!!EX_UI.openExam[e.id];
+    return `<tr><td><input type="checkbox" class="exSel" style="width:auto" data-set="${id}" value="${e.id}" checked></td>
+      <td style="text-align:left"><b>${cls?escapeHtml(cls.name):'-'}</b></td>
+      <td>${cl?'<span class="badge BE">🔒 Closed</span>':'<span class="badge EE">🔓 Open</span>'}${e.closingDate?`<div class="small">closes ${escapeHtml(e.closingDate)}</div>`:''}</td>
+      <td>${ap}${p?`<div class="small" style="color:#9c2c2c">${p} request(s)</div>`:''}</td>
+      <td>${c.total?`${c.filled}/${c.total} <span class="small">(${Math.round(c.filled/c.total*100)}%)</span>`:'—'}</td>
+      <td>${e.parentVisible!==false?'👁':'🚫'}</td>
+      <td><button class="ghost" onclick="exToggle('${e.id}')">${open?'▲ Close':'⚙️ Manage'}</button></td></tr>${open?`<tr><td colspan="7" style="padding:4px 0">${tplExamCard(school,e)}</td></tr>`:''}`;
+  }).join('');
+  const ym=new Date().getFullYear();
+  return `<details class="card" ${EX_UI.openSet[id]?'open':''} ontoggle="EX_UI.openSet['${id}']=this.open">
+  <summary style="cursor:pointer;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;align-items:center"><span><b>${escapeHtml(g.name)}</b> <span class="small">— ${escapeHtml(g.term)} ${g.year} · ${n} grade${n>1?'s':''}</span></span>
+    <span class="small">${closedN}/${n} closed · ${appr}/${n} approved · marks ${pct}%${pend?` · <b style="color:#9c2c2c">${pend} edit request(s)</b>`:''}</span></summary>
+  <div class="ttw" style="margin-top:8px"><table><tr><th style="width:30px"><input type="checkbox" style="width:auto" checked onchange="exTickAll('${id}',this.checked)" title="Tick / untick all"></th><th>Grade</th><th>Entry</th><th>Approval</th><th>Marks entered</th><th>Parents</th><th></th></tr>${rows}</table></div>
+  <details style="margin-top:8px"><summary class="small" style="cursor:pointer"><b>⚙️ Change settings for the ticked grades</b> <span class="small">(saves editing them one by one)</span></summary>
+    <div style="margin-top:8px">
+      <p class="small" style="margin:6px 0 2px"><b>Entry</b></p>
+      <div class="row"><div><label>Closing date (auto-closes entry)</label><input type="date" id="${id}_cd"></div></div>
+      <div class="flexbtns"><button class="ghost" onclick="exBulkClosingDate('${id}')">Apply date</button><button class="ghost" onclick="exBulkClose('${id}',true)">🔒 Close entry now</button><button class="ghost" onclick="exBulkClose('${id}',false)">🔓 Reopen entry</button></div>
+      <p class="small" style="margin:10px 0 2px"><b>Results approval</b></p>
+      <div class="flexbtns"><button class="ghost" onclick="exBulkApprove('${id}',false)">✅ Approve ticked grades</button><button class="ghost" onclick="exBulkApprove('${id}',true)">✅ Approve only grades with all marks in</button><button class="danger ghost" onclick="exBulkDisapprove('${id}')">❌ Disapprove ticked grades…</button></div>
+      <p class="small">You see a summary first. Grades already approved, or with teacher edit requests still waiting, are skipped. Approving closes entry and locks the marks.</p>
+      <p class="small" style="margin:10px 0 2px"><b>Parent Portal</b></p>
+      <div class="flexbtns"><button class="ghost" onclick="exBulkParent('${id}',true)">👁 Show to parents</button><button class="ghost" onclick="exBulkParent('${id}',false)">🚫 Hide from parents</button></div>
+      <p class="small" style="margin:10px 0 2px"><b>Report card dates</b> <span class="small">(only the boxes you fill are changed)</span></p>
+      <div class="row"><div><label>Term closing date</label><input type="date" id="${id}_tc"></div><div><label>Next term opens</label><input type="date" id="${id}_nt"></div><div><label>Total school days</label><input type="number" min="0" id="${id}_td"></div></div>
+      <div class="flexbtns"><button class="ghost" onclick="exBulkDates('${id}')">Apply dates</button></div>
+      <p class="small" style="margin:10px 0 2px"><b>Maximum marks</b></p>
+      <div class="row"><div><label>Learning area</label><select id="${id}_ma">${areas.map(a=>`<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('')}</select></div><div><label>Max marks</label><input type="number" min="1" id="${id}_mv" value="100"></div></div>
+      <div class="flexbtns"><button class="ghost" onclick="exBulkMax('${id}')">Apply to ticked grades</button></div>
+      <p class="small" style="margin:10px 0 2px"><b>Rename this whole set</b> <span class="small">(fixes a typo in every grade; marks are kept)</span></p>
+      <div class="row"><div><label>Name</label><input id="${id}_rn" value="${escapeHtml(g.name)}"></div><div><label>Term</label><select id="${id}_rt">${['Term 1','Term 2','Term 3'].map(t=>`<option ${g.term===t?'selected':''}>${t}</option>`).join('')}</select></div><div><label>Year</label><input type="number" id="${id}_ry" value="${g.year}"></div></div>
+      <div class="flexbtns"><button class="ghost" onclick="exBulkRename('${id}')">Rename set</button></div>
+      <p class="small" style="margin:10px 0 2px"><b>Copy as a new exam</b> <span class="small">(same grades and max marks, no marks — e.g. CAT 1 → CAT 2)</span></p>
+      <div class="row"><div><label>New name</label><input id="${id}_cn" placeholder="e.g. CAT 2"></div><div><label>Term</label><select id="${id}_ct">${['Term 1','Term 2','Term 3'].map(t=>`<option ${g.term===t?'selected':''}>${t}</option>`).join('')}</select></div><div><label>Year</label><input type="number" id="${id}_cy" value="${g.year||ym}"></div></div>
+      <div class="flexbtns"><button class="ghost" onclick="exCopySet('${id}')">📋 Copy ticked grades</button><button class="danger ghost" style="margin-left:auto" onclick="exBulkDelete('${id}')">✕ Delete ticked exams</button></div>
+    </div></details>
+  </details>`;
+}
+function tplExamList(school){
+  let groups=exGroups(school);
+  const q=EX_UI.q.trim().toLowerCase();
+  if(q) groups=groups.filter(g=>g.name.toLowerCase().includes(q));
+  if(EX_UI.year) groups=groups.filter(g=>String(g.year)===String(EX_UI.year));
+  if(EX_UI.term) groups=groups.filter(g=>g.term===EX_UI.term);
+  if(!school.exams.length) return '<div class="card small">No exams yet.</div>';
+  return groups.length ? groups.map(g=>exSetHTML(school,g)).join('') : '<div class="card small">No exams match that filter.</div>';
+}
+// ---- bulk actions on the ticked grades of one set ----
+function exTicked(gid){ const ids=new Set(qsa('.exSel[data-set="'+gid+'"]:checked').map(i=>i.value)); return currentSchool().exams.filter(e=>ids.has(e.id)); }
+function exBulkStart(gid){ if(!canEdit()){ noEdit(); return null; } const L=exTicked(gid); if(!L.length){ toast('Tick at least one grade first','err'); return null; } EX_UI.openSet[gid]=true; return L; }
+function exBulkDone(msg){ saveDB(DB); renderDOS(); toast(msg); }
+function exBulkClosingDate(gid){ const L=exBulkStart(gid); if(!L) return; const v=qs('#'+gid+'_cd').value||''; L.forEach(e=>{ e.closingDate=v; touchExam(e); }); exBulkDone(v?`Closing date set for ${L.length} grade(s)`:`Closing date cleared for ${L.length} grade(s)`); }
+function exBulkClose(gid,close){
+  const L=exBulkStart(gid); if(!L) return;
+  if(!close && !confirm(`Reopen entry for ${L.length} grade(s)?\n\nAny approved results go back to Pending, and waiting teacher edit requests are cancelled (teachers can edit directly).`)) return;
+  L.forEach(e=>{ if(close){ e.closed=true; } else { e.closed=false; e.closingDate=''; if(e.resultsApproval==='approved'){ e.resultsApproval='pending'; e.approvedBy=''; e.approvalAt=''; } supersedePendingRequests(e,'Entry was reopened — edit the mark directly.'); } touchExam(e); });
+  exBulkDone(close?`Entry closed for ${L.length} grade(s)`:`Entry reopened for ${L.length} grade(s)`);
+}
+function exBulkApprove(gid,onlyComplete){
+  const L=exBulkStart(gid); if(!L) return;
+  const school=currentSchool(), cn=e=>(school.classes.find(c=>c.id===e.classId)||{}).name||'?';
+  const ok=[], already=[], waiting=[], incomplete=[];
+  L.forEach(e=>{
+    const c=examCompletion(school,e), pend=(e.editRequests||[]).filter(r=>r.status==='pending').length;
+    if(e.resultsApproval==='approved') already.push(cn(e));
+    else if(pend) waiting.push(`${cn(e)} (${pend} request${pend>1?'s':''})`);
+    else if(onlyComplete && c.total && c.filled<c.total) incomplete.push(`${cn(e)} (${c.total-c.filled} marks missing)`);
+    else ok.push({e,c});
+  });
+  if(!ok.length){ toast('Nothing to approve — '+(waiting.length?'edit requests are still waiting':already.length&&!incomplete.length?'those grades are already approved':incomplete.length?'no ticked grade has all its marks in':'nothing selected'),'err'); return; }
+  const miss=ok.filter(x=>x.c.total&&x.c.filled<x.c.total);
+  const line=x=>`  • ${cn(x.e)} — ${x.c.filled} of ${x.c.total} marks${x.c.total&&x.c.filled<x.c.total?`  ⚠ ${x.c.total-x.c.filled} missing`:''}`;
+  const msg=`Approve results for ${ok.length} grade(s) of "${ok[0].e.name}"?\n\n${ok.map(line).join('\n')}`
+    +(miss.length?`\n\n⚠ ${miss.length} of these still have marks missing.`:'')
+    +(already.length?`\n\nSkipped — already approved: ${already.join(', ')}`:'')
+    +(waiting.length?`\n\nSkipped — teacher edit requests waiting: ${waiting.join(', ')}`:'')
+    +(incomplete.length?`\n\nSkipped — not all marks in: ${incomplete.join(', ')}`:'')
+    +'\n\nEntry will close for the approved grades so the marks are locked — teachers can then only send edit requests.';
+  if(!confirm(msg)) return;
+  const by=approverDisplayName(school), at=new Date().toISOString();
+  ok.forEach(({e})=>{ e.resultsApproval='approved'; e.approvalNote=''; e.approvedBy=by; e.approvalAt=at; e.closed=true; touchExam(e); });
+  exBulkDone(`Results approved for ${ok.length} grade(s)`+(already.length+waiting.length+incomplete.length?` · ${already.length+waiting.length+incomplete.length} skipped`:''));
+}
+function exBulkDisapprove(gid){
+  const L=exBulkStart(gid); if(!L) return;
+  const note=prompt(`Why are you disapproving these ${L.length} grade(s)? Teachers will see this reason and entry will reopen so they can correct it:`);
+  if(note===null) return;
+  if(!note.trim()){ toast('Please give a short reason so teachers know what to fix','err'); return; }
+  const at=new Date().toISOString();
+  L.forEach(e=>{ e.resultsApproval='disapproved'; e.approvalNote=note.trim(); e.approvedBy=''; e.approvalAt=at; e.closed=false; e.closingDate=''; supersedePendingRequests(e,'Results were disapproved and entry reopened — edit the mark directly.'); touchExam(e); });
+  exBulkDone(`Disapproved ${L.length} grade(s) — entry reopened`);
+}
+function exBulkParent(gid,vis){ const L=exBulkStart(gid); if(!L) return; L.forEach(e=>{ e.parentVisible=!!vis; touchExam(e); }); exBulkDone(vis?`Now visible to parents (${L.length} grade(s))`:`Now hidden from parents (${L.length} grade(s))`); }
+function exBulkDates(gid){
+  const L=exBulkStart(gid); if(!L) return;
+  const tc=qs('#'+gid+'_tc').value, nt=qs('#'+gid+'_nt').value, td=qs('#'+gid+'_td').value;
+  if(!tc && !nt && String(td).trim()===''){ toast('Fill at least one date or the school days','err'); return; }
+  L.forEach(e=>{ if(tc) e.termCloseDate=tc; if(nt) e.nextTermDate=nt; if(String(td).trim()!=='') e.totalDays=Math.max(0,Number(td)||0); touchExam(e); });
+  exBulkDone(`Report card dates updated for ${L.length} grade(s)`);
+}
+function exBulkMax(gid){
+  const L=exBulkStart(gid); if(!L) return;
+  const area=qs('#'+gid+'_ma').value, v=Math.max(1,Number(qs('#'+gid+'_mv').value)||0);
+  if(!area||!v){ toast('Choose a learning area and the max marks','err'); return; }
+  const school=currentSchool(); let done=0, locked=0;
+  L.forEach(e=>{ if(!areasForClass(school,e.classId).some(a=>a.id===area)) return; if(paperLocked(e,area)){ locked++; return; } e.maxMarksByArea[area]=v; touchExam(e); done++; });
+  if(!done){ toast(locked?'That area is set automatically from its papers in the ticked grades':'None of the ticked grades have that learning area','err'); return; }
+  exBulkDone(`Max marks set to ${v} in ${done} grade(s)`+(locked?` · ${locked} skipped (set from papers)`:''));
+}
+function exBulkRename(gid){
+  if(!canEdit()){ noEdit(); return; }
+  const school=currentSchool(), g=exGroups(school).find(x=>x.id===gid); if(!g) return;
+  const name=qs('#'+gid+'_rn').value.trim(), term=qs('#'+gid+'_rt').value, year=Number(qs('#'+gid+'_ry').value);
+  if(!name||!year){ toast('Enter the name and a valid year','err'); return; }
+  const clash=g.exams.filter(e=>school.exams.some(x=>x.id!==e.id&&x.classId===e.classId&&x.term===term&&x.year===year&&x.name.trim().toLowerCase()===name.toLowerCase()));
+  if(clash.length){ toast('Another exam with that name/term/year already exists for '+clash.length+' of these grades','err'); return; }
+  g.exams.forEach(e=>{ e.name=name; e.term=term; e.year=year; touchExam(e); });
+  EX_UI.openSet[exSetId(exKey({name,term,year}))]=true; exBulkDone(`Renamed in ${g.exams.length} grade(s)`);
+}
+function exCopySet(gid){
+  const L=exBulkStart(gid); if(!L) return;
+  const school=currentSchool(), name=qs('#'+gid+'_cn').value.trim(), term=qs('#'+gid+'_ct').value, year=Number(qs('#'+gid+'_cy').value);
+  if(!name||!year){ toast('Enter the new exam name and a valid year','err'); return; }
+  let made=0, skipped=0;
+  L.forEach(e=>{
+    if(school.exams.some(x=>x.classId===e.classId&&x.term===term&&x.year===year&&x.name.trim().toLowerCase()===name.toLowerCase())){ skipped++; return; }
+    const n={id:uid('ex_'),name,term,year,classId:e.classId,maxMarksByArea:Object.assign({},e.maxMarksByArea),date:new Date().toISOString(),closed:false,closingDate:'',editRequests:[],resultsApproval:'pending',termCloseDate:'',nextTermDate:'',totalDays:0,parentVisible:e.parentVisible!==false};
+    if(e.papers) n.papers=JSON.parse(JSON.stringify(e.papers));
+    school.exams.push(n); made++;
+  });
+  if(!made){ toast('Nothing copied — that exam already exists for those grades','err'); return; }
+  EX_UI.openSet[exSetId(exKey({name,term,year}))]=true; exBulkDone(`Copied ${made} exam(s) as "${name}"`+(skipped?` · ${skipped} already existed`:''));
+}
+function exBulkDelete(gid){
+  const L=exBulkStart(gid); if(!L) return;
+  const appr=L.filter(e=>e.resultsApproval==='approved').length;
+  if(!confirm(`Delete ${L.length} exam(s) and ALL their recorded marks?`+(appr?`\n\n⚠ ${appr} of them already have approved results — those official marks will be permanently removed.`:'')+'\n\nThis cannot be undone.')) return;
+  const school=currentSchool(), ids=new Set(L.map(e=>e.id));
+  school.exams=school.exams.filter(x=>!ids.has(x.id)); ids.forEach(id=>{ delete school.marks[id]; });
+  exBulkDone(`Deleted ${L.length} exam(s)`);
+}
 function tplExams(school){
-  const firstClassId = school.classes[0] ? school.classes[0].id : '';
   const nAppr = school.exams.filter(e=>e.resultsApproval==='approved').length;
   const nDis = school.exams.filter(e=>e.resultsApproval==='disapproved').length;
   const nPendReq = school.exams.reduce((n,e)=>n+(e.editRequests||[]).filter(r=>r.status==='pending').length,0);
   const nHiddenFromParents = school.exams.filter(e=>e.parentVisible===false).length;
+  const nSets = exGroups(school).length, years=[...new Set(school.exams.map(e=>e.year))].sort((a,b)=>b-a);
   return `<div class="card"><h2>📝 Exams / Assessments</h2>
-  ${school.exams.length ? `<p class="small">Approval overview: <b>${nAppr}</b> approved · <b>${school.exams.length-nAppr-nDis}</b> pending review · <b>${nDis}</b> disapproved${nPendReq?` · <span style="color:#9c2c2c"><b>${nPendReq}</b> teacher edit request(s) waiting for your decision</span>`:''}</p>` : ''}
+  ${school.exams.length ? `<p class="small"><b>${nSets}</b> exam set${nSets===1?'':'s'} · <b>${school.exams.length}</b> exam${school.exams.length===1?'':'s'} in total · Approval overview: <b>${nAppr}</b> approved · <b>${school.exams.length-nAppr-nDis}</b> pending review · <b>${nDis}</b> disapproved${nPendReq?` · <span style="color:#9c2c2c"><b>${nPendReq}</b> teacher edit request(s) waiting for your decision</span>`:''}</p>` : ''}
   ${school.parentPortalEnabled===false ? `<p class="msg err">🔒 Parent Portal is closed school-wide — no parent can log in, regardless of any exam's own Parent Access setting below. Turn it back on in School Details.</p>`
     : (nHiddenFromParents ? `<p class="small">👁 Parent Portal is open · <b>${nHiddenFromParents}</b> exam(s) individually hidden from parents.</p>` : '')}
-  <div class="row">
-    <div><label>Exam Name</label><input id="exName" placeholder="e.g. Mid Term CAT 1"></div>
-    <div><label>Term</label><select id="exTerm"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>
-    <div><label>Year</label><input id="exYear" type="number" value="${new Date().getFullYear()}"></div>
-    <div><label>Grade</label><select id="exClass" onchange="renderExamAreaInputs()">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
+  <details ${school.exams.length?'':'open'}><summary style="cursor:pointer"><b>➕ Create a new exam</b> <span class="small">— for all grades at once, or only the ones you tick</span></summary><div style="margin-top:8px">${tplExamCreate(school)}</div></details>
   </div>
-  <p class="small">Maximum marks per learning area:</p>
-  <div class="row" id="examAreaInputs">${renderExamAreaInputsHTML(school, firstClassId)}</div>
-  <div class="flexbtns"><button onclick="addExam()">➕ Create Exam</button></div>
-  </div>
-  ${school.exams.length ? school.exams.map(e=>tplExamCard(school,e)).join('') : '<div class="card small">No exams yet.</div>'}
+  ${school.exams.length ? `<div class="card"><div class="row">
+    <div><label>🔎 Search exams</label><input placeholder="Exam name…" value="${escapeHtml(EX_UI.q)}" oninput="exFilter('q',this.value)"></div>
+    <div><label>Year</label><select onchange="exFilter('year',this.value)"><option value="">All years</option>${years.map(y=>`<option ${String(EX_UI.year)===String(y)?'selected':''}>${y}</option>`).join('')}</select></div>
+    <div><label>Term</label><select onchange="exFilter('term',this.value)"><option value="">All terms</option>${['Term 1','Term 2','Term 3'].map(t=>`<option ${EX_UI.term===t?'selected':''}>${t}</option>`).join('')}</select></div>
+  </div><p class="small">Each exam name + term + year is one <b>set</b>. Open a set to see every grade's progress; tick grades and use <b>Change settings</b> to update many at once, or <b>Manage</b> for one grade's full settings.</p></div>` : ''}
+  <div id="examList">${tplExamList(school)}</div>
   `;
 }
 /* Per-exam management card: entry-closing period, results approval, and any
@@ -9936,14 +10178,23 @@ function rcPrintSimCSS(){
   const st=document.createElement('style'); st.id='rcSimCss'; st.textContent=css; document.head.appendChild(st);
 }
 function resetReportFit(){
+  const pc=document.getElementById('rcPageCss'); if(pc) pc.remove();
+  document.documentElement.style.removeProperty('--rc-page-h');
   document.querySelectorAll('.report-card').forEach(el=>{ el.style.zoom=''; el.style.width=''; el.style.height=''; el.style.removeProperty('--rc-pad'); el.style.removeProperty('--rc-ch'); });
 }
+// Printable area (mm) for each paper size = paper minus the 8mm @page margins, with 1mm spare height.
+const RC_PAPERS = { A4:{w:194,h:280}, Letter:{w:199,h:262}, Legal:{w:199,h:338} };
+function rcPaper(){ try{ const v=localStorage.getItem('edutrack_rc_paper'); if(RC_PAPERS[v]) return v; }catch(e){} return 'A4'; }
+function setRcPaper(v){ if(!RC_PAPERS[v]) return; try{ localStorage.setItem('edutrack_rc_paper',v); }catch(e){} toast('Paper set to '+v+' — choose the same Paper size in the print dialog'); }
+function rcPaperPick(){ return `<select class="no-print" onchange="setRcPaper(this.value)" style="width:auto;margin:0" title="Must match the Paper size chosen in the print dialog">${Object.keys(RC_PAPERS).map(k=>`<option value="${k}" ${rcPaper()===k?'selected':''}>Paper: ${k}</option>`).join('')}</select>`; }
 function fitReportCardsToPage(){
   const PX = mm => mm*96/25.4;
-  const PAGE_W = 194, PAGE_H = 280;            // printable A4 (mm): 210-2*8 wide, 297-2*8 tall minus 1mm safety
+  const PAPER = rcPaper(), PAGE_W = RC_PAPERS[PAPER].w, PAGE_H = RC_PAPERS[PAPER].h;
   const cards = Array.from(document.querySelectorAll('.report-card'));
   resetReportFit();
   if(!cards.length) return;
+  document.documentElement.style.setProperty('--rc-page-h', PAGE_H+'mm');
+  const pg=document.createElement('style'); pg.id='rcPageCss'; pg.textContent='@page{size:'+PAPER+';margin:8mm}'; document.head.appendChild(pg);
   rcPrintSimCSS();
   const sim=document.createElement('div');
   sim.className='rcsim';
@@ -9997,7 +10248,7 @@ function showReports(areaSel, learners, examId, title){
     + (marked===0 ? ' · <b style="color:#9c2c2c">⚠ no marks have been entered for this exam yet — the forms will be blank</b>' : '')
     + (failed.length ? `<br><b style="color:#9c2c2c">⚠ Could not build ${failed.length}: ${escapeHtml(failed.slice(0,8).join(', '))}${failed.length>8?'…':''}</b>` : '') + '</div>';
   area.innerHTML = info + built.map(r=>r.html).join('') +
-    `<div class="flexbtns no-print">${inkPick()}<button class="gold" onclick="window.print()">🖨 ${title}</button></div>`;
+    `<div class="flexbtns no-print">${rcPaperPick()}${inkPick()}<button class="gold" onclick="window.print()">🖨 ${title}</button></div><p class="small no-print">Tip: in the print dialog set <b>Paper size</b> to the same size you chose here (A4 recommended) and leave Margins on Default / Scale on 100%.</p>`;
   built.forEach(r=>{ try{ drawProgressChart(r.chartId, r.historyPoints); }catch(e){} });
   try{ area.scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){}
 }
