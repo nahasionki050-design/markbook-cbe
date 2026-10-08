@@ -330,13 +330,14 @@ canvas{max-width:100%;}
   .rc-tile span{font-size:9.5px;}
   .rc-analysis ul{margin:2px 0 0 14px;}
   .rc-chart-label{font-size:12px;}
-  /* margin-top:auto turns these into flexible spacers inside the .rc-body flex column: any
-     unused page height (short reports with few learning areas) gets split between the gap
-     above the chart and the gap above the signature block, instead of sitting as one dead
-     blank strip below the footer. Content that already fills the page just gets its normal
-     small gap, same as before. */
-  .rc-chartwrap{margin-top:auto;}
-  .rc-sigrow{margin-top:auto;}
+  /* A short report (few learning areas) just leaves blank space at the bottom of the page
+     rather than being stretched to fill it — stretching via flex auto-margins plus growing
+     the table's padding/chart height to soak up the gap was fragile: inside a fixed-height,
+     overflow:hidden page box, any small overshoot in that math silently clipped off whatever
+     came after (Pathway Profile, remarks, signatures, QR code, footer). Leaving a gap is a
+     far safer trade-off than ever dropping content the school is relying on. */
+  .rc-chartwrap{margin-top:10px;}
+  .rc-sigrow{margin-top:10px;}
   .rc-sigrow .sig-line{padding-top:3px;font-size:12px;}
   .rc-sigrow.has-stamp{grid-template-columns:1fr 1fr 1fr 74px;gap:12px;}
   .rc-stamp{border:1.5px dashed #8a9bad;border-radius:6px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:9.5px;color:#8a9bad;min-height:60px;}
@@ -10244,13 +10245,16 @@ function fitReportCardsToPage(){
       if(kRaw >= MIN_K){
         // Fixed page box, clipped — the scaled content is pinned top-left inside it via
         // transform (see the .rc-scale print-CSS comment above for why transform, not zoom).
+        // The content is laid out PAGE_W/k wide (wider than the page) and then visually
+        // shrunk by k, so after scaling it fills the full page width again — same principle
+        // the old zoom-based code used (inflate, then shrink back to exactly one page).
         el.style.width=PAGE_W+'mm';
         el.style.height=PAGE_H+'mm';
         el.style.overflow='hidden';
         if(scaleEl){
           scaleEl.style.position='absolute';
           scaleEl.style.top='0'; scaleEl.style.left='0';
-          scaleEl.style.width=PAGE_W+'mm';
+          scaleEl.style.width=(PAGE_W/kRaw)+'mm';
           scaleEl.style.transform='scale('+kRaw+')';
         }
       }else{
@@ -10265,13 +10269,10 @@ function fitReportCardsToPage(){
         el.style.pageBreakInside='auto';
         el.style.breakInside='auto';
       }
-    }else{
-      // Short report: instead of leaving one big empty gap, share ~80% of the spare height between
-      // taller table rows (55%) and a taller trend chart (25%); the flex spacers take the rest.
-      const spare=PX(PAGE_H)-h, rows=el.querySelectorAll('.rc-table tr').length||1;
-      el.style.setProperty('--rc-pad', (3.5+Math.min(spare*0.55/rows/2,13)).toFixed(1)+'px');
-      el.style.setProperty('--rc-ch', (120+Math.min(spare*0.25,140)).toFixed(0)+'px');
     }
+    // Short report (natural height already under one page): nothing to do — it's left at its
+    // natural size, full width, with any spare page height simply left blank below it rather
+    // than stretched to fill (see the .rc-chartwrap/.rc-sigrow print-CSS comment for why).
   });
   document.body.removeChild(sim);
 }
