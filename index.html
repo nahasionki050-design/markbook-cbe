@@ -1175,7 +1175,7 @@ function smsCreditsNeeded(recipientCount, text){ return recipientCount * smsSegm
 // Used by admin actions (create/suspend/activate/delete/reset password/etc.) which don't
 // go through the DOS/teacher session's own scheduleCloudPush().
 function pushSchoolDataToPlatform(code){
-  const school = DB.schools[code]; if(!school) return;
+  const school = DB.schools[code]; if(!school) return Promise.resolve(false);
   // This runs for admin-driven edits (create/suspend/activate/delete/reset password,
   // edit trial, etc.), which never pass through a DOS/teacher session's saveDB stamp
   // (see saveDB above — it only bumps _updatedAt for the active dos/teacher session's
@@ -1200,14 +1200,18 @@ function pushSchoolDataToPlatform(code){
   if(ownConfig && (!hasPlatformConfig() || JSON.stringify(ownConfig)!==JSON.stringify(window.PLATFORM_FIREBASE_CONFIG))){
     targets.push(ownConfig);
   }
-  if(!targets.length) return;
-  (async ()=>{
+  if(!targets.length) return Promise.resolve(false);
+  // Resolves true only if EVERY target accepted the write, so admin actions can tell the admin
+  // whether the school's own devices will really see the change.
+  return (async ()=>{
+    let allOk = true;
     for(const config of targets){
       try{
         await initSync(config);
         await schoolDataRef(code).set(snapshot);
-      }catch(e){ console.warn('Directory push to a sync target failed', e); }
+      }catch(e){ allOk = false; console.warn('Directory push to a sync target failed', e); }
     }
+    return allOk;
   })();
 }
 // Fire-and-forget: removes a school's entry from every project it could be resolved
@@ -1279,6 +1283,59 @@ async function refreshSchoolFromCloud(code){
   saveDB(DB, {skipCloud:true});
   return true;
 }
+// ---- Subscription changes (activate / suspend / trial): fast, safe, self-retrying ----
+// Sends ONLY status/trial fields (never the whole school), so it is quick and can never overwrite a
+// school's own newer data. Resolves true only if every sync target accepted it.
+function pushSubscriptionFields(code){
+  const school = DB.schools[code]; if(!school) return Promise.resolve(true);
+  const fields = {status:school.status, trialEndsAt:school.trialEndsAt, trialDays:school.trialDays, _updatedAt:Date.now()};
+  const targets = [];
+  if(hasPlatformConfig()) targets.push(window.PLATFORM_FIREBASE_CONFIG);
+  const own = school.syncConfig && school.syncConfig.config;
+  if(own && (!hasPlatformConfig() || JSON.stringify(own)!==JSON.stringify(window.PLATFORM_FIREBASE_CONFIG))) targets.push(own);
+  if(!targets.length) return Promise.resolve(false);
+  return (async ()=>{
+    let allOk = true;
+    for(const config of targets){
+      try{
+        await withTimeout((async()=>{
+          await initSync(config);
+          const ref = schoolDataRef(code);
+          if(!(await ref.child('name').once('value')).exists()){ await ref.set(nonMarksSnapshot(Object.assign(school,{_updatedAt:fields._updatedAt}))); }   // never create a stub school
+          else await ref.update(fields);
+        })(), 12000, 'Sync');
+      }catch(e){ allOk = false; console.warn('Subscription push failed', e); }
+    }
+    return allOk;
+  })();
+}
+const PENDING_SUB_KEY = 'edutrack_pending_sub';
+function pendingSubList(){ try{ return JSON.parse(localStorage.getItem(PENDING_SUB_KEY)||'[]'); }catch(e){ return []; } }
+function setPendingSub(list){ try{ localStorage.setItem(PENDING_SUB_KEY, JSON.stringify(Array.from(new Set(list)))); }catch(e){} }
+let _flushingSub = false;
+async function flushPendingSubscriptions(){
+  if(_flushingSub) return; const list = pendingSubList(); if(!list.length) return;
+  _flushingSub = true;
+  try{
+    const left = [];
+    for(const code of list){ if(!(await pushSubscriptionFields(code))) left.push(code); }
+    setPendingSub(left);
+    if(left.length < list.length) toast('✔ Pending school changes were delivered to the cloud.');
+  }finally{ _flushingSub = false; }
+}
+window.addEventListener('online', ()=>{ if(session && session.role==='admin') flushPendingSubscriptions(); });
+setInterval(()=>{ if(session && session.role==='admin') flushPendingSubscriptions(); }, 20000);
+// Applies a subscription change on this device, sends it, and queues an automatic retry if the cloud was unreachable.
+async function adminSetSubscription(code, mutate){
+  const school = DB.schools[code]; if(!school) return null;
+  mutate(school);
+  saveDB(DB, {skipCloud:true});
+  const ok = await pushSubscriptionFields(code);
+  window._adminPushOk = ok;
+  const list = pendingSubList().filter(c=>c!==code);
+  setPendingSub(ok ? list : list.concat(code));
+  return school;
+}
 // Wraps a one-field (or few-field) admin edit — activate, suspend, reset password,
 // edit trial, etc. Refreshes from the cloud FIRST so the edit, and the re-push that
 // follows it, build on the school's actual current data instead of whatever stale
@@ -1290,8 +1347,13 @@ async function adminEditAndPush(code, mutate){
   if(!school) return null;
   mutate(school);
   saveDB(DB);
-  pushSchoolDataToPlatform(code);
+  // Wait for the cloud write so the toast can say honestly whether the school's devices got it.
+  const pushed = await pushSchoolDataToPlatform(code);
+  window._adminPushOk = pushed;
   return school;
+}
+function adminPushNote(){
+  return window._adminPushOk ? ' ✔ Delivered — the school can log in now.' : ' ⚠ No internet to the cloud right now — saved here and it will be sent AUTOMATICALLY as soon as you are online (keep this app open or reopen it).';
 }
 // Refreshes every school's data from the cloud (see refreshSchoolFromCloud) and
 // re-renders the admin dashboard if anything changed, so learner/class counts shown
@@ -1983,6 +2045,51 @@ function schoolStatusLabel(s){
   return `<span class="badge AE">Trial: ${daysLeft}d left</span>`;
 }
 
+// A school's phone/laptop keeps its own saved copy of the school, including its trial/paid status.
+// Pulls ONLY the status + trial-end fields from the cloud (tiny, fast) into that saved copy.
+async function pullAccessFields(code, config){
+  await initSync(config);
+  const ref = schoolDataRef(code);
+  const [st, te] = await Promise.all([ref.child('status').once('value'), ref.child('trialEndsAt').once('value')]);
+  const local = DB.schools[code], status = st.val();
+  if(local && status){ local.status = status; if(te.val()!=null) local.trialEndsAt = te.val(); saveDB(DB, {skipCloud:true}); }
+}
+function accessSyncConfig(code){ return resolveLoginSyncConfig(code) || (hasPlatformConfig() ? window.PLATFORM_FIREBASE_CONFIG : null); }
+// If that saved copy says "trial ended" or "suspended", the admin may have activated or extended the
+// school since — so BEFORE refusing a login, ask the cloud for the latest copy and re-check.
+async function accessWithFreshCheck(code, school){
+  const first = schoolAccessStatus(school);
+  if(first.ok) return {access:first, school};
+  const config = accessSyncConfig(code);
+  if(config){
+    const m = qs('#loginMsg'); if(m) m.innerHTML = '<div class="msg ok">Checking your subscription status…</div>';
+    try{ await withTimeout(pullAccessFields(code, config), 8000, 'Sync'); }
+    catch(e){ console.warn('Subscription re-check failed', e); }
+  }
+  const fresh = DB.schools[code] || school;
+  const access = schoolAccessStatus(fresh);
+  if(!access.ok && DB.schools[code] && config) startAccessAutoRetry(code, config);
+  return {access, school: fresh};
+}
+// AUTOMATIC: while the "trial ended / suspended" message is on screen, keep re-checking every 10s
+// (up to 10 minutes) and sign in by itself the moment the admin activates or extends the school.
+let _lastLoginFn = null, _accessRetryTimer = null;
+function stopAccessAutoRetry(){ if(_accessRetryTimer){ clearInterval(_accessRetryTimer); _accessRetryTimer = null; } }
+function startAccessAutoRetry(code, config){
+  stopAccessAutoRetry();
+  const fn = _lastLoginFn, startedAt = Date.now(); let busy = false;
+  setTimeout(()=>{ const m = qs('#loginMsg'); if(m && !qs('#autoRetryNote')) m.insertAdjacentHTML('beforeend','<div class="small" id="autoRetryNote" style="margin-top:6px">🔄 Checking again automatically — you will be signed in as soon as the school is activated.</div>'); }, 80);
+  _accessRetryTimer = setInterval(async ()=>{
+    if(busy) return;
+    if(session || !qs('#loginMsg') || !qs('#autoRetryNote') || Date.now()-startedAt > 10*60*1000){ stopAccessAutoRetry(); return; }
+    busy = true;
+    try{
+      await withTimeout(pullAccessFields(code, config), 8000, 'Sync');
+      if(schoolAccessStatus(DB.schools[code]).ok){ stopAccessAutoRetry(); if(fn) fn(); }
+    }catch(e){}
+    busy = false;
+  }, 10000);
+}
 /* ============================= SESSION ============================= */
 let session = JSON.parse(sessionStorage.getItem('cbc_session')||'null');
 // Holds the trimmed, single-learner view a parent session works from (see
@@ -2899,7 +3006,7 @@ async function doDosLogin(){
   const cached = DB.schools[code];
   const cachedRec = cached && cached.dos.find(d=>d.username===u && d.password===p);
   if(cachedRec){
-    const access = schoolAccessStatus(cached);
+    const access = (await accessWithFreshCheck(code, cached)).access;
     if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
     setSession({role:'dos', schoolCode:code, userId:cachedRec.id, label:`${cachedRec.name} · ${cached.name}`});
     route();
@@ -2917,7 +3024,7 @@ async function doDosLogin(){
   if(!school){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
   const rec = school.dos.find(d=>d.username===u && d.password===p);
   if(!rec){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">Invalid credentials.</div>'; return; }
-  const access = schoolAccessStatus(school);
+  const access = (await accessWithFreshCheck(code, school)).access;
   if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
   setSession({role:'dos', schoolCode:code, userId:rec.id, label:`${rec.name} · ${school.name}`});
   route();
@@ -2930,7 +3037,7 @@ async function doTeacherLogin(){
   const cached = DB.schools[code];
   const cachedRec = cached && cached.teachers.find(t=>t.username===u && t.password===p);
   if(cachedRec){
-    const access = schoolAccessStatus(cached);
+    const access = (await accessWithFreshCheck(code, cached)).access;
     if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
     setSession({role:'teacher', schoolCode:code, userId:cachedRec.id, label:`${cachedRec.name} (Teacher) · ${cached.name}`});
     route();
@@ -2948,7 +3055,7 @@ async function doTeacherLogin(){
   if(!school){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
   const rec = school.teachers.find(t=>t.username===u && t.password===p);
   if(!rec){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">Invalid credentials.</div>'; return; }
-  const access = schoolAccessStatus(school);
+  const access = (await accessWithFreshCheck(code, school)).access;
   if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
   setSession({role:'teacher', schoolCode:code, userId:rec.id, label:`${rec.name} (Teacher) · ${school.name}`});
   route();
@@ -2961,7 +3068,7 @@ async function doFinanceLogin(){
   const cached = DB.schools[code];
   const cachedRec = cached && cached.finance.find(f=>f.username===u && f.password===p);
   if(cachedRec){
-    const access = schoolAccessStatus(cached);
+    const access = (await accessWithFreshCheck(code, cached)).access;
     if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
     setSession({role:'finance', schoolCode:code, userId:cachedRec.id, label:`${cachedRec.name} (Finance) · ${cached.name}`});
     route();
@@ -2979,7 +3086,7 @@ async function doFinanceLogin(){
   if(!school){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
   const rec = school.finance.find(f=>f.username===u && f.password===p);
   if(!rec){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">Invalid credentials.</div>'; return; }
-  const access = schoolAccessStatus(school);
+  const access = (await accessWithFreshCheck(code, school)).access;
   if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
   setSession({role:'finance', schoolCode:code, userId:rec.id, label:`${rec.name} (Finance) · ${school.name}`});
   route();
@@ -2992,7 +3099,7 @@ async function doSadminLogin(){
   const cached = DB.schools[code];
   const cachedRec = cached && cached.sadmins.find(f=>f.username===u && f.password===p);
   if(cachedRec){
-    const access = schoolAccessStatus(cached);
+    const access = (await accessWithFreshCheck(code, cached)).access;
     if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
     setSession({role:'sadmin', schoolCode:code, userId:cachedRec.id, label:`${cachedRec.name} (School Admin) · ${cached.name}`});
     route();
@@ -3010,7 +3117,7 @@ async function doSadminLogin(){
   if(!school){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
   const rec = school.sadmins.find(f=>f.username===u && f.password===p);
   if(!rec){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">Invalid credentials.</div>'; return; }
-  const access = schoolAccessStatus(school);
+  const access = (await accessWithFreshCheck(code, school)).access;
   if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
   setSession({role:'sadmin', schoolCode:code, userId:rec.id, label:`${rec.name} (School Admin) · ${school.name}`});
   route();
@@ -3054,7 +3161,7 @@ async function doParentLogin(){
   const cachedFull = DB.schools[code];
   const cachedMatch = cachedFull && cachedFull.students.find(s => parentCandidateMatches(s, norm, nameInput, admInput, pinInput));
   if(cachedMatch){
-    const access = schoolAccessStatus(cachedFull);
+    const access = (await accessWithFreshCheck(code, cachedFull)).access;
     if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
     if(cachedFull.parentPortalEnabled===false){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">The Parent Portal has been closed by the school. Please contact the school directly for results.</div>'; return; }
     parentSchoolData = buildParentSafeSchool(cachedFull, cachedMatch);
@@ -3081,7 +3188,7 @@ async function doParentLogin(){
   // session itself never ends up holding more than its one learner's own class.
   if(!fullSchool) fullSchool = DB.schools[code];
   if(!fullSchool){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
-  const access = schoolAccessStatus(fullSchool);
+  const access = (await accessWithFreshCheck(code, fullSchool)).access;
   if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
   if(fullSchool.parentPortalEnabled===false){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">The Parent Portal has been closed by the school. Please contact the school directly for results.</div>'; return; }
   const student = fullSchool.students.find(s => parentCandidateMatches(s, norm, nameInput, admInput, pinInput));
@@ -3187,6 +3294,7 @@ function renderAdmin(){
             <button class="ghost" onclick="resetDosPasswordAdmin('${s.code}')">🔑 Reset DOS Password</button>
             ${s.status!=='active'?`<button onclick="activateSchool('${s.code}')">Activate (Mark Paid)</button>`:''}
             ${s.status!=='suspended'?`<button class="danger" onclick="suspendSchool('${s.code}')">Suspend</button>`:`<button class="ghost" onclick="unsuspendSchool('${s.code}')">Unsuspend</button>`}
+            ${s.status!=='active'?`<button class="ghost" onclick="extendTrialDays('${s.code}',30)">+30 days</button>`:''}
             <button class="ghost" onclick="editSchoolTrialDays('${s.code}')">Edit Trial</button>
             <button class="danger" onclick="deleteSchool('${s.code}')">Delete</button>
           </td>
@@ -3493,30 +3601,42 @@ async function editSchoolCode(oldCode){
   showCredentials(newCode);
 }
 async function activateSchool(code){
-  await adminEditAndPush(code, s=>{ s.status='active'; });
-  toast('School activated (marked as paid)'); renderAdmin();
+  await adminSetSubscription(code, s=>{ s.status='active'; });
+  toast('School activated (marked as paid).'+adminPushNote(), window._adminPushOk?'ok':'err'); renderAdmin();
 }
 async function suspendSchool(code){
   if(!confirm("Suspend this school's access? Their DOS/HOI and teachers will be locked out immediately until reactivated.")) return;
-  await adminEditAndPush(code, s=>{ s.status='suspended'; });
-  toast('School suspended'); renderAdmin();
+  await adminSetSubscription(code, s=>{ s.status='suspended'; });
+  toast('School suspended.'+adminPushNote(), window._adminPushOk?'ok':'err'); renderAdmin();
 }
 async function unsuspendSchool(code){
-  await adminEditAndPush(code, s=>{ s.status='trial'; });
-  toast('School unsuspended. If their trial already expired, use "Activate" or "Edit Trial" to restore access.'); renderAdmin();
+  await adminSetSubscription(code, s=>{ s.status='trial'; if(!(s.trialEndsAt>Date.now())) s.trialEndsAt = Date.now()+7*86400000; });
+  toast('School unsuspended (trial).'+adminPushNote(), window._adminPushOk?'ok':'err'); renderAdmin();
+}
+function _trialUntil(s){ return new Date(s.trialEndsAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
+async function extendTrialDays(code, days){
+  const s0 = DB.schools[code]; if(!s0) return;
+  await adminSetSubscription(code, s=>{
+    const base = Math.max(Date.now(), s.trialEndsAt||0);
+    s.trialEndsAt = base + days*86400000;
+    s.trialDays = Math.max(1, Math.ceil((s.trialEndsAt - s.createdAt)/86400000));
+    if(s.status==='suspended') s.status='trial';
+  });
+  toast('Trial extended by '+days+' days — now until '+_trialUntil(DB.schools[code])+'.'+adminPushNote(), window._adminPushOk?'ok':'err'); renderAdmin();
 }
 async function editSchoolTrialDays(code){
   const s = DB.schools[code];
-  const val = prompt("Set this school's trial length in days (counted from its creation date):", s.trialDays);
+  const left = Math.ceil((s.trialEndsAt-Date.now())/86400000);
+  const val = prompt("Trial for "+s.name+"\n"+(left>0?left+" day(s) left now.":"Trial already ended.")+"\n\nHow many days should the trial run from TODAY? (e.g. 14 or 30)", 14);
   if(val===null) return;
   const days = Number(val);
   if(isNaN(days)||days<0){ toast('Enter a valid number','err'); return; }
-  await adminEditAndPush(code, fresh=>{
-    fresh.trialDays = days;
-    fresh.trialEndsAt = fresh.createdAt + days*24*60*60*1000;
-    if(fresh.status==='active'){ /* leave paid schools as active regardless of trial math */ }
+  await adminSetSubscription(code, fresh=>{
+    fresh.trialEndsAt = Date.now() + days*86400000;
+    fresh.trialDays = Math.max(1, Math.ceil((fresh.trialEndsAt - fresh.createdAt)/86400000));
+    if(fresh.status==='suspended') fresh.status='trial';
   });
-  toast('Trial period updated'); renderAdmin();
+  toast('Trial now runs until '+_trialUntil(DB.schools[code])+'.'+adminPushNote(), window._adminPushOk?'ok':'err'); renderAdmin();
 }
 function showLink(code, role){
   // role is only ever 'dos' or 'parent' here (see the two call sites above). DOS/HOI
@@ -11025,6 +11145,13 @@ async function sendSmsBatch(school, recipients, meta, msgElId){
 /* ============================= INIT ============================= */
 resetInactivityTimer(); // arm the 15-minute timeout right away if a session survived a page refresh
 route();
+
+// Remember which login button was used, so the automatic retry can press it again.
+['doDosLogin','doTeacherLogin','doFinanceLogin','doSadminLogin','doParentLogin'].forEach(n=>{
+  const f = window[n]; if(typeof f!=='function') return;
+  window[n] = function(){ _lastLoginFn = window[n]; return f.apply(this, arguments); };
+});
+
 </script>
 </body>
 </html>
