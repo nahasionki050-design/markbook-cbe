@@ -288,6 +288,14 @@ canvas{max-width:100%;}
     height:var(--rc-page-h,280mm);display:flex;flex-direction:column;box-sizing:border-box;margin:0;box-shadow:none;position:relative;}
   /* No trailing blank page: the very last report must not force a page break after itself. */
   .report-card.print-only-block:has(+ .no-print:last-child){page-break-after:auto;break-after:auto;}
+  /* Robust version (this is what actually removes the blank 2nd page): a report card NEVER forces a page
+     break after itself — that always left an empty page behind the last/only learner whenever anything
+     (buttons, a tip line) came after it in the page. Instead every report AFTER the first one starts a
+     new page, so 1 learner = exactly 1 page, and N learners = exactly N pages. */
+  .report-card.print-only-block{page-break-after:auto !important;break-after:auto !important;}
+  .report-card.print-only-block ~ .report-card.print-only-block{page-break-before:always;break-before:page;}
+  /* Nothing after the report may take up any room on paper. */
+  .report-card ~ *:not(.report-card){display:none !important;}
   /* .rc-scale is the piece that actually gets shrunk (via transform:scale, set by
      fitReportCardsToPage()) when a report has too much content for one page. transform is
      used instead of the CSS `zoom` property this used to rely on: zooming an ancestor of a
@@ -863,7 +871,21 @@ function loadFirebaseSdk(cb){
 // not" but not "only your own child's record" without a server-side check (e.g. a Cloud
 // Function) that this static, backend-less app doesn't have. Pair this with the Database
 // Rules change described where initSync is documented in the file's header comment.
+// Two parts of the app can ask to connect at the same moment (e.g. the parent login now checks the
+// lockout and looks up the learner in parallel). While a connection to the same project is still being
+// set up, they share it instead of each signing in separately.
+let _initSyncP = null, _initSyncKey = '';
 function initSync(config){
+  const key = JSON.stringify(config);
+  if(_initSyncP && _initSyncKey===key) return _initSyncP;
+  _initSyncKey = key;
+  const pr = initSyncRaw(config);
+  _initSyncP = pr;
+  const clear = ()=>{ if(_initSyncP===pr) _initSyncP = null; };
+  pr.then(clear, clear);
+  return pr;
+}
+function initSyncRaw(config){
   return new Promise((resolve, reject)=>{
     loadFirebaseAuthSdk(()=>{
       try{
@@ -1021,10 +1043,15 @@ async function parentLoadMarks(code, school, student){
   const vis = e=>examVisibleToParent(school, e);
   const mine = school.exams.filter(e=>e.classId===student.classId && vis(e));
   const others = school.exams.filter(e=>e.classId!==student.classId && vis(e));
-  const sat = await Promise.all(others.map(e=>examMarksRef(code, e.id).child(student.id).once('value').then(x=>x.exists())));
-  const ids = mine.map(e=>e.id).concat(others.filter((e,i)=>sat[i]).map(e=>e.id));
-  const snaps = await Promise.all(ids.map(id=>examMarksRef(code, id).once('value')));
-  ids.forEach((id,i)=>{ const v = snaps[i].val(); if(v) school.marks[id] = v; });
+  // Everything is requested at the same moment (own-grade marks AND the quick "did this learner sit it?"
+  // checks for other grades) instead of one step after the other — this is what makes results load fast.
+  const minePs = mine.map(e=>examMarksRef(code, e.id).once('value').then(x=>[e.id, x.val()]));
+  const otherPs = others.map(e=>examMarksRef(code, e.id).child(student.id).once('value').then(x=>x.exists()?e:null));
+  const [mineRes, otherRes] = await Promise.all([Promise.all(minePs), Promise.all(otherPs)]);
+  mineRes.forEach(([id,v])=>{ if(v) school.marks[id] = v; });
+  const extra = otherRes.filter(Boolean);
+  const extraRes = await Promise.all(extra.map(e=>examMarksRef(code, e.id).once('value').then(x=>[e.id, x.val()])));
+  extraRes.forEach(([id,v])=>{ if(v) school.marks[id] = v; });
   delete school._parentMarksLazy;
 }
 function buildParentSafeSchool(fullSchool, student){
@@ -2103,7 +2130,7 @@ let parentSchoolData = null;
 function setSession(s){ session = s; sessionStorage.setItem('cbc_session', JSON.stringify(s)); resetInactivityTimer(); }
 function logout(){ Object.keys(smsPinMem).forEach(k=>delete smsPinMem[k]); teacherTab='dashboard'; parentTab='dashboard'; adminTab='dashboard'; session=null; parentSchoolData=null; sessionStorage.removeItem('cbc_session'); syncState.enabled=false; syncState.connectedCode=null; detachLiveListeners(); detachAdminLiveListener(); clearTimeout(inactivityTimer); route(); }
 
-function currentSchool(){ return session && session.schoolCode ? DB.schools[session.schoolCode] : null; }
+function currentSchool(){ if(session && session.role==='parent') return parentSchoolData; return session && session.schoolCode ? DB.schools[session.schoolCode] : null; }
 
 /* ============================= INACTIVITY AUTO-LOGOUT =============================
    Any signed-in session (Admin, DOS/HOI, or Teacher) is signed out automatically after
@@ -2534,7 +2561,10 @@ function route(){
   else if(session.role==='teacher') renderTeacher();
   else if(session.role==='finance') renderFinance();
   else if(session.role==='sadmin') renderSadmin();
-  else if(session.role==='parent') renderParent();
+  else if(session.role==='parent'){
+    try{ renderParent(); }
+    catch(err){ console.error('Parent portal failed to draw', err); app.innerHTML = '<div class="card"><h2>Something went wrong</h2><p class="small">We could not open the results page. Please log out and try again, or contact the school.</p><div class="flexbtns"><button onclick="logout()">Back to login</button></div></div>'; }
+  }
   // Parent sessions deliberately never call ensureSyncConnected: they get one snapshot
   // of the school's data at login (see doParentLogin), never a live/writable connection,
   // and never touch renderDOS/renderTeacher/renderAdmin or anything reachable from them.
@@ -3142,9 +3172,16 @@ async function doParentLogin(){
   setLoginBusy(true, 'Looking up…');
   const norm = s => String(s||'').trim().toLowerCase();
   const config = resolveLoginSyncConfig(code);
-  // Lockout check first, before doing any lookup at all: someone brute-forcing name/admission/
-  // PIN combinations for this school code gets stopped here regardless of which path below would
-  // otherwise have handled their guess (see PARENT PORTAL: LOGIN LOCKOUT above).
+  // SPEED: the brute-force lockout check and the learner lookup are independent network reads, so they
+  // now start at the same moment instead of one after the other. The lockout result is still checked
+  // BEFORE anything is shown or any session is created, so the protection is unchanged.
+  const _cachedFull0 = DB.schools[code];
+  const _hasCachedMatch = !!(_cachedFull0 && _cachedFull0.students.find(s => parentCandidateMatches(s, norm, nameInput, admInput, pinInput)));
+  let lookupP = null;
+  if(config && !_hasCachedMatch){
+    qs('#loginMsg').innerHTML='<div class="msg ok">Looking up learner…</div>';
+    lookupP = withTimeout(parentCloudLookup(code, config), 20000, 'Sync').then(v=>({v}), e=>({e}));
+  }
   const lockout = await checkParentLockout(code, config);
   if(lockout.locked){
     setLoginBusy(false);
@@ -3177,10 +3214,10 @@ async function doParentLogin(){
   // and is never assigned into DB, so nothing beyond that learner's own class data ever
   // gets written to this device.
   let fullSchool = null;
-  if(config){
-    qs('#loginMsg').innerHTML='<div class="msg ok">Looking up learner…</div>';
-    try{ fullSchool = await withTimeout(parentCloudLookup(code, config), 8000, 'Sync'); }
-    catch(e){ console.warn('Parent cloud lookup did not complete in time, falling back to local data', e); qs('#loginMsg').innerHTML='<div class="msg err">Sync is slow to respond — checking what\'s on this device instead.</div>'; }
+  if(lookupP){
+    const r = await lookupP;
+    if(r.e){ console.warn('Parent cloud lookup did not complete in time, falling back to local data', r.e); qs('#loginMsg').innerHTML='<div class="msg err">The connection is slow — checking what is on this device instead.</div>'; }
+    else fullSchool = r.v;
   }
   // Offline / no sync configured for this school: fall back to whatever this device
   // already has locally (e.g. a device previously used by staff already holds the full
@@ -3199,7 +3236,8 @@ async function doParentLogin(){
     return;
   }
   if(fullSchool._parentMarksLazy){
-    try{ await withTimeout(parentLoadMarks(code, fullSchool, student), 10000, 'Sync'); }
+    setLoginBusy(true, 'Loading results…');
+    try{ await withTimeout(parentLoadMarks(code, fullSchool, student), 20000, 'Sync'); }
     catch(e){ console.warn('Parent marks load failed', e); setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">Could not load results — please check your connection and try again.</div>'; return; }
   }
   parentSchoolData = buildParentSafeSchool(fullSchool, student);
@@ -4609,6 +4647,186 @@ function portalQuick(goto, items){
   return `<div class="dos-quick no-print">${items.map(([k,l])=>`<button onclick="${goto}('${k}')">${l}</button>`).join('')}</div>`;
 }
 function gotoTeacherTab(k){ teacherTab = k; document.body.classList.remove('dos-menu-open'); renderTeacher(); window.scrollTo(0,0); }
+/* ============================= PARENT PORTAL (screens) =============================
+   Everything here reads ONLY parentSchoolData (the trimmed single-learner copy built at login by
+   buildParentSafeSchool) via currentSchool(). Layout follows the other portals: it opens on a short
+   dashboard and every other page is one tap away behind the ☰ Menu. */
+function parentStu(){ const sc = parentSchoolData; return sc && session ? (sc.students||[]).find(s=>s.id===session.studentId) : null; }
+function parentExamsDesc(sc){ return (sc.exams||[]).filter(e=>examVisibleToParent(sc,e)).slice().sort(feeTermCmp).reverse(); }
+function parentHasMarks(sc, e, stu){ const m = (sc.marks[e.id]||{})[stu.id]; return !!m && Object.keys(m).some(k=>m[k]!=null && m[k]!==''); }
+function parentFeeList(sc, stu){ return parentFeePeriods(sc).filter(p=>(sc.fees[p.id]||{})[stu.id]); }
+function parentPeriodLabel(p){ return (p.name?p.name+' · ':'')+(p.term||'')+' '+(p.year||''); }
+function parentExamMean(sc, e, stu){
+  const areas = visibleAreas(sc, e.classId), mk = (sc.marks[e.id]||{})[stu.id]||{};
+  let sum=0, n=0;
+  areas.forEach(a=>{ if(!takesArea(sc, stu.id, a.id)) return; const v = mk[a.id]; if(v==null || v==='') return; sum += pctOf(v, (e.maxMarksByArea||{})[a.id] ?? 100); n++; });
+  return n ? sum/n : null;
+}
+function parentPaid(sc, pid, sid){ return (sc.payments||[]).filter(p=>!p.void && p.examId===pid && p.studentId===sid).reduce((t,p)=>t+(Number(p.amount)||0),0); }
+const parentKES = n => 'KES ' + Number(n||0).toLocaleString();
+
+function renderParent(){
+  const sc = parentSchoolData, stu = parentStu();
+  if(!sc || !stu){ logout(); return; }
+  const exams = parentExamsDesc(sc);
+  const feeList = parentFeeList(sc, stu);
+  const homework = (sc.assignments||[]);
+  const menu = [
+    {group:'Overview', items:[['dashboard','🏠 Dashboard']]},
+    {group:'Results', items:[['results','📄 Report Cards']]},
+    {group:'Fees', items:[['fees','💳 Fees &amp; Invoices']]}
+  ];
+  const more = [];
+  if(homework.length) more.push(['homework','📎 Homework']);
+  more.push(['contact','🏫 School Contact']);
+  menu.push({group:'More', items:more});
+  if(!menu.some(g=>g.items.some(i=>i[0]===parentTab))) parentTab = 'dashboard';
+  const quick = [['results','📄 Report Cards'],['fees','💳 Fees &amp; Invoices']];
+  if(homework.length) quick.push(['homework','📎 Homework']);
+  const cls = (sc.classes||[]).find(c=>c.id===stu.classId);
+  let content = '';
+  if(parentTab==='dashboard') content = parentDashHTML(sc, stu, cls, exams, feeList, quick);
+  else if(parentTab==='results') content = parentResultsHTML(sc, stu, exams);
+  else if(parentTab==='fees') content = parentFeesHTML(sc, stu, feeList);
+  else if(parentTab==='homework') content = parentHomeworkHTML(homework);
+  else if(parentTab==='contact') content = parentContactHTML(sc, stu);
+  app.innerHTML = portalShell({menu, tab:parentTab, goto:'gotoParentTab', side:stu.name, headName:stu.name, headSub:sc.name}) + `<div id="dosContent">${content}</div>`;
+  dosSyncBarOffset();
+  if(parentTab==='dashboard') parentDrawTrend(sc, stu, exams);
+  if(parentTab==='results'){ const sel = qs('#pExam'); if(sel && sel.value) parentShowReport(); }
+  if(parentTab==='fees'){ const sel = qs('#pFeePeriod'); if(sel && sel.value) parentShowFees(); }
+}
+function parentDashHTML(sc, stu, cls, exams, feeList, quick){
+  const withMarks = exams.filter(e=>parentHasMarks(sc, e, stu));
+  const latest = withMarks[0];
+  let result;
+  if(latest){
+    const m = parentExamMean(sc, latest, stu);
+    result = `<div class="card"><h2>📊 Latest Result</h2>
+      <p style="margin:4px 0"><b>${escapeHtml(latest.name)}</b> <span class="small">· ${escapeHtml(String(latest.term))} ${escapeHtml(String(latest.year))}</span></p>
+      ${m!=null?`<p style="font-size:26px;margin:6px 0;color:var(--navy)"><b>${m.toFixed(1)}%</b> ${levelBadge(sc, m, latest.classId)}</p>`:''}
+      <div class="flexbtns"><button onclick="parentOpenReport('${latest.id}')">View Full Report</button></div>
+      <div id="pTrendWrap" class="no-print" style="margin-top:10px"><canvas id="pdashChart" width="760" height="300" style="width:100%;height:auto;max-height:240px"></canvas></div>
+    </div>`;
+  } else {
+    result = `<div class="card"><h2>📊 Results</h2><p class="small">No results have been released for ${escapeHtml(stu.name)} yet. They will appear here as soon as the school publishes them.</p></div>`;
+  }
+  let fee = '';
+  if(feeList.length){
+    const p = feeList[0], r = sc.fees[p.id][stu.id], bal = Number(r.balance)||0;
+    fee = `<div class="card"><h2>💳 Fees</h2>
+      <p class="small" style="margin:2px 0">${escapeHtml(parentPeriodLabel(p))}</p>
+      <p style="font-size:22px;margin:6px 0;color:${bal>0?'#9c2c2c':'#1c7a3c'}"><b>${bal>0?'Balance: '+parentKES(bal):(bal<0?'Credit: '+parentKES(-bal):'Fully paid')}</b></p>
+      <div class="flexbtns"><button class="ghost" onclick="gotoParentTab('fees')">Open Fees &amp; Invoices</button></div></div>`;
+  }
+  return `<div class="card"><h2>👋 Welcome</h2>
+    <p style="margin:4px 0"><b>${escapeHtml(stu.name)}</b></p>
+    <p class="small" style="margin:2px 0">Adm No: ${escapeHtml(stu.adm||'-')} · ${cls?escapeHtml(cls.name):''} · ${escapeHtml(sc.name)}</p></div>`
+    + portalQuick('gotoParentTab', quick) + result + fee;
+}
+function parentDrawTrend(sc, stu, exams){
+  const c = qs('#pdashChart'); if(!c) return;
+  const withMarks = exams.filter(e=>parentHasMarks(sc, e, stu));
+  if(withMarks.length < 2){ const w = qs('#pTrendWrap'); if(w) w.remove(); return; }
+  try{
+    const pts = withMarks.slice(0,6).reverse().map(e=>({label:e.name+' ('+String(e.term).slice(-1)+"/'"+String(e.year).slice(-2)+')', pct: parentExamMean(sc, e, stu)||0}));
+    drawProgressChart('pdashChart', pts);
+  }catch(err){ const w = qs('#pTrendWrap'); if(w) w.remove(); }
+}
+function parentOpenReport(examId){ parentTab='results'; parentPendingExam = examId; document.body.classList.remove('dos-menu-open'); renderParent(); window.scrollTo(0,0); }
+let parentPendingExam = null;
+function parentResultsHTML(sc, stu, exams){
+  if(!exams.length) return `<div class="card"><h2>📄 Report Cards</h2><p class="small">No exam results have been released yet.</p></div>`;
+  const pick = parentPendingExam && exams.some(e=>e.id===parentPendingExam) ? parentPendingExam : ((exams.find(e=>parentHasMarks(sc,e,stu))||exams[0]).id);
+  parentPendingExam = null;
+  const opts = exams.map(e=>`<option value="${e.id}" ${e.id===pick?'selected':''}>${escapeHtml(e.name)} (${escapeHtml(String(e.term))} ${escapeHtml(String(e.year))})${parentHasMarks(sc,e,stu)?'':' — no marks yet'}</option>`).join('');
+  return `<div class="card"><h2 class="no-print">📄 Report Cards</h2>
+    <div class="row no-print"><div><label>Choose exam</label><select id="pExam" onchange="parentShowReport()">${opts}</select></div></div>
+    <div id="preportArea"></div></div>`;
+}
+function parentShowReport(){
+  const sc = parentSchoolData, stu = parentStu(), sel = qs('#pExam'); if(!sc || !stu || !sel) return;
+  const e = sc.exams.find(x=>x.id===sel.value);
+  if(!e || !examVisibleToParent(sc, e)){ qs('#preportArea').innerHTML = '<div class="msg err">These results have not been released yet.</div>'; return; }
+  if(!parentHasMarks(sc, e, stu)){ qs('#preportArea').innerHTML = '<div class="msg err">No marks have been entered for this exam yet.</div>'; return; }
+  showReports('#preportArea', [stu], e.id, 'Print / Save as PDF');
+}
+function parentFeesHTML(sc, stu, feeList){
+  if(!feeList.length) return `<div class="card"><h2>💳 Fees &amp; Invoices</h2><p class="small">No fee statement has been released for ${escapeHtml(stu.name)} yet. Please contact the school office if you need one.</p></div>`;
+  const opts = feeList.map(p=>`<option value="${p.id}">${escapeHtml(parentPeriodLabel(p))}</option>`).join('');
+  return `<div class="card"><h2>💳 Fees &amp; Invoices</h2>
+    <div class="row no-print"><div><label>Term / period</label><select id="pFeePeriod" onchange="parentShowFees()">${opts}</select></div></div>
+    <div id="pFeeArea"></div></div>`;
+}
+function parentShowFees(){
+  const sc = parentSchoolData, stu = parentStu(), sel = qs('#pFeePeriod'); if(!sc || !stu || !sel) return;
+  const p = parentFeePeriods(sc).find(x=>x.id===sel.value), r = p && (sc.fees[p.id]||{})[stu.id];
+  if(!p || !r){ qs('#pFeeArea').innerHTML = '<p class="small">No record for this period.</p>'; return; }
+  const bal = Number(r.balance)||0, paid = parentPaid(sc, p.id, stu.id), next = Number(r.nextTermFee)||0;
+  const pays = (sc.payments||[]).filter(x=>!x.void && x.examId===p.id && x.studentId===stu.id).sort((a,b)=>a.date<b.date?1:-1);
+  const row = (k,v,b)=>`<tr><td>${k}</td><td class="r" style="text-align:right">${b?'<b>'+v+'</b>':v}</td></tr>`;
+  qs('#pFeeArea').innerHTML = `<table class="tbl" style="width:100%">
+      ${r.billed!=null?row('Fees billed this term', parentKES(r.billed)):''}
+      ${r.openingBalance?row('Balance brought forward', parentKES(r.openingBalance)):''}
+      ${r.discount?row('Bursary / discount', '-'+parentKES(r.discount)):''}
+      ${paid?row('Payments received', '-'+parentKES(paid)):''}
+      ${row(bal<0?'Credit':'Balance due', parentKES(Math.abs(bal)), true)}
+      ${next?row('Next term fee', parentKES(next)):''}
+    </table>
+    ${r.updatedAt?`<p class="small">Figures last updated ${new Date(r.updatedAt).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}.</p>`:''}
+    <div class="flexbtns no-print" style="margin-top:8px">
+      <button onclick="parentPrintStatement('${p.id}')">🖨 Print Fee Statement</button>
+      ${(next||bal)?`<button class="gold" onclick="parentPrintNextInvoice('${p.id}')">🖨 Next Term Invoice</button>`:''}
+    </div>
+    ${pays.length?`<h3 style="margin-top:14px">Payments</h3><table class="tbl" style="width:100%"><tr><th>Date</th><th>Receipt</th><th>Method</th><th style="text-align:right">Amount</th></tr>${pays.map(x=>`<tr><td>${escapeHtml(x.date||'')}</td><td>${escapeHtml(x.receiptNo||'')}</td><td>${escapeHtml(x.method||'')}</td><td style="text-align:right">${Number(x.amount).toLocaleString()}</td></tr>`).join('')}</table>`:''}
+    ${sc.payInstructions?`<p class="small" style="margin-top:12px"><b>How to pay:</b><br>${escapeHtml(sc.payInstructions).replace(/\n/g,'<br>')}</p>`:''}`;
+}
+function parentOpenDoc(html, title){
+  const w = window.open('','_blank');
+  if(!w){ toast('Please allow pop-ups for this site, then tap the button again','err'); return; }
+  w.document.write(ntiDocument(html, title)); w.document.close(); w.focus(); setTimeout(()=>w.print(), 400);
+}
+function parentPrintNextInvoice(pid){
+  const sc = parentSchoolData, stu = parentStu(); if(!sc || !stu) return;
+  const p = parentFeePeriods(sc).find(x=>x.id===pid), r = p && (sc.fees[p.id]||{})[stu.id]; if(!r){ toast('No record for this period','err'); return; }
+  try{ parentOpenDoc(ntiPageHTML(sc, p, stu, r), 'Next Term Invoice'); }
+  catch(err){ console.error(err); toast('Could not prepare the invoice — please try again or contact the school','err'); }
+}
+function parentPrintStatement(pid){
+  const sc = parentSchoolData, stu = parentStu(); if(!sc || !stu) return;
+  const p = parentFeePeriods(sc).find(x=>x.id===pid), r = p && (sc.fees[p.id]||{})[stu.id]; if(!r){ toast('No record for this period','err'); return; }
+  const fm = n=>Number(n).toLocaleString(), st = sc.feeStructure[p.id];
+  const lines = st ? invoiceLines(st, r) : [];
+  const paid = parentPaid(sc, p.id, stu.id), bal = Number(r.balance)||0;
+  const pays = (sc.payments||[]).filter(x=>!x.void && x.examId===p.id && x.studentId===stu.id).sort((a,b)=>a.date<b.date?-1:1);
+  const page = `<div class="pg"><div class="hd">${sc.logo?`<img src="${sc.logo}" alt="">`:''}<div><h2>${escapeHtml(sc.name)}</h2><p class="c">${escapeHtml([sc.address,sc.phone,sc.email].filter(Boolean).join(' | '))}</p></div></div>
+    <div class="ttl">FEE STATEMENT — ${escapeHtml(parentPeriodLabel(p).toUpperCase())}</div>
+    <table class="meta"><tr><td>Learner: <b>${escapeHtml(stu.name)}</b></td><td>Adm No: <b>${escapeHtml(stu.adm||'-')}</b></td></tr><tr><td>Date: <b>${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}</b></td><td></td></tr></table>
+    <table class="it"><tr><th>Item</th><th class="r">Amount (KES)</th></tr>
+    ${lines.map(x=>`<tr><td>${escapeHtml(x.name)}</td><td class="r">${fm(x.amount)}</td></tr>`).join('')}
+    ${r.billed!=null?`<tr class="sub"><td>Total this term</td><td class="r">${fm(r.billed)}</td></tr>`:''}
+    ${r.openingBalance?`<tr><td>Balance brought forward</td><td class="r">${fm(r.openingBalance)}</td></tr>`:''}
+    ${r.discount?`<tr><td>Bursary / discount</td><td class="r">-${fm(r.discount)}</td></tr>`:''}
+    ${paid?`<tr><td>Payments received</td><td class="r">-${fm(paid)}</td></tr>`:''}
+    <tr class="tot"><th>${bal<0?'CREDIT':'BALANCE DUE'}</th><th class="r">KES ${fm(Math.abs(bal))}</th></tr></table>
+    ${pays.length?`<p class="lbl">Payments received</p><table class="it sm"><tr><th>Date</th><th>Receipt</th><th>Method</th><th class="r">Amount (KES)</th></tr>${pays.map(x=>`<tr><td>${escapeHtml(x.date||'')}</td><td>${escapeHtml(x.receiptNo||'')}</td><td>${escapeHtml(x.method||'')}</td><td class="r">${fm(x.amount)}</td></tr>`).join('')}</table>`:''}
+    ${sc.payInstructions?`<p class="lbl">How to pay</p><p class="box">${escapeHtml(sc.payInstructions).replace(/\n/g,'<br>')}</p>`:''}</div>`;
+  parentOpenDoc(page, 'Fee Statement');
+}
+function parentHomeworkHTML(list){
+  if(!list.length) return `<div class="card"><h2>📎 Homework</h2><p class="small">Nothing posted right now.</p></div>`;
+  return `<div class="card"><h2>📎 Homework</h2>${list.map(a=>`<div style="border-top:1px solid #e3e9f0;padding:8px 0"><b>${escapeHtml(a.title||'Assignment')}</b>${a.dueDate?` <span class="small">· due ${escapeHtml(String(a.dueDate))}</span>`:''}
+    ${a.instructions?`<p class="small" style="margin:4px 0">${escapeHtml(a.instructions).replace(/\n/g,'<br>')}</p>`:''}
+    ${a.attachment && /^(https?:|data:)/.test(a.attachment)?`<a href="${a.attachment}" target="_blank" rel="noopener">Open attachment</a>`:''}</div>`).join('')}</div>`;
+}
+function parentContactHTML(sc, stu){
+  const line = (k,v)=>v?`<p style="margin:4px 0"><b>${k}:</b> ${escapeHtml(v)}</p>`:'';
+  return `<div class="card"><h2>🏫 ${escapeHtml(sc.name)}</h2>${sc.motto?`<p class="small"><i>${escapeHtml(sc.motto)}</i></p>`:''}
+    ${line('Phone', sc.phone)}${line('Email', sc.email)}${line('Address', sc.address)}${line('Head of Institution', sc.hoiName)}
+    <p class="small" style="margin-top:12px">Learner: ${escapeHtml(stu.name)} · Adm No ${escapeHtml(stu.adm||'-')}${stu.parentName?' · Parent/Guardian: '+escapeHtml(stu.parentName):''}</p>
+    <p class="small">For any question about marks or fees, please contact the school office.</p></div>`;
+}
+
 function gotoParentTab(k){ parentTab = k; document.body.classList.remove('dos-menu-open'); renderParent(); window.scrollTo(0,0); }
 function gotoAdminTab(k){ adminTab = k; document.body.classList.remove('dos-menu-open'); renderAdmin(); window.scrollTo(0,0); }
 /* ============================= EXAM PAPER GENERATOR (DOS/HOI) =============================
@@ -10338,8 +10556,9 @@ function rcPaperPick(){ return `<select class="no-print" onchange="setRcPaper(th
 function fitReportCardsToPage(){
   const PX = mm => mm*96/25.4;
   const PAPER = rcPaper(), PAGE_W = RC_PAPERS[PAPER].w;
-  // A few mm of safety margin so a small paper-size mismatch never pushes a line onto a 2nd page.
-  const PAGE_H = RC_PAPERS[PAPER].h - 5;
+  // ~9mm of safety margin so rounding differences between print engines (phones especially) can never push
+  // the report onto a 2nd page.
+  const PAGE_H = RC_PAPERS[PAPER].h - 9;
   const cards = Array.from(document.querySelectorAll('.report-card'));
   resetReportFit();
   if(!cards.length) return;
