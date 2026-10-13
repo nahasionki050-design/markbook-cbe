@@ -2178,8 +2178,22 @@ function enforceAccessForActiveSession(code){
 // real score: it flags gaps/overlaps in the DOS/HOI's UI before they reach here.
 function gradeFor(school, pct, classId){
   const table = gradingFor(school, classId);
-  const g = table.find(r=> pct>=r.min && pct<=r.max);
-  return g || table[table.length-1];
+  const p = Number(pct);
+  // 1) Normal case: the score sits inside one of the bands.
+  let g = table.find(r=> p>=Number(r.min) && p<=Number(r.max));
+  if(g) return g;
+  // 2) Decimal gap. Bands are whole numbers (e.g. AE2 = 21-30 and AE1 = 31-40), but a real mean or average
+  //    has decimals (30.4, 20.6 ...) and falls BETWEEN two bands. This used to drop to the last (lowest) row —
+  //    which wrongly gave a learner on 30.4% the level BE2. Sheets show the whole-number mean (30.4 -> 30%),
+  //    so grade the same rounded figure the parent/teacher actually sees.
+  const rounded = Math.round(p);
+  g = table.find(r=> rounded>=Number(r.min) && rounded<=Number(r.max));
+  if(g) return g;
+  // 3) Still nothing (e.g. a score above the top band, or a table with a bigger gap): use the highest band
+  //    that starts at or below the score; only a score below every band gets the lowest band.
+  const asc = table.slice().sort((a,b)=>Number(a.min)-Number(b.min));
+  let pick = null; asc.forEach(r=>{ if(p>=Number(r.min)) pick = r; });
+  return pick || asc[0] || table[table.length-1];
 }
 function pctOf(score,max){ return max>0 ? (score/max*100) : 0; }
 // Returns the learning areas that apply to a given class/grade.
