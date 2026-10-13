@@ -250,6 +250,11 @@ canvas{max-width:100%;}
      single reports. Cards just get their screen chrome stripped for print. */
   .card{border:none;box-shadow:none;padding:0;margin:0;}
   .print-only-block{page-break-after:always; break-after:page;}
+  /* Sheets that run over more than one page: the heading row (subjects etc.) is repeated at the top of
+     EVERY page, and a learner's row is never cut in half across two pages. */
+  .print-only-block table:not(.rc-table) thead{display:table-header-group;}
+  .print-only-block table:not(.rc-table) tfoot{display:table-footer-group;}
+  .print-only-block table:not(.rc-table) tr{page-break-inside:avoid;break-inside:avoid;}
   /* ...but not after the very last one, or a trailing blank page gets printed. */
   .print-only-block:last-of-type{page-break-after:auto; break-after:auto;}
   /* The Assessment Sheets page keeps the Class Assessment Sheet, Cumulative Sheet and
@@ -481,7 +486,7 @@ function storageSet(key, value){
 function docInk(){ return (typeof storageGet==='function' && storageGet('cbc_doc_ink'))==='bw' ? 'bw' : 'color'; }
 function applyDocInk(){ if(document.body) document.body.classList.toggle('print-bw', docInk()==='bw'); }
 function setDocInk(v){ if(typeof storageSet==='function') storageSet('cbc_doc_ink', v==='bw'?'bw':'color'); applyDocInk(); document.querySelectorAll('.ink-sel').forEach(x=>{ x.value = docInk(); }); }
-function inkPick(){ return `<select class="ink-sel no-print" onchange="setDocInk(this.value)" style="width:auto;margin:0" title="Choose Black &amp; white if your printer has no colour"><option value="color" ${docInk()==='color'?'selected':''}>Print: Colour</option><option value="bw" ${docInk()==='bw'?'selected':''}>Print: Black &amp; white</option></select>`; }
+function inkPick(noSheetOpts){ return (noSheetOpts?'':sheetPrintPick()) + `<select class="ink-sel no-print" onchange="setDocInk(this.value)" style="width:auto;margin:0" title="Choose Black &amp; white if your printer has no colour"><option value="color" ${docInk()==='color'?'selected':''}>Print: Colour</option><option value="bw" ${docInk()==='bw'?'selected':''}>Print: Black &amp; white</option></select>`; }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', applyDocInk); else applyDocInk();
 function showStorageWarning(){
   const el = document.getElementById('storageWarning');
@@ -10573,7 +10578,7 @@ function fitReportCardsToPage(){
   // ~9mm of safety margin so rounding differences between print engines (phones especially) can never push
   // the report onto a 2nd page.
   const PAGE_H = RC_PAPERS[PAPER].h - 9;
-  const cards = Array.from(document.querySelectorAll('.report-card'));
+  const cards = Array.from(document.querySelectorAll('.report-card')).filter(c=>!c.closest('.print-hide-temp'));
   resetReportFit();
   if(!cards.length) return;
   document.documentElement.style.setProperty('--rc-page-h', PAGE_H+'mm');
@@ -10633,6 +10638,40 @@ function fitReportCardsToPage(){
   });
   document.body.removeChild(sim);
 }
+/* ---- Printing sheets (cumulative, class assessment, grade lists, analysis...): orientation, paper, repeating headings ---- */
+function sheetOrient(){ try{ const v=localStorage.getItem('edutrack_sheet_orient'); if(v==='portrait'||v==='landscape'||v==='auto') return v; }catch(e){} return 'auto'; }
+function setSheetOrient(v){ try{ localStorage.setItem('edutrack_sheet_orient', v); }catch(e){} document.querySelectorAll('.sheet-orient-sel').forEach(x=>x.value=v); toast('Print layout: '+(v==='auto'?'automatic':v)+' — in the print dialog keep the same Paper size'); }
+function sheetPrintPick(){
+  const o = sheetOrient();
+  return rcPaperPick() + `<select class="sheet-orient-sel no-print" onchange="setSheetOrient(this.value)" style="width:auto;margin:0" title="Wide sheets with many subjects usually need Landscape"><option value="auto" ${o==='auto'?'selected':''}>Layout: Auto</option><option value="portrait" ${o==='portrait'?'selected':''}>Layout: Portrait</option><option value="landscape" ${o==='landscape'?'selected':''}>Layout: Landscape</option></select>`;
+}
+// Turns the heading row(s) of every sheet table into a real <thead>, which the browser repeats on each printed page.
+function sheetRepeatHeaders(){
+  document.querySelectorAll('.print-only-block table').forEach(t=>{
+    if(t.closest('.report-card') || t.classList.contains('rc-table') || t.tHead) return;
+    const rows = Array.from(t.rows), head = [];
+    for(let i=0;i<rows.length && i<3;i++){ const cells = Array.from(rows[i].cells); if(cells.length && cells.every(c=>c.tagName==='TH')) head.push(rows[i]); else break; }
+    if(!head.length || head.length===rows.length) return;
+    const th = document.createElement('thead'); head.forEach(r=>th.appendChild(r)); t.insertBefore(th, t.firstChild);
+  });
+}
+function sheetWidestCols(){
+  let m = 0;
+  document.querySelectorAll('.print-only-block table').forEach(t=>{ if(t.closest('.report-card') || t.closest('.print-hide-temp')) return; const r = t.rows[0]; if(r) m = Math.max(m, Array.from(r.cells).reduce((n,c)=>n+(c.colSpan||1),0)); });
+  return m;
+}
+function prepareSheetPrint(){
+  const old = document.getElementById('sheetPageCss'); if(old) old.remove();
+  const reportMode = Array.from(document.querySelectorAll('.report-card')).some(c=>!c.closest('.print-hide-temp'));
+  if(reportMode) return;                         // report cards keep their own fixed portrait page set-up
+  sheetRepeatHeaders();
+  const paper = rcPaper(); let o = sheetOrient();
+  if(o==='auto') o = sheetWidestCols() >= 10 ? 'landscape' : 'portrait';
+  const st = document.createElement('style'); st.id = 'sheetPageCss'; st.textContent = '@page{size:'+paper+' '+o+';margin:8mm}';
+  document.head.appendChild(st);
+}
+window.addEventListener('beforeprint', prepareSheetPrint);
+window.addEventListener('afterprint', ()=>{ const e = document.getElementById('sheetPageCss'); if(e) e.remove(); });
 window.addEventListener('beforeprint', fitReportCardsToPage);
 window.addEventListener('afterprint', resetReportFit);
 // Asks before producing report forms for an exam whose results are still awaiting DOS/HOI approval.
@@ -10659,7 +10698,7 @@ function showReports(areaSel, learners, examId, title){
     + (marked===0 ? ' · <b style="color:#9c2c2c">⚠ no marks have been entered for this exam yet — the forms will be blank</b>' : '')
     + (failed.length ? `<br><b style="color:#9c2c2c">⚠ Could not build ${failed.length}: ${escapeHtml(failed.slice(0,8).join(', '))}${failed.length>8?'…':''}</b>` : '') + '</div>';
   area.innerHTML = info + built.map(r=>r.html).join('') +
-    `<div class="flexbtns no-print">${rcPaperPick()}${inkPick()}<button class="gold" onclick="window.print()">🖨 ${title}</button></div><p class="small no-print">Tip: in the print dialog set <b>Paper size</b> to the same size you chose here (A4 recommended) and leave Margins on Default / Scale on 100%.</p>`;
+    `<div class="flexbtns no-print">${rcPaperPick()}${inkPick(true)}<button class="gold" onclick="window.print()">🖨 ${title}</button></div><p class="small no-print">Tip: in the print dialog set <b>Paper size</b> to the same size you chose here (A4 recommended) and leave Margins on Default / Scale on 100%.</p>`;
   built.forEach(r=>{ try{ drawProgressChart(r.chartId, r.historyPoints); }catch(e){} });
   try{ area.scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){}
 }
