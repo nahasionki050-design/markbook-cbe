@@ -162,11 +162,15 @@ tr:hover td{background:#eef4fb;}
 .report-header{text-align:center;border-bottom:3px double var(--navy);padding-bottom:10px;margin-bottom:14px;}
 .report-header h2{margin:2px 0;color:var(--navy);}
 .report-card .report-header{border-bottom:2px solid var(--gold);padding-bottom:9px;margin-bottom:12px;}
-.report-card .report-header h2{font-size:24px;font-weight:800;letter-spacing:.3px;}
+.report-card .report-header h2{font-size:30px;font-weight:800;letter-spacing:1px;}
 .report-card .report-header p{font-size:14px;margin:3px 0;}
-.rc-doctitle{font-size:14px;color:var(--navy2);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin:3px 0;}
-.rc-logo{display:block;max-width:100%;max-height:64px;margin:0 auto 6px;}
-.rc-motto{font-size:12.5px;color:#5a6b7c;font-style:italic;margin:0 0 4px;}
+.report-header h2.sch-name{font-size:30px;font-weight:800;letter-spacing:1px;text-transform:uppercase;line-height:1.15;margin:3px 0 2px;border:0;padding:0;color:var(--navy);}
+.report-header .sch-contact{display:flex;flex-wrap:wrap;justify-content:space-evenly;gap:3px 18px;margin:8px 0 6px;padding:6px 4px 0;border-top:1px solid var(--gold);font-size:14px;font-weight:600;color:#2b3c50;}
+.report-header .sch-contact span{white-space:nowrap;}
+.report-header .rc-motto{font-size:15px;color:#8a6d1f;}
+.rc-doctitle{font-size:16px;color:var(--navy2);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin:3px 0;}
+.rc-logo{display:block;max-width:100%;max-height:84px;margin:0 auto 6px;}
+.rc-motto{font-size:14px;color:#5a6b7c;font-style:italic;margin:0 0 4px;}
 .rc-code{font-size:12px;color:#8a9bad;letter-spacing:.8px;}
 .rc-info{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin-bottom:14px;}
 .rc-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;background:#f5f8fc;border:1px solid var(--border);border-radius:10px;padding:12px 16px;font-size:14px;align-content:center;line-height:1.5;}
@@ -198,7 +202,7 @@ table.rc-table tr.rc-total td{background:#fdf6e5;font-weight:800;border-top:2px 
 .rc-tile span{font-size:10.5px;color:#5b6b7e;text-transform:uppercase;letter-spacing:.2px;}
 .rc-analysis ul{margin:4px 0 0 16px;padding:0;}
 .rc-chartwrap{margin-top:16px;}
-.rc-chartwrap canvas{display:block;width:100%;height:auto;}
+.rc-chartwrap canvas,.rc-chartwrap svg{display:block;width:100%;height:auto;}
 .rc-chart-label{font-size:14px;font-weight:700;color:var(--navy);display:block;margin-bottom:6px;}
 .rc-sigrow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:28px;}
 .rc-sigrow.has-stamp{grid-template-columns:1fr 1fr 1fr 90px;gap:14px;}
@@ -257,6 +261,13 @@ canvas{max-width:100%;}
   .print-only-block table:not(.rc-table) tr{page-break-inside:avoid;break-inside:avoid;}
   /* ...but not after the very last one, or a trailing blank page gets printed. */
   .print-only-block:last-of-type{page-break-after:auto; break-after:auto;}
+  .print-only-block:last-child{page-break-after:auto; break-after:auto;}
+  /* Report-card fitting is driven by CSS variables set in fitReportCardsToPage(): they only exist for printing,
+     so nothing has to be "undone" on screen and a print preview that re-renders keeps the same fit. */
+  .report-card{width:var(--rc-w,auto);}
+  .report-card .rc-scale{zoom:var(--rc-k,1);}
+  .report-card:not(.rc-big){overflow:hidden;}
+  .report-card.rc-big{height:auto !important;overflow:visible;page-break-inside:auto;break-inside:auto;}
   /* The Assessment Sheets page keeps the Class Assessment Sheet, Cumulative Sheet and
      Blank Class List as three separate previews on screen at once (each has its own
      "Print" button), so more than one could be sitting in the page at the same time.
@@ -277,7 +288,7 @@ canvas{max-width:100%;}
   body.print-bw .report-header{border-bottom:3px double #000 !important;}
   body.print-bw .rc-pw-banner{background:#fff !important;color:#000 !important;border:1.5px solid #000;}body.print-bw .rc-pw-best td{background:#fff !important;}
   body.print-bw .rc-overall-box,body.print-bw .rc-tile,body.print-bw .rc-remark,body.print-bw .rc-analysis,body.print-bw .rc-pathway,body.print-bw .rc-info-grid,body.print-bw .rc-key{border:1.5px solid #000 !important;}
-  body.print-bw .print-only-block img,body.print-bw .print-only-block canvas{filter:grayscale(1) contrast(1.5);}
+  body.print-bw .print-only-block img,body.print-bw .print-only-block canvas,body.print-bw .print-only-block svg{filter:grayscale(1) contrast(1.5);}
   body.print-bw .rc-sigrow .sig-line{border-top:1.5px solid #000 !important;}
   .ink-pick{display:none !important;}
   /* The learner report card is scaled to guarantee it always lands on exactly one page
@@ -320,15 +331,19 @@ canvas{max-width:100%;}
   .report-card .rc-table td{border-color:#8a9bad;}
   .report-card .rc-table .rc-total td{font-weight:800;font-size:13px;}
   .report-card .rc-table th,.report-card .rc-table td{padding:var(--rc-pad,3.5px) 5px;}
-  .report-card .report-header h2{font-size:18px;margin:1px 0;}
+  .report-card .report-header h2{font-size:23px;margin:1px 0;}
   .report-card .report-header p{margin:1px 0;font-size:12px;}
-  .rc-doctitle{font-size:13px;}
-  .rc-logo{max-height:40px;margin-bottom:3px;}
-  .rc-motto{font-size:10px;margin-bottom:2px;}
+  .rc-doctitle{font-size:14px;}
+  .rc-logo{max-height:52px;margin-bottom:3px;}
+  .rc-motto{font-size:12px;margin-bottom:2px;}
+  .report-header h2.sch-name{font-size:25px;}
+  .report-card .report-header h2.sch-name{font-size:23px;}
+  .report-header .sch-contact{font-size:12.5px;margin:5px 0 3px;padding-top:4px;}
   .rc-info-grid{font-size:13px;padding:7px 11px;}
   .rc-overall-box .rc-grade{font-size:19px;}
   .rc-overall-box .rc-sub{font-size:10.5px;}
   .report-card canvas{display:block;width:100% !important;max-width:100%;max-height:var(--rc-ch,120px);height:var(--rc-ch,120px) !important;}
+  .report-card .rc-chartwrap svg{display:block;width:100%;height:var(--rc-ch,120px);}
   .rc-remark{font-size:12.5px;padding:6px 9px;}
   .rc-analysis{font-size:11.5px;padding:5px 8px;margin-top:6px;line-height:1.3;}
   .rc-analysis h4{font-size:11.5px;margin-bottom:3px;}
@@ -2326,19 +2341,29 @@ function escapeHtml(s){ return (s+'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'
 // school name on every printed report/sheet header. Any field the school hasn't filled in
 // is skipped, and the whole line is omitted if none of them have been entered yet.
 function schoolContactLine(school){
-  const parts = [school.address, school.phone, school.email].filter(v=>v && v.trim());
-  if(school.regNo && school.regNo.trim()) parts.push('NEMIS/Reg No: '+school.regNo.trim());
-  if(!parts.length) return '';
-  return `<p class="small">${parts.map(escapeHtml).join(' &nbsp;|&nbsp; ')}</p>`;
+  const v = x => (x==null?'':String(x)).trim();
+  const items = [];
+  if(v(school.address)) items.push(v(school.address));
+  if(v(school.phone)) items.push('Tel: '+v(school.phone));
+  if(v(school.email)) items.push('Email: '+v(school.email));
+  if(v(school.regNo)) items.push('NEMIS/Reg No: '+v(school.regNo));
+  if(!items.length) return '';
+  return `<div class="sch-contact">${items.map(t=>`<span>${escapeHtml(t)}</span>`).join('')}</div>`;
 }
 // The logo + school name + motto block used at the top of every printed report/sheet
-// header, in place of a bare <h2>school name</h2>. Logo and motto are each skipped when
-// not set, so a school that hasn't uploaded either still gets exactly the old plain header.
+// header. Logo and motto are each skipped when not set.
 function schoolHeaderTop(school){
   const logo = school.logo ? `<img class="rc-logo" src="${school.logo}" alt="School logo">` : '';
   const motto = school.motto && school.motto.trim() ? `<p class="rc-motto">${escapeHtml(school.motto)}</p>` : '';
-  return `${logo}<h2>${escapeHtml(school.name)}</h2>${motto}`;
+  return `${logo}<h2 class="sch-name">${escapeHtml(school.name)}</h2>${motto}`;
 }
+// Stand-alone letterhead for pop-up print windows (fee statements, invoices, receipts...).
+// Pair it with LH_CSS inside that window's <style>.
+function schoolLetterhead(school, compact){
+  const motto = school.motto && school.motto.trim() ? `<div class="sch-motto">${escapeHtml(school.motto)}</div>` : '';
+  return `<div class="lh${compact?' lh-sm':''}">${school.logo?`<img src="${school.logo}" alt="">`:''}<h2 class="sch-name">${escapeHtml(school.name)}</h2>${motto}${schoolContactLine(school)}</div>`;
+}
+const LH_CSS = `.lh{text-align:center;border-bottom:3px double #123a63;padding-bottom:10px;margin:0 0 14px}.lh img{display:block;margin:0 auto 6px;max-height:72px;max-width:100%}.lh .sch-name{font-size:26px;font-weight:800;color:#123a63;text-transform:uppercase;letter-spacing:1px;line-height:1.15;margin:2px 0;border:0;padding:0}.lh .sch-motto{font-size:14px;font-style:italic;color:#8a6d1f;margin:3px 0}.sch-contact{display:flex;flex-wrap:wrap;justify-content:space-evenly;gap:3px 16px;margin-top:7px;padding-top:6px;border-top:1px solid #c9a227;font-size:13px;color:#222;font-weight:600}.sch-contact span{white-space:nowrap}.lh-sm .sch-name{font-size:19px}.lh-sm img{max-height:50px}.lh-sm .sch-contact{font-size:11.5px;gap:2px 10px}`;
 function qs(sel,root=document){return root.querySelector(sel);}
 function qsa(sel,root=document){return [...root.querySelectorAll(sel)];}
 // Quiet notices: a small pill at the bottom of the screen. It never covers the page header, never takes clicks
@@ -3889,19 +3914,22 @@ function ttTeacherGrid(s,tid,plans,fit){const it=ttItems(s,tid,plans);if(!it.len
 // Shrinks (font first, then scales) any printed grid that would not fit its page, so nothing is cut off.
 function ttAutoFit(a){const prev=a.getAttribute('style')||'';a.style.cssText=prev+';display:block;position:fixed;left:-20000px;top:0;visibility:hidden';
   try{a.querySelectorAll('.ttw').forEach(w=>{const t=w.querySelector(':scope>table');if(!t||w.classList.contains('ns'))return;
-    let f=parseFloat(getComputedStyle(t).fontSize)||12,g=0;
-    while(t.scrollHeight>w.clientHeight+2&&f>7&&g++<40){f-=0.5;t.style.fontSize=f+'px';}
+    let f=parseFloat(getComputedStyle(t).fontSize)||12;
+    const fits=()=>t.scrollHeight<=w.clientHeight+2;
+    if(!fits()&&f>7){t.style.fontSize='7px';if(fits()){let lo=7,hi=f;for(let i=0;i<6;i++){const mid=(lo+hi)/2;t.style.fontSize=mid+'px';if(fits())lo=mid;else hi=mid;}t.style.fontSize=lo+'px';}}
     const hh=t.scrollHeight,ww=t.scrollWidth;
     if(hh>w.clientHeight+2||ww>w.clientWidth+2){const r=Math.min(w.clientHeight/hh,w.clientWidth/ww,1);t.style.transformOrigin='0 0';t.style.width=(100/r)+'%';t.style.height=(100/r)+'%';t.style.transform='scale('+r+')';}
   });}catch(e){}
   a.setAttribute('style',prev);}
-function ttPrintHTML(html){let a=qs('#ttPrintArea');if(!a){a=document.createElement('div');a.id='ttPrintArea';document.body.appendChild(a);}
+function ttPrintHTML(html){flushPrintJobs();let a=qs('#ttPrintArea');if(!a){a=document.createElement('div');a.id='ttPrintArea';document.body.appendChild(a);}
+  try{const sc=currentSchool()||{};html=rcDedupeImages(html,[sc.logo,sc.hoiSignature]);}catch(e){}
   const pt=ttUI.orient==='portrait';a.style.setProperty('--ttw',pt?'190mm':'277mm');a.style.setProperty('--tth',pt?'273mm':'187mm');a.classList.toggle('bw',ttInk()==='bw');a.innerHTML=html;ttAutoFit(a);
   const old=document.getElementById('ttPg');if(old)old.remove();const pg=document.createElement('style');pg.id='ttPg';pg.textContent=`@page{size:A4 ${pt?'portrait':'landscape'};margin:10mm}`;document.head.appendChild(pg);document.body.classList.add('ttprinting');
-  window.addEventListener('afterprint',()=>{document.body.classList.remove('ttprinting');pg.remove();a.innerHTML='';},{once:true});window.print();}
+  onPrintDone(()=>{document.body.classList.remove('ttprinting');pg.remove();a.innerHTML='';},'tt');
+  const w=rcImagesReady(a);if(w)w.then(()=>safePrint());else safePrint();}
 const ttSub=p=>[p.name,p.label,p.from?'From '+p.from+(p.to?' to '+p.to:''):''].filter(Boolean).map(escapeHtml).join(' · ');
 function ttPage(s,title,sub,body,foot){const d=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
-  return `<div class="ttpage"><div class="tthd">${s.logo?`<img class="ttlogo" src="${s.logo}" alt="">`:''}<div class="tthn"><div class="tts">${escapeHtml(s.name)}</div>${s.motto?`<div class="ttm"><i>${escapeHtml(s.motto)}</i></div>`:''}<div class="ttm">${[s.address,s.phone,s.email].filter(Boolean).map(escapeHtml).join(' · ')}</div></div><div class="tttt"><div class="ttt">${title}</div><div class="ttm">${sub||''}</div></div></div>
+  return `<div class="ttpage"><div class="tthd">${s.logo?`<img class="ttlogo" src="${s.logo}" alt="">`:''}<div class="tthn"><div class="tts">${escapeHtml(s.name)}</div>${s.motto?`<div class="ttm ttmo"><i>${escapeHtml(s.motto)}</i></div>`:''}<div class="ttm ttc">${[s.address,s.phone&&'Tel: '+s.phone,s.email&&'Email: '+s.email].filter(Boolean).map(x=>'<span>'+escapeHtml(x)+'</span>').join('')}</div></div><div class="tttt"><div class="ttt">${title}</div><div class="ttm">${sub||''}</div></div></div>
   <div class="ttbd">${body}${foot?`<div class="ttkey">${foot}</div>`:''}</div>
   <div class="ttft"><span>Printed: ${d}</span><span>Prepared by (DOS/HOI): ______________________</span><span>${escapeHtml(s.hoiName||'Head of Institution')}${s.hoiSignature?` <img src="${s.hoiSignature}" style="height:20px;vertical-align:middle">`:' Sign: ______________'}</span></div></div>`;}
 function ttKey(s,p,c){const m={};Object.keys(p.cells[c]||{}).forEach(dk=>Object.values(p.cells[c][dk]||{}).forEach(v=>{if(!v||!v.a)return;const k=v.a+'|'+(v.t||'');m[k]=(m[k]||0)+1;}));
@@ -4215,6 +4243,7 @@ function exGridMaster(s,x,dates,o){o=o||{};const cl=exCls(s,x);if(!cl.length)ret
   return `<div class="ttw"><table class="ttg ${o.edit?'ed':''}"${o.fit?` style="font-size:${Math.max(f,7)}px"`:''}>${exHead(x)+exRows(x,dates,(d,si)=>exMasterCell(s,x,d,si,o),o.fit)}</table></div>`;}
 (function(){const st=document.createElement('style');st.textContent='#ttPrintArea.x,#ttPrintArea .exm .tts{font-size:19px}#ttPrintArea .exm .ttt{font-size:20px;letter-spacing:.02em}#ttPrintArea .exm .tthd{border-bottom-width:3px}#ttPrintArea .exm .ttg th{font-size:1.12em;font-weight:800;letter-spacing:.02em}#ttPrintArea .exm .ttg th .ta{font-size:.85em;font-weight:600;opacity:.95}#ttPrintArea .exm .ttg th.dy{font-size:1.15em}#ttPrintArea .exm .ttg td{border:1.5px solid #7d93ab}#ttPrintArea .exm .ttg td.tc b{display:block;font-size:1.15em;line-height:1.2}#ttPrintArea .exm .ttg td.tc .ta{color:#1f2d3d;font-weight:600}#ttPrintArea .exm .ttg .exl{border-left:4px solid #123a63;font-weight:600;padding:1px 5px}#ttPrintArea .exm .ttkey{font-size:11px;font-weight:600;background:#fff7e0;border:1.5px solid #d9a441;border-radius:4px;padding:4px 8px;margin-top:2px}#ttPrintArea.bw .exm .ttg .exl{border-left:4px solid #000}#ttPrintArea.bw .exm .ttkey{background:#fff;border:1.5px solid #000}';document.head.appendChild(st);})();
 (function(){const st=document.createElement('style');st.textContent='#ttPrintArea .tmx .tts{font-size:19px}#ttPrintArea .tmx .ttt{font-size:20px;letter-spacing:.02em}#ttPrintArea .tmx .tthd{border-bottom-width:3px}#ttPrintArea .tmx .ttg th{font-size:1.1em;font-weight:800}#ttPrintArea .tmx .ttg th .ta{font-size:.85em;font-weight:600}#ttPrintArea .tmx .ttg th.dy{font-size:1.15em}#ttPrintArea .tmx .ttg td{border:1.5px solid #7d93ab}#ttPrintArea .tmx .ttg td.tc b{display:block;font-size:1.15em;line-height:1.2}#ttPrintArea .tmx .ttg td.tc .ta{color:#1f2d3d;font-weight:600;font-size:.88em}#ttPrintArea .tmx .ttg td.tt,#ttPrintArea .tmx .ttg th.tth{font-size:1.2em;font-weight:800}#ttPrintArea .tmx .ttkey{font-size:11px;font-weight:600;background:#f3f8fd;border:1.5px solid #123a63;border-radius:4px;padding:4px 8px;margin-top:2px}.lgd{display:inline-block;padding:0 7px;margin:1px 2px;border:1px solid #7d93ab;border-radius:3px}#ttPrintArea.bw .tmx .ttkey{background:#fff;border:1.5px solid #000}#ttPrintArea.bw .lgd{background:#fff!important;border:1px solid #000}';document.head.appendChild(st);})();
+(function(){const st=document.createElement('style');st.textContent='.tthd{gap:14px;padding-bottom:6px;margin-bottom:8px;border-bottom-width:3px}.ttlogo{height:18mm}.tthn{text-align:center}.tthn .tts,#ttPrintArea .tts,#ttPrintArea .exm .tts,#ttPrintArea .tmx .tts{font-size:24px;letter-spacing:1px;line-height:1.15}.tthn .ttm{font-size:12px;font-weight:600}.tthn .ttmo{font-size:12.5px}.ttc{display:flex;flex-wrap:wrap;justify-content:space-evenly;gap:2px 16px;margin-top:3px;padding-top:3px;border-top:1px solid #c9a227}.ttc span{white-space:nowrap}.tttt .ttt,#ttPrintArea .exm .ttt,#ttPrintArea .tmx .ttt{font-size:18px}';document.head.appendChild(st);})();
 (function(){const st=document.createElement('style');st.textContent='.ttg .exl{padding:1px 4px;margin:0 0 2px;border-radius:3px;break-inside:avoid;line-height:1.3}.ttg.ed .exl{cursor:pointer}.ttg.ed .exl:hover{outline:2px solid #123a63}';document.head.appendChild(st);})();
 function exDuties(s,x,tid){const out=[];Object.keys(x.cells).forEach(c=>{if(!x.classIds.includes(c))return;Object.keys(x.cells[c]).forEach(d=>Object.keys(x.cells[c][d]).forEach(k=>{const v=x.cells[c][d][k];if(v&&!v.cont&&(v.inv||[]).includes(tid))out.push({d,si:+k.slice(1),c,a:v.a,n:v.n||1});}));});return out.sort((p,q)=>p.d<q.d?-1:p.d>q.d?1:p.si-q.si);}
 function exGridRoster(s,x,dates,fit){const S=x.sess.length,rows=s.teachers.map(t=>({t,du:exDuties(s,x,t.id)})).filter(r=>r.du.length);
@@ -4801,9 +4830,9 @@ function parentShowFees(){
     ${sc.payInstructions?`<p class="small" style="margin-top:12px"><b>How to pay:</b><br>${escapeHtml(sc.payInstructions).replace(/\n/g,'<br>')}</p>`:''}`;
 }
 function parentOpenDoc(html, title){
-  const w = window.open('','_blank');
+  const w = printWin();
   if(!w){ toast('Please allow pop-ups for this site, then tap the button again','err'); return; }
-  w.document.write(ntiDocument(html, title)); w.document.close(); w.focus(); setTimeout(()=>w.print(), 400);
+  w.document.write(ntiDocument(html, title)); printWinGo(w);
 }
 function parentPrintNextInvoice(pid){
   const sc = parentSchoolData, stu = parentStu(); if(!sc || !stu) return;
@@ -4818,7 +4847,7 @@ function parentPrintStatement(pid){
   const lines = st ? invoiceLines(st, r) : [];
   const paid = parentPaid(sc, p.id, stu.id), bal = Number(r.balance)||0;
   const pays = (sc.payments||[]).filter(x=>!x.void && x.examId===p.id && x.studentId===stu.id).sort((a,b)=>a.date<b.date?-1:1);
-  const page = `<div class="pg"><div class="hd">${sc.logo?`<img src="${sc.logo}" alt="">`:''}<div><h2>${escapeHtml(sc.name)}</h2><p class="c">${escapeHtml([sc.address,sc.phone,sc.email].filter(Boolean).join(' | '))}</p></div></div>
+  const page = `<div class="pg">${schoolLetterhead(sc)}
     <div class="ttl">FEE STATEMENT — ${escapeHtml(parentPeriodLabel(p).toUpperCase())}</div>
     <table class="meta"><tr><td>Learner: <b>${escapeHtml(stu.name)}</b></td><td>Adm No: <b>${escapeHtml(stu.adm||'-')}</b></td></tr><tr><td>Date: <b>${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}</b></td><td></td></tr></table>
     <table class="it"><tr><th>Item</th><th class="r">Amount (KES)</th></tr>
@@ -5281,7 +5310,7 @@ function helpCards(list){
     <div style="margin-top:8px">${s.body}</div>
   </details>`).join('');
 }
-function printHelp(){ document.querySelectorAll('details').forEach(d=>d.open=true); window.print(); }
+function printHelp(){ document.querySelectorAll('details').forEach(d=>d.open=true); printPlain(); }
 function tplHelp(school){
   return `<div class="card"><h2>❓ Help / User Manual</h2>
   <p class="small">A quick reference for running the school on this app. Manual last updated: <b>${HELP_UPDATED}</b>. Ask whoever manages this deployment if
@@ -6883,7 +6912,7 @@ function paperGridHTML(school,exam,classId,areaId,learners,o){
     return `<tr><td>${s.adm?escapeHtml(s.adm):'<span class="small">—</span>'}</td>${assessTd(s,an)}<td>${escapeHtml(s.name)}</td>
     ${parts.map(p=>{const v=mk[paperKey(areaId,p.id)],pv=pend[s.id+'|'+p.id];return `<td><input type="number" min="0" max="${p.max}" step="any" style="width:80px" value="${v??''}" data-sid="${s.id}" class="markInput" onchange="savePaperMark('${examId}','${areaId}','${p.id}',this)">${pv!=null?`<div class="reqTag small">⏳ ${pv} awaiting approval</div>`:''}</td>`;}).join('')}
     <td class="totCell-${s.id}">${r.tot}</td><td class="pctCell-${s.id}">${r.pct}</td><td class="lvlCell-${s.id}">${r.lvl}</td></tr>`;}).join('')||`<tr><td colspan="${parts.length+5+(an?1:0)}" class="small">No learners in this grade.</td></tr>`}
-  </table></div>${o.print?`<div class="flexbtns no-print">${inkPick()}<button class="gold" onclick="window.print()">🖨 Print This Sheet</button></div>`:''}`;
+  </table></div>${o.print?`<div class="flexbtns no-print">${inkPick()}<button class="gold" onclick="printPlain()">🖨 Print This Sheet</button></div>`:''}`;
 }
 function savePaperMark(examId,areaId,pid,input){
   const school=currentSchool(),exam=school.exams.find(e=>e.id===examId);if(!exam)return;
@@ -7805,7 +7834,7 @@ function loadMarksGrid(){
   }).join('') || `<tr><td colspan="${5+(hasAssessNo(learners)?1:0)}" class="small">No learners in this grade.</td></tr>`}
   </table>
   </div>
-  <div class="flexbtns no-print">${inkPick()}<button class="gold" onclick="window.print()">🖨 Print This Sheet</button></div>`;
+  <div class="flexbtns no-print">${inkPick()}<button class="gold" onclick="printPlain()">🖨 Print This Sheet</button></div>`;
 }
 // Small "awaiting approval" note under a mark box while a change waits on the DOS/HOI.
 function setReqTag(input, val){
@@ -7980,15 +8009,64 @@ function viewBlankClassList(classId){
 // page) are also currently showing on screen. Temporarily hides every OTHER
 // .print-only-block for the print, then restores them right after — nothing on screen
 // changes except for the brief moment the print dialog is open.
+/* ===== Shared printing helpers =====
+   Android/Chrome print previews can re-render the page AFTER the "afterprint" event, so hidden blocks, the A4
+   fit and temporary page styles must not be undone straight away (that is what produced blank or wrong
+   previews). Clean-up is therefore postponed until the person next touches the page (or 10 minutes pass),
+   and is always flushed before another print starts. */
+const PRINT_JOBS = new Map(); let PJ_ID = 0;
+function onPrintDone(fn, key){
+  key = key || ('k'+(++PJ_ID));
+  if(PRINT_JOBS.has(key)){ PRINT_JOBS.get(key).fn = fn; return; }
+  const job = {fn, born:Date.now()}, evs = ['pointerdown','keydown','touchstart'];
+  const trigger = ()=>{ if(Date.now()-job.born < 1000) return; run(); };
+  const run = ()=>{ if(PRINT_JOBS.get(key)!==job) return; PRINT_JOBS.delete(key); clearTimeout(job.t); evs.forEach(e=>document.removeEventListener(e,trigger,true)); try{ job.fn(); }catch(e){ console.error(e); } };
+  job.run = run; job.t = setTimeout(run, 10*60*1000);
+  evs.forEach(e=>document.addEventListener(e,trigger,true));
+  PRINT_JOBS.set(key, job);
+}
+function flushPrintJobs(){ Array.from(PRINT_JOBS.values()).forEach(j=>j.run()); }
+let PRINT_BUSY = false;
+function safePrint(){           // ignores double-taps while the dialog is opening; never throws
+  if(PRINT_BUSY) return;
+  PRINT_BUSY = true;
+  const free = ()=>{ PRINT_BUSY = false; window.removeEventListener('afterprint', free); };
+  window.addEventListener('afterprint', free); setTimeout(free, 6000);
+  try{ window.print(); }catch(e){ free(); toast('Could not open the print dialog — please try again','err'); }
+}
+function printPlain(){ flushPrintJobs(); safePrint(); }
+// Pop-up print windows (fees, invoices, receipts, parent documents). If the browser blocks the pop-up the document
+// is printed from a hidden frame instead, and printing waits until the page and its pictures have loaded.
+function printWin(){
+  let w = null; try{ w = printWin(); }catch(e){}
+  if(w && w.document) return w;
+  const f = document.createElement('iframe'); f.setAttribute('aria-hidden','true');
+  f.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none';
+  document.body.appendChild(f);
+  const win = f.contentWindow; win.__frame = f; return win;
+}
+function printWinGo(w){
+  try{ w.document.close(); }catch(e){}
+  const go = ()=>{
+    try{ w.focus(); w.print(); }catch(e){ toast('Could not open the print dialog — please try again','err'); }
+    if(w.__frame) setTimeout(()=>{ try{ w.__frame.remove(); }catch(e){} }, 180000);
+  };
+  let tries = 0;
+  const check = ()=>{
+    let ready = true;
+    try{ ready = w.document.readyState==='complete' && Array.from(w.document.images).every(i=>i.complete); }catch(e){}
+    if(ready || ++tries>25) go(); else setTimeout(check,150);
+  };
+  setTimeout(check,100);
+}
 function printSection(containerId){
   const target = qs('#'+containerId);
   if(!target) return;
-  const others = [...document.querySelectorAll('.print-only-block')].filter(b=>!target.contains(b));
+  flushPrintJobs();
+  const others = Array.from(document.querySelectorAll('.print-only-block')).filter(b=>!target.contains(b));
   others.forEach(b=>b.classList.add('print-hide-temp'));
-  const restore = ()=>{ others.forEach(b=>b.classList.remove('print-hide-temp')); window.removeEventListener('afterprint', restore); };
-  window.addEventListener('afterprint', restore);
-  window.print();
-  restore(); // covers browsers where print() blocks until the dialog closes; harmless to call twice
+  onPrintDone(()=>{ others.forEach(b=>b.classList.remove('print-hide-temp')); }, 'section');
+  safePrint();
 }
 function viewClassAssessment(examId, targetId){
   if(!examId) return;
@@ -8089,10 +8167,10 @@ function viewCumulative(){
     // Mean is taken over ALL learning areas for this grade (missing ones count as 0), so overall
     // performance reflects the learner's general standing rather than only the area(s) marked so far.
     const nT = takenCount(school,s.id,areas), meanPct = nT? grandTotalPct/nT : 0;
-    return {s, cells, meanPct, grandTotalPts};
+    return {s, cells, meanPct, grandTotalPts, totalMarks: grandTotalPct};
   });
-  rows.sort((a,b)=>b.meanPct-a.meanPct);
-  rows.forEach((r,i)=>{ r.position=i+1; if(i>0 && rows[i-1].meanPct===r.meanPct) r.position=rows[i-1].position; });
+  rows.sort((a,b)=>b.totalMarks-a.totalMarks || b.meanPct-a.meanPct);
+  rows.forEach((r,i)=>{ r.position=i+1; if(i>0 && rows[i-1].totalMarks.toFixed(2)===r.totalMarks.toFixed(2)) r.position=rows[i-1].position; });
   // Positions above are class positions; the gender choice below only decides who is printed.
   const gm = genderMode('cumGender');
   const allRows = rows;
@@ -8102,6 +8180,9 @@ function viewCumulative(){
     const vals = rows.map(r=>r.cells[i]).filter(v=>typeof v==='number');
     return vals.length? vals.reduce((s,v)=>s+v,0)/vals.length : null;
   });
+  const classTotalAvg = rows.length? rows.reduce((s,r)=>s+r.totalMarks,0)/rows.length : 0;
+  const classTop = rows.length? Math.max.apply(null, rows.map(r=>r.totalMarks)) : 0;
+  const examNames = exams.map(e=>escapeHtml(e.name)).join(', ');
   const classMeanPct = rows.length? rows.reduce((s,r)=>s+r.meanPct,0)/rows.length : 0;
   const classMeanG = gradeFor(school,classMeanPct,classId);
   const keyTable = gradingFor(school, classId);
@@ -8109,15 +8190,16 @@ function viewCumulative(){
   const an = hasAssessNo(rows, r=>r.s);
   qs('#cumArea').innerHTML = `
   <div class="print-only-block">
-  <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>Cumulative Assessment — ${term} ${year} — ${escapeHtml(cls.name)}</p>${genderNote(gm)}${rows.some(r=>r.cells.includes('NA'))?'<p class="small">N/A = learner does not take that learning area; their mean uses only the areas they take.</p>':''}<p class="small">Based on ${exams.length} exam(s): ${exams.map(e=>escapeHtml(e.name)).join(', ')}</p><p class="small">Class Teacher: ${escapeHtml(classTeacher)}</p>${scoped?'<p class="small">Assigned learning area(s) only — mean, points and position are based on these.</p>':''}${school.requireApproval && exams.some(e=>e.resultsApproval!=='approved')?'<p class="small">⚠ Provisional — includes exam(s) not yet approved.</p>':''}</div>
-  <table><tr><th>Pos</th><th>Adm No.</th>${assessTh(an)}<th>Name</th><th>Sex</th>${areas.map(a=>`<th>${escapeHtml(a.name)} (avg %)</th>`).join('')}<th>Mean %</th><th>Total Pts</th><th>Level</th></tr>
-  ${groupedRowsHTML(rows, gm, 7+areas.length+(an?1:0), r=>r.s, r=>{const g=gradeFor(school,r.meanPct,classId);return `<tr><td>${r.position}</td><td>${r.s.adm?escapeHtml(r.s.adm):'—'}</td>${assessTd(r.s,an)}<td>${escapeHtml(r.s.name)}</td><td>${r.s.gender==='M'?'M':r.s.gender==='F'?'F':''}</td>
+  <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>Cumulative Assessment — ${term} ${year} — ${escapeHtml(cls.name)}</p><p class="small">${exams.length} exam(s) counted: ${examNames}. Each learning area shows the learner's average % across these exams; <b>Total Marks</b> is the sum of those averages, and Position follows Total Marks (highest first).</p>${genderNote(gm)}${rows.some(r=>r.cells.includes('NA'))?'<p class="small">N/A = learner does not take that learning area; their mean uses only the areas they take.</p>':''}<p class="small">Based on ${exams.length} exam(s): ${exams.map(e=>escapeHtml(e.name)).join(', ')}</p><p class="small">Class Teacher: ${escapeHtml(classTeacher)}</p>${scoped?'<p class="small">Assigned learning area(s) only — mean, points and position are based on these.</p>':''}${school.requireApproval && exams.some(e=>e.resultsApproval!=='approved')?'<p class="small">⚠ Provisional — includes exam(s) not yet approved.</p>':''}</div>
+  <table><tr><th>Pos</th><th>Adm No.</th>${assessTh(an)}<th>Name</th><th>Sex</th>${areas.map(a=>`<th>${escapeHtml(a.name)} (avg %)</th>`).join('')}<th>Total Marks</th><th>Mean %</th><th>Total Pts</th><th>Level</th></tr>
+  ${groupedRowsHTML(rows, gm, 8+areas.length+(an?1:0), r=>r.s, r=>{const g=gradeFor(school,r.meanPct,classId);return `<tr><td>${r.position}</td><td>${r.s.adm?escapeHtml(r.s.adm):'—'}</td>${assessTd(r.s,an)}<td>${escapeHtml(r.s.name)}</td><td>${r.s.gender==='M'?'M':r.s.gender==='F'?'F':''}</td>
     ${r.cells.map(c=>`<td>${c==='NA'?'N/A':(c!=null?Math.round(c):'-')}</td>`).join('')}
-    <td>${Math.round(r.meanPct)}%</td><td>${r.grandTotalPts}</td><td>${raBadge(school,classId,g.level)}</td></tr>`;})}
+    <td><b>${Math.round(r.totalMarks)}</b></td><td>${Math.round(r.meanPct)}%</td><td>${r.grandTotalPts}</td><td>${raBadge(school,classId,g.level)}</td></tr>`;})}
   <tr class="rc-total"><td colspan="${4+(an?1:0)}" style="text-align:left">${gm==='M'?'BOYS AVERAGE':gm==='F'?'GIRLS AVERAGE':'CLASS AVERAGE'}</td>
   ${subjAvg.map(v=>`<td>${v!=null?Math.round(v):'-'}</td>`).join('')}
-  <td>${Math.round(classMeanPct)}%</td><td>-</td><td>${raBadge(school,classId,classMeanG.level)}</td></tr>
+  <td>${Math.round(classTotalAvg)}</td><td>${Math.round(classMeanPct)}%</td><td>-</td><td>${raBadge(school,classId,classMeanG.level)}</td></tr>
   </table>
+  <p class="small">Learners: ${rows.length} · Highest total marks: ${Math.round(classTop)} · Class average total: ${Math.round(classTotalAvg)}</p>
   ${genderSummaryHTML(school, classId, allRows)}
   ${gradingKey}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px">
@@ -9142,14 +9224,14 @@ function printDefaulters(){
   const recs = school.fees[exam.id]||{};
   const list = finLearners(school, exam).map(s=>({s,b:Number((recs[s.id]||{}).balance)||0,n:(recs[s.id]||{}).nextTermFee})).filter(x=>x.b>0).sort((a,b)=>b.b-a.b);
   const total = list.reduce((t,x)=>t+x.b,0);
-  const w = window.open('','_blank');
+  const w = printWin();
   if(!w){ toast('Allow pop-ups to print','err'); return; }
-  w.document.write(`<html><head><title>Arrears List</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h2{margin:0 0 4px;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:10px}th,td{border:1px solid #999;padding:5px 7px;text-align:left}th{background:#123a63;color:#fff}td.r{text-align:right}</style></head><body>
-  <h2>${escapeHtml(school.name)} — Fee Arrears List</h2><div>${escapeHtml(exam.name)} (${escapeHtml(String(exam.term))} ${escapeHtml(String(exam.year))}) · Printed ${new Date().toLocaleDateString()}</div>
+  w.document.write(`<html><head><title>Arrears List</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}${LH_CSS}h2{margin:0 0 4px;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:10px}th,td{border:1px solid #999;padding:5px 7px;text-align:left}th{background:#123a63;color:#fff}td.r{text-align:right}</style></head><body>
+  ${schoolLetterhead(school)}<h3 style="text-align:center;color:#123a63;margin:4px 0 8px;font-size:17px;letter-spacing:.5px">FEE ARREARS LIST</h3><div>${escapeHtml(exam.name)} (${escapeHtml(String(exam.term))} ${escapeHtml(String(exam.year))}) · Printed ${new Date().toLocaleDateString()}</div>
   <table><tr><th>#</th><th>Adm No.</th><th>Name</th><th>Arrears (KES)</th><th>Next Term Fee (KES)</th></tr>
   ${list.map((x,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(x.s.adm||'')}</td><td>${escapeHtml(x.s.name)}</td><td class="r">${x.b.toLocaleString()}</td><td class="r">${x.n!=null?Number(x.n).toLocaleString():''}</td></tr>`).join('')||'<tr><td colspan="5">No learners owing.</td></tr>'}
   <tr><th colspan="3">Total (${list.length} learners)</th><th class="r">${total.toLocaleString()}</th><th></th></tr></table></body></html>`);
-  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+  printWinGo(w);
 }
 function saveFeeCell(examId, sid, field, val){
   if(!canEdit()){ noEdit(); return; }
@@ -9297,14 +9379,14 @@ function exportCollections(){
 }
 function printCollections(){
   const d = collectionsData(); const nm = id=>(finRaw(d.school).find(x=>x.id===id)||{}).name||'—';
-  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  const w = printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
   w.document.write(`<html><head><title>Cash Book</title><style>body{font-family:Arial;padding:20px;font-size:12px}h2{margin:0;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #999;padding:4px 6px;text-align:left}th{background:#123a63;color:#fff}.r{text-align:right}</style></head><body>
   <h2>${escapeHtml(d.school.name)} — Cash Book</h2><div>${d.f} to ${d.t} · Printed ${new Date().toLocaleDateString()}</div>
   <p><b>Collected:</b> KES ${d.income.toLocaleString()} &nbsp; <b>Expenses:</b> KES ${d.spent.toLocaleString()} &nbsp; <b>Net:</b> KES ${(d.income-d.spent).toLocaleString()}</p>
   <p>${Object.keys(d.byMethod).map(k=>`${escapeHtml(k)}: KES ${d.byMethod[k].toLocaleString()}`).join(' · ')}</p>
   <table><tr><th>Date</th><th>Receipt</th><th>Learner</th><th>Method</th><th>Ref</th><th>Amount</th></tr>${d.pays.map(p=>`<tr><td>${escapeHtml(p.date)}</td><td>${escapeHtml(p.receiptNo)}</td><td>${escapeHtml(nm(p.studentId))}</td><td>${escapeHtml(p.method)}</td><td>${escapeHtml(p.ref||'')}</td><td class="r">${p.amount.toLocaleString()}</td></tr>`).join('')}</table>
   <h3>Expenses</h3><table><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th></tr>${d.exps.map(e=>`<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.category)}</td><td>${escapeHtml(e.desc||'')}</td><td class="r">${e.amount.toLocaleString()}</td></tr>`).join('')||'<tr><td colspan="4">None</td></tr>'}</table></body></html>`);
-  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+  printWinGo(w);
 }
 function addExpense(){
   if(!canEdit()){ noEdit(); return; }
@@ -9330,14 +9412,14 @@ function printStatement(){
   const st = finRaw(school).find(x=>x.id===sid); if(!st){ toast('Pick a learner first','err'); return; }
   const pays = school.payments.filter(p=>p.studentId===sid && !p.void).sort((a,b)=>a.date<b.date?-1:1);
   const paid = pays.reduce((t,p)=>t+p.amount,0), r = exam ? (recs[sid]||{}) : {};
-  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
-  w.document.write(`<html><head><title>Fee Statement</title><style>body{font-family:Arial;padding:24px;font-size:13px}h2{margin:0;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:10px}th,td{border:1px solid #999;padding:5px 7px;text-align:left}th{background:#123a63;color:#fff}.r{text-align:right}</style></head><body>
-  <h2>${escapeHtml(school.name)}</h2><p><b>FEE STATEMENT</b> · Printed ${new Date().toLocaleDateString()}</p>
+  const w = printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  w.document.write(`<html><head><title>Fee Statement</title><style>body{font-family:Arial;padding:24px;font-size:13px}${LH_CSS}h2{margin:0;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:10px}th,td{border:1px solid #999;padding:5px 7px;text-align:left}th{background:#123a63;color:#fff}.r{text-align:right}</style></head><body>
+  ${schoolLetterhead(school)}<p style="text-align:center;font-size:17px;letter-spacing:.5px"><b>FEE STATEMENT</b> · Printed ${new Date().toLocaleDateString()}</p>
   <p>Learner: <b>${escapeHtml(st.name)}</b> · Adm No: <b>${escapeHtml(st.adm||'-')}</b></p>
   <table><tr><th>Date</th><th>Receipt</th><th>Method</th><th>Reference</th><th>Amount (KES)</th></tr>${pays.map(p=>`<tr><td>${escapeHtml(p.date)}</td><td>${escapeHtml(p.receiptNo)}</td><td>${escapeHtml(p.method)}</td><td>${escapeHtml(p.ref||'-')}</td><td class="r">${p.amount.toLocaleString()}</td></tr>`).join('')||'<tr><td colspan="5">No payments recorded.</td></tr>'}
   <tr><th colspan="4">Total paid</th><th class="r">${paid.toLocaleString()}</th></tr></table>
   ${r.billed!=null?`<p>Term fee invoiced: KES ${Number(r.billed).toLocaleString()}${r.openingBalance?` · Balance brought forward: KES ${Number(r.openingBalance).toLocaleString()}`:''}${r.discount?` · Discounts/bursary: KES ${Number(r.discount).toLocaleString()}`:''}</p>`:''}<p><b>Current fee balance${exam?' ('+escapeHtml(exam.name)+')':''}:</b> KES ${r.balance!=null&&r.balance!==''?Number(r.balance).toLocaleString():'not set'}${r.nextTermFee!=null&&r.nextTermFee!==''?' · Next term fee: KES '+Number(r.nextTermFee).toLocaleString():''}</p></body></html>`);
-  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+  printWinGo(w);
 }
 
 /* ---------- Finance: fee structure, invoicing, bursaries/discounts ---------- */
@@ -9565,15 +9647,15 @@ function printFeeSheet(){
   const cls = (school.classes.find(c=>c.id===exam.classId)||{}).name || '';
   const comp = (st.items||[]).filter(i=>!i.optional), opt = (st.items||[]).filter(i=>i.optional), fm = n=>Number(n).toLocaleString();
   const total = st.amount + comp.reduce((t,i)=>t+i.amount,0);
-  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
-  w.document.write(`<html><head><title>Fee Structure</title><style>body{font-family:Arial;padding:30px;font-size:14px;max-width:640px;margin:auto}h2{margin:0;color:#123a63}.c{color:#555;margin:2px 0}table{border-collapse:collapse;width:100%;margin:8px 0 14px}th,td{border:1px solid #999;padding:7px 9px;text-align:left}th{background:#e8eef5}.r{text-align:right}</style></head><body>
-  <h2>${escapeHtml(school.name)}</h2><p class="c">${escapeHtml([school.address,school.phone].filter(Boolean).join(' · '))}</p>
+  const w = printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  w.document.write(`<html><head><title>Fee Structure</title><style>body{font-family:Arial;padding:30px;font-size:14px;max-width:640px;margin:auto}${LH_CSS}h2{margin:0;color:#123a63}.c{color:#555;margin:2px 0}table{border-collapse:collapse;width:100%;margin:8px 0 14px}th,td{border:1px solid #999;padding:7px 9px;text-align:left}th{background:#e8eef5}.r{text-align:right}</style></head><body>
+  ${schoolLetterhead(school)}
   <p><b>FEE STRUCTURE</b> — ${escapeHtml(cls)} · ${escapeHtml(String(exam.term))} ${escapeHtml(String(exam.year))}</p>
   <table><tr><th>Compulsory fees</th><th class="r">KES</th></tr><tr><td>Tuition</td><td class="r">${fm(st.amount)}</td></tr>${comp.map(i=>`<tr><td>${escapeHtml(i.name)}</td><td class="r">${fm(i.amount)}</td></tr>`).join('')}<tr><th>Total per term</th><th class="r">${fm(total)}</th></tr></table>
   ${opt.length?`<table><tr><th>Optional services (charged only if requested)</th><th class="r">KES</th></tr>${opt.map(i=>`<tr><td>${escapeHtml(i.name)}</td><td class="r">${fm(i.amount)}</td></tr>`).join('')}</table>`:''}
   ${school.payInstructions?`<p><b>How to pay:</b><br>${escapeHtml(school.payInstructions).replace(/\n/g,'<br>')}</p>`:''}
   <p class="c">Please keep your payment receipt. Thank you.</p></body></html>`);
-  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+  printWinGo(w);
 }
 function printInvoices(onlySid){
   const {school, exam, recs, learners} = feeCtx(); if(!exam){ toast('Pick a grade and exam first','err'); return; }
@@ -9582,7 +9664,7 @@ function printInvoices(onlySid){
   const fm = n=>Number(n).toLocaleString();
   const pages = list.map(l=>{
     const r = recs[l.id]; const paid = school.payments.filter(p=>!p.void && p.examId===exam.id && p.studentId===l.id).reduce((t,p)=>t+p.amount,0);
-    return `<div class="pg"><h2>${escapeHtml(school.name)}</h2><p class="c">${escapeHtml([school.address,school.phone].filter(Boolean).join(' · '))}</p><p><b>FEE INVOICE</b> — ${escapeHtml(exam.name)} (${escapeHtml(String(exam.term))} ${escapeHtml(String(exam.year))})</p>
+    return `<div class="pg">${schoolLetterhead(school)}<p><b>FEE INVOICE</b> — ${escapeHtml(exam.name)} (${escapeHtml(String(exam.term))} ${escapeHtml(String(exam.year))})</p>
     <p>Learner: <b>${escapeHtml(l.name)}</b> · Adm No: <b>${escapeHtml(l.adm||'-')}</b> · Date: ${new Date().toLocaleDateString()}</p>
     <table><tr><th>Item</th><th class="r">Amount (KES)</th></tr>${(r.lines||[]).map(x=>`<tr><td>${escapeHtml(x.name)}</td><td class="r">${fm(x.amount)}</td></tr>`).join('')}
     <tr><th>Total this term</th><th class="r">${fm(r.billed)}</th></tr>
@@ -9592,9 +9674,9 @@ function printInvoices(onlySid){
     <tr><th>BALANCE DUE</th><th class="r">${fm(Number(r.balance)||0)}</th></tr></table>
     ${school.payInstructions?`<p style="margin-top:12px"><b>How to pay:</b><br>${escapeHtml(school.payInstructions).replace(/\n/g,'<br>')}</p>`:''}<p class="c" style="margin-top:14px">Please pay before the term opens and keep your receipt. Thank you.</p></div>`;
   }).join('');
-  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
-  w.document.write(`<html><head><title>Invoices</title><style>body{font-family:Arial;font-size:13px}.pg{padding:26px;page-break-after:always;max-width:640px;margin:auto}h2{margin:0;color:#123a63}.c{color:#555;margin:2px 0}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #999;padding:6px 8px;text-align:left}th{background:#e8eef5}.r{text-align:right}</style></head><body>${pages}</body></html>`);
-  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+  const w = printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  w.document.write(`<html><head><title>Invoices</title><style>body{font-family:Arial;font-size:13px}${LH_CSS}.pg{padding:26px;page-break-after:always;max-width:640px;margin:auto}.pg:last-child{page-break-after:auto}h2{margin:0;color:#123a63}.c{color:#555;margin:2px 0}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #999;padding:6px 8px;text-align:left}th{background:#e8eef5}.r{text-align:right}</style></head><body>${pages}</body></html>`);
+  printWinGo(w);
 }
 function feeShowOnReport(school, classId, term, year){
   const r=school.feeOnReportRules||[], y=String(year||''), t=String(term||'');
@@ -9825,7 +9907,7 @@ function ntiPageHTML(school, exam, l, r){
     const due = total>0 ? `<tr class="tot"><th>TOTAL PAYABLE${opens?' BEFORE '+escapeHtml(opens.toUpperCase()):' BEFORE THE TERM OPENS'}</th><th class="r">KES ${fm(total)}</th></tr>`
       : `<tr class="tot ok"><th>NO PAYMENT DUE -- credit carried forward</th><th class="r">KES ${fm(Math.abs(total))}</th></tr>`;
     return `<div class="pg">
-    <div class="hd">${school.logo?`<img src="${school.logo}" alt="">`:''}<div><h2>${escapeHtml(school.name)}</h2><p class="c">${escapeHtml([school.address,school.phone,school.email].filter(Boolean).join(' | '))}</p>${school.motto?`<p class="c"><i>${escapeHtml(school.motto)}</i></p>`:''}</div></div>
+    ${schoolLetterhead(school)}
     <div class="ttl">NEXT TERM FEE INVOICE -- ${escapeHtml(ntName.toUpperCase())}</div>
     <table class="meta"><tr><td>Learner: <b>${escapeHtml(l.name)}</b></td><td>Adm No: <b>${escapeHtml(l.adm||'-')}</b></td></tr>
     <tr><td>Current grade: <b>${escapeHtml(cls||'-')}</b></td><td>Invoice No: <b>${escapeHtml(invNo)}</b></td></tr>
@@ -9846,7 +9928,7 @@ function ntiPageHTML(school, exam, l, r){
     <div class="sg"><div>Parent / Guardian name: ____________________________</div><div>Signature: ______________ Date: ___________</div><div class="stamp">Accounts office stamp</div></div>
     </div>`;
 }
-const NTI_CSS = `@page{size:A4;margin:10mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial;font-size:12.5px;color:#111;margin:0}.pg{padding:18px 26px;page-break-after:always;max-width:700px;margin:auto}.pg:last-child{page-break-after:auto}
+const NTI_CSS = `${LH_CSS}@page{size:A4;margin:10mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial;font-size:12.5px;color:#111;margin:0}.pg{padding:18px 26px;page-break-after:always;max-width:700px;margin:auto}.pg:last-child{page-break-after:auto}
   .hd{display:flex;gap:12px;align-items:center;border-bottom:2px solid #123a63;padding-bottom:8px}.hd img{height:56px;width:auto}h2{margin:0;color:#123a63;font-size:20px}.c{color:#555;margin:2px 0}
   .ttl{background:#123a63;color:#fff;font-weight:700;text-align:center;padding:7px;margin:10px 0 6px;letter-spacing:.5px}
   table{border-collapse:collapse;width:100%}.meta td{padding:3px 6px;border:none}.it{margin-top:8px}.it th,.it td{border:1px solid #999;padding:5px 8px;text-align:left}.it th{background:#e8eef5}.r{text-align:right!important}
@@ -9863,9 +9945,9 @@ function printNextTermInvoices(onlySid){
   if(!onlySid && qs('#fsNtiArrOnly') && qs('#fsNtiArrOnly').checked) list = list.filter(l=>(Number(recs[l.id].balance)||0)>0);
   if(!list.length){ toast(onlySid ? 'This learner has no fee balance or next-term fee yet' : 'No learners to print -- set balances / next-term fees first','err'); return; }
   const pages = list.map(l=>ntiPageHTML(school, exam, l, recs[l.id]||{})).join('');
-  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  const w = printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
   w.document.write(ntiDocument(pages));
-  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+  printWinGo(w);
   if(noRecord && !onlySid) toast(`${noRecord} learner(s) skipped -- no balance or next-term fee recorded`);
 }
 function applyDiscount(){
@@ -10000,9 +10082,9 @@ function closingHTML(d){
 function renderClosing(){ const d = closingData(); qs('#clArea').innerHTML = d ? closingHTML(d) : '<p class="small">No term selected.</p>'; }
 function printClosing(){
   const d = closingData(); if(!d){ toast('No term selected','err'); return; }
-  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  const w = printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
   w.document.write(`<html><head><title>Closing Report</title><style>body{font-family:Arial;padding:22px;font-size:12px}h3{color:#123a63;margin:0 0 8px}table{border-collapse:collapse;width:100%;margin:8px 0}th,td{border:1px solid #999;padding:4px 7px;text-align:left}th{background:#e8eef5}</style></head><body>${closingHTML(d)}<p style="color:#666">Printed ${new Date().toLocaleString()}</p></body></html>`);
-  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+  printWinGo(w);
 }
 function feeCtx(){
   const school = currentSchool(); const exam = finExams(school).find(e=>e.id===(qs('#ffExam')||{}).value);
@@ -10050,14 +10132,14 @@ function voidPayment(id){
 function printReceipt(id){
   const school = currentSchool(); const p = school.payments.find(x=>x.id===id); if(!p) return;
   const st = finRaw(school).find(x=>x.id===p.studentId)||{}; const exam = finExams(school).find(e=>e.id===p.examId)||{};
-  const w = window.open('','_blank'); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  const w = printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
   const row=(a,b)=>`<tr><td style="color:#555;width:38%">${a}</td><td><b>${b}</b></td></tr>`;
-  w.document.write(`<html><head><title>${escapeHtml(p.receiptNo)}</title><style>body{font-family:Arial,sans-serif;max-width:420px;margin:20px auto;padding:18px;border:2px solid #123a63;border-radius:8px;font-size:13px}h2{margin:0;color:#123a63;text-align:center}.c{text-align:center;color:#555;margin:2px 0}table{width:100%;border-collapse:collapse;margin-top:10px}td{padding:6px 4px;border-bottom:1px dotted #bbb}.amt{font-size:20px;text-align:center;margin:12px 0;color:#1f8a4c}</style></head><body>
-  <h2>${escapeHtml(school.name)}</h2><p class="c">${escapeHtml([school.address,school.phone].filter(Boolean).join(' · '))}</p><p class="c"><b>FEE PAYMENT RECEIPT</b></p>
+  w.document.write(`<html><head><title>${escapeHtml(p.receiptNo)}</title><style>body{font-family:Arial,sans-serif;max-width:420px;margin:20px auto;padding:18px;border:2px solid #123a63;border-radius:8px;font-size:13px}${LH_CSS}h2{margin:0;color:#123a63;text-align:center}.c{text-align:center;color:#555;margin:2px 0}table{width:100%;border-collapse:collapse;margin-top:10px}td{padding:6px 4px;border-bottom:1px dotted #bbb}.amt{font-size:20px;text-align:center;margin:12px 0;color:#1f8a4c}</style></head><body>
+  ${schoolLetterhead(school,true)}<p class="c"><b>FEE PAYMENT RECEIPT</b></p>
   <div class="amt"><b>KES ${p.amount.toLocaleString()}</b></div>
   <table>${row('Receipt No.',escapeHtml(p.receiptNo))}${row('Date',escapeHtml(p.date))}${row('Learner',escapeHtml(st.name||'-'))}${row('Adm No.',escapeHtml(st.adm||'-'))}${row('Term',escapeHtml((exam.name||'')+' '+(exam.term||'')+' '+(exam.year||'')))}${row('Method',escapeHtml(p.method))}${row('Reference',escapeHtml(p.ref||'-'))}${row('Balance after payment', p.balanceAfter!=null ? 'KES '+p.balanceAfter.toLocaleString() : '—')}${row('Received by',escapeHtml(p.by))}</table>
   <p class="c" style="margin-top:14px">Thank you. Keep this receipt for your records.</p></body></html>`);
-  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+  printWinGo(w);
 }
 function feeReminderItems(){
   const {school, exam, recs, learners} = feeCtx();
@@ -10277,6 +10359,80 @@ function pathwaySettingsHTML(school){
 function setPathwayShow(v){ if(!canEdit()){noEdit();return;} currentSchool().pathwayShow=['off','all','junior'].includes(v)?v:'junior'; saveDB(DB); toast('Saved — generate the reports again to update'); }
 function setPathwayArea(id,v){ if(!canEdit()){noEdit();return;} const s=currentSchool(); s.pathwayMap=s.pathwayMap||{}; s.pathwayMap[id]=PATHWAYS.includes(v)?v:''; saveDB(DB); toast('Saved — generate the reports again to update'); }
 function resetPathwayMap(){ if(!canEdit()){noEdit();return;} currentSchool().pathwayMap={}; saveDB(DB); renderDOS(); toast('Pathways reset to the suggested grouping'); }
+/* ===== Report speed-ups =====
+   Everything that is the SAME for every learner of an exam (class list, class averages, class mean/SD,
+   ranking, all-streams list) is worked out ONCE per batch instead of once per learner. Before, printing a
+   whole grade re-did that work N times (N x N learners), which froze phones and made the print preview fail. */
+let RC_CTX = {};
+function rcResetCtx(){ RC_CTX = {}; }
+function rcCtx(school, exam, scoped){
+  const key = exam.id + '|' + (scoped?1:0);
+  if(RC_CTX[key]) return RC_CTX[key];
+  const areas = visibleAreas(school, exam.classId);
+  const marksForExam = school.marks[exam.id] || {};
+  const learners = studentsForExam(school, exam);
+  const optMode = learners.some(l=>areas.some(a=>!takesArea(school,l.id,a.id)));
+  const totals = learners.map(s=>{
+    let t=0, c=0; areas.forEach(a=>{ if(!takesArea(school,s.id,a.id)) return; c++; const sc=(marksForExam[s.id]||{})[a.id]; if(sc!=null) t += optMode ? pctOf(sc,exam.maxMarksByArea[a.id]??100) : sc; });
+    return {id:s.id, t: optMode ? (c? t/c : 0) : t};
+  }).sort((a,b)=>b.t-a.t);
+  const posMap = {}; totals.forEach((x,i)=>{ if(!(x.id in posMap)) posMap[x.id]=i+1; });
+  const clsArea = areas.map(a=>{ const v=learners.filter(x=>takesArea(school,x.id,a.id)).map(x=>(marksForExam[x.id]||{})[a.id]).filter(x=>x!=null).map(x=>pctOf(x,exam.maxMarksByArea[a.id]??100)); return v.length?v.reduce((t,x)=>t+x,0)/v.length:null; });
+  const lMeans = learners.map(x=>{ let t=0, any=false; areas.forEach(a=>{ if(!takesArea(school,x.id,a.id)) return; const sc=(marksForExam[x.id]||{})[a.id]; if(sc!=null){ t+=pctOf(sc,exam.maxMarksByArea[a.id]??100); any=true; } }); const tc=takenCount(school,x.id,areas); return {m:tc?t/tc:0, any}; }).filter(x=>x.any);
+  const clsMean = lMeans.length ? lMeans.reduce((t,x)=>t+x.m,0)/lMeans.length : null;
+  const clsSD = raSD(lMeans.map(x=>x.m));
+  // all-streams position list (only for the grade-wide position line)
+  let gp = null;
+  if(!scoped){
+    const cls = school.classes.find(c=>c.id===exam.classId) || {id:exam.classId, name:'—'};
+    const gl = raGradeLabel(cls.name), sibs = school.classes.filter(c=>c.id!==cls.id && raGradeLabel(c.name)===gl);
+    if(sibs.length){
+      const mean=(l,ar,mk,mx)=>{ let t=0; ar.forEach(a=>{ if(!takesArea(school,l.id,a.id)) return; const sc=(mk[l.id]||{})[a.id]; if(sc!=null) t+=pctOf(sc,mx[a.id]??100); }); const tc=takenCount(school,l.id,ar); return tc?t/tc:0; };
+      const all = learners.map(l=>({id:l.id, m:mean(l,areas,marksForExam,exam.maxMarksByArea)}));
+      let sibN=0;
+      sibs.forEach(c=>{ const e2=school.exams.find(e=>e.classId===c.id && e.name===exam.name && e.term===exam.term && String(e.year)===String(exam.year)); if(!e2) return; sibN++;
+        const ar2=areasForClass(school,c.id), mk2=school.marks[e2.id]||{}; studentsForExam(school,e2).forEach(l=>all.push({id:l.id, m:mean(l,ar2,mk2,e2.maxMarksByArea)})); });
+      const byId = {}; all.forEach(x=>{ if(!(x.id in byId)) byId[x.id]=x; });
+      const sorted = all.map(x=>x.m).sort((a,b)=>a-b);
+      gp = {gl, sibN, byId, total: all.length, sorted};
+    }
+  }
+  return RC_CTX[key] = {areas, marksForExam, learners, optMode, totals, posMap, clsArea, lMeans, clsMean, clsSD, gp};
+}
+// Vector trend chart (tiny inline SVG). Replaces a 760x340 <canvas> per learner (about 1 MB of memory each,
+// plus a PNG copy made at print time) — with 100+ learners that is what made the print preview fail.
+function rcTrendSvg(data){
+  const W=760, H=150, pl=44, pr=10, pt=8, pb=24, w=W-pl-pr, h=H-pt-pb;
+  let o = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" font-family="Arial,sans-serif"><rect x=".5" y=".5" width="${W-1}" height="${H-1}" fill="none" stroke="#123a63"/>`;
+  for(let g=0; g<=4; g++){ const y=pt+h-h*(g/4); o+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="#a9b6c4"/><text x="${pl-5}" y="${y+4}" font-size="12" text-anchor="end" fill="#123a63">${g*25}%</text>`; }
+  if(!data || !data.length) return o+`<text x="${pl+12}" y="${H/2}" font-size="14" fill="#555">No historical data yet</text></svg>`;
+  const X=i=>pl+(data.length>1 ? w*i/(data.length-1) : w/2), Y=d=>pt+h-h*Math.max(0,Math.min(100,d.pct))/100;
+  o+=`<polyline fill="none" stroke="#123a63" stroke-width="3" stroke-linejoin="round" points="${data.map((d,i)=>X(i).toFixed(1)+','+Y(d).toFixed(1)).join(' ')}"/>`;
+  const step = data.length>7 ? 2 : 1;
+  data.forEach((d,i)=>{
+    o+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(d).toFixed(1)}" r="5" fill="#d9a441" stroke="#123a63" stroke-width="1.5"/>`;
+    if(i%step===0){ const lb = d.label.length>18 ? d.label.slice(0,17)+'…' : d.label; o+=`<text x="${X(i).toFixed(1)}" y="${H-8}" font-size="11" text-anchor="middle" fill="#123a63">${escapeHtml(lb)}</text>`; }
+  });
+  return o+'</svg>';
+}
+// A logo / signature is stored as a big base64 string. Pasting it into every learner's report multiplied the page
+// size by the number of learners. Here each picture becomes ONE blob URL that every report simply points at.
+const RC_BLOBS = new Map();
+function rcBlobUrl(d){
+  if(!d || typeof d!=='string' || d.slice(0,5)!=='data:') return d;
+  let u = RC_BLOBS.get(d); if(u) return u;
+  try{
+    const i=d.indexOf(','), meta=d.slice(5,i), mime=meta.split(';')[0]||'image/png';
+    const bin = /;base64/i.test(meta) ? atob(d.slice(i+1)) : decodeURIComponent(d.slice(i+1));
+    const arr = new Uint8Array(bin.length); for(let k=0;k<bin.length;k++) arr[k]=bin.charCodeAt(k);
+    u = URL.createObjectURL(new Blob([arr],{type:mime}));
+  }catch(e){ u = d; }
+  RC_BLOBS.set(d,u); return u;
+}
+function rcDedupeImages(html, urls){
+  urls.forEach(d=>{ if(d && typeof d==='string' && d.length>200 && html.indexOf(d)>-1) html = html.split(d).join(rcBlobUrl(d)); });
+  return html;
+}
 function buildReportHTML(school, sid, examId){
   const student = school.students.find(s=>s.id===sid);
   const exam = school.exams.find(e=>e.id===examId);
@@ -10302,13 +10458,9 @@ function buildReportHTML(school, sid, examId){
   const allMarked = n===nTaken && nTaken>0;
   const overallGrade = gradeFor(school,meanPct,exam.classId);
   // class position for this exam
-  const learners = studentsForExam(school, exam);
-  const optMode = learners.some(l=>areas.some(a=>!takesArea(school,l.id,a.id)));
-  const totals = learners.map(s=>{
-    let t=0, c=0; areas.forEach(a=>{ if(!takesArea(school,s.id,a.id)) return; c++; const sc=(marksForExam[s.id]||{})[a.id]; if(sc!=null) t += optMode ? pctOf(sc,exam.maxMarksByArea[a.id]??100) : sc; });
-    return {id:s.id, t: optMode ? (c? t/c : 0) : t};
-  }).sort((a,b)=>b.t-a.t);
-  let position = totals.findIndex(x=>x.id===sid)+1;
+  const CX = rcCtx(school, exam, scoped);
+  const learners = CX.learners;
+  let position = CX.posMap[sid] || 0;
   const classTeacher = (school.classTeachers||{})[exam.classId] || 'Not Set';
   // history across all exams/years for this learner (for chart)
   const historyExams = school.exams.filter(e=> (school.marks[e.id]||{})[sid])
@@ -10347,11 +10499,11 @@ function buildReportHTML(school, sid, examId){
 
   // ---- Learner analysis (class comparison, deviation, strengths/weaknesses, progress) ----
   const sgn=d=>`<b style="color:${d>=0?'#1f8a4c':'#d1473f'}">${d>=0?'+':''}${d.toFixed(1)}</b>`;
-  const clsArea=areas.map(a=>{ const v=learners.filter(x=>takesArea(school,x.id,a.id)).map(x=>(marksForExam[x.id]||{})[a.id]).filter(x=>x!=null).map(x=>pctOf(x,exam.maxMarksByArea[a.id]??100)); return v.length?v.reduce((t,x)=>t+x,0)/v.length:null; });
+  const clsArea=CX.clsArea;
   subjectRows.forEach((r,i)=>{ r.cavg=clsArea[i]; r.dev=(r.pct!=null&&r.cavg!=null)?r.pct-r.cavg:null; });
-  const lMeans=learners.map(x=>{ let t=0, any=false; areas.forEach(a=>{ if(!takesArea(school,x.id,a.id)) return; const sc=(marksForExam[x.id]||{})[a.id]; if(sc!=null){ t+=pctOf(sc,exam.maxMarksByArea[a.id]??100); any=true; } }); return {m:takenCount(school,x.id,areas)?t/takenCount(school,x.id,areas):0, any}; }).filter(x=>x.any);
-  const clsMean=lMeans.length?lMeans.reduce((t,x)=>t+x.m,0)/lMeans.length:null;
-  const clsSD=raSD(lMeans.map(x=>x.m));
+  const lMeans=CX.lMeans;
+  const clsMean=CX.clsMean;
+  const clsSD=CX.clsSD;
   const beatPct=lMeans.length>1?Math.round(lMeans.filter(x=>x.m<meanPct-1e-9).length/(lMeans.length-1)*100):null;
   const curIdx=historyExams.findIndex(e=>e.id===examId), prevEx=curIdx>0?historyExams[curIdx-1]:null;
   subjectRows.forEach(r=>{ r.prevPct=null; if(prevEx && r.aid && !r.na){ const ps=((school.marks[prevEx.id]||{})[sid]||{})[r.aid]; if(ps!=null) r.prevPct=pctOf(ps,prevEx.maxMarksByArea[r.aid]??100); } });
@@ -10388,16 +10540,12 @@ function buildReportHTML(school, sid, examId){
   const topPts = Math.max.apply(null, gradingFor(school,exam.classId).map(g=>g.points));
   const maxPts = (isFinite(topPts) && topPts>0) ? topPts*nTaken : 0;
   let gradePosLine = '';
-  if(!scoped){
-    const gl=raGradeLabel(cls.name), sibs=school.classes.filter(c=>c.id!==cls.id && raGradeLabel(c.name)===gl);
-    if(sibs.length){
-      const mean=(l,ar,mk,mx)=>{ let t=0; ar.forEach(a=>{ if(!takesArea(school,l.id,a.id)) return; const sc=(mk[l.id]||{})[a.id]; if(sc!=null) t+=pctOf(sc,mx[a.id]??100); }); const tc=takenCount(school,l.id,ar); return tc?t/tc:0; };
-      const all=learners.map(l=>({id:l.id,m:mean(l,areas,marksForExam,exam.maxMarksByArea)}));
-      let sibN=0;
-      sibs.forEach(c=>{ const e2=school.exams.find(e=>e.classId===c.id && e.name===exam.name && e.term===exam.term && String(e.year)===String(exam.year)); if(!e2) return; sibN++;
-        const ar2=areasForClass(school,c.id), mk2=school.marks[e2.id]||{}; studentsForExam(school,e2).forEach(l=>all.push({id:l.id,m:mean(l,ar2,mk2,e2.maxMarksByArea)})); });
-      const me=all.find(x=>x.id===sid);
-      if(sibN && me) gradePosLine = `<div><b>${escapeHtml(gl)} Position (all streams):</b> ${1+all.filter(x=>x.m>me.m+1e-9).length} of ${all.length}</div>`;
+  if(!scoped && CX.gp){
+    const me = CX.gp.byId[sid];
+    if(CX.gp.sibN && me){
+      // rank = 1 + number of learners with a higher mean (binary search on the sorted list)
+      let lo=0, hi=CX.gp.sorted.length, v=me.m+1e-9; while(lo<hi){ const mid=(lo+hi)>>1; if(CX.gp.sorted[mid]<=v) lo=mid+1; else hi=mid; }
+      gradePosLine = `<div><b>${escapeHtml(CX.gp.gl)} Position (all streams):</b> ${1+(CX.gp.sorted.length-lo)} of ${CX.gp.total}</div>`;
     }
   }
   const cmtOn = school.areaComments!==false;
@@ -10434,7 +10582,7 @@ function buildReportHTML(school, sid, examId){
     <div>${verdict}</div>
     <div class="small" style="margin-top:3px">${partial?'Pathway scores use only the learning areas marked so far (unmarked areas in italics). ':''}Guidance from this assessment only — the final pathway choice also considers the learner's interests, talents and career goals.</div></div>`;
   })();
-  const html = `
+  let html = `
   <div class="report-card print-only-block">
     <div class="rc-scale">
     <div class="rc-topband"></div>
@@ -10475,7 +10623,7 @@ function buildReportHTML(school, sid, examId){
     })() : ''}
     ${scoped ? `<p class="small">Learning Area report — shows only the learning area(s) assigned to the issuing teacher. Mean, points and position are based on these only.</p>` : ''}
     <div class="rc-chartwrap"><span class="rc-chart-label">Performance Trend</span>
-    <canvas id="${chartId}" width="760" height="340"></canvas></div>
+    ${rcTrendSvg(historyPoints)}</div>
     ${analysisHtml}
     ${pathHtml}
     <div class="rc-remark"><b>Grade Teacher's Remark:</b> ${escapeHtml(remark)}</div>
@@ -10492,6 +10640,7 @@ function buildReportHTML(school, sid, examId){
     </div>
     </div>
   </div>`;
+  html = rcDedupeImages(html, [school.logo, school.hoiSignature, (school.classTeacherSigs&&school.classTeacherSigs[exam.classId]||{}).img]);
   // Returned alongside the HTML (instead of an inline <script> tag) because content
   // inserted via innerHTML never executes embedded <script> tags — the chart must be
   // drawn afterwards, once the canvas is actually in the DOM. See drawProgressChart().
@@ -10555,7 +10704,8 @@ function rcPrintSimCSS(){
 }
 function resetReportFit(){
   const pc=document.getElementById('rcPageCss'); if(pc) pc.remove();
-  document.documentElement.style.removeProperty('--rc-page-h');
+  document.documentElement.style.removeProperty('--rc-page-h'); document.documentElement.style.removeProperty('--rc-w');
+  document.querySelectorAll('.report-card').forEach(el=>{ el.style.removeProperty('--rc-k'); el.classList.remove('rc-big'); });
   document.querySelectorAll('.report-card').forEach(el=>{
     el.style.width=''; el.style.height=''; el.style.position=''; el.style.overflow='';
     el.style.pageBreakInside=''; el.style.breakInside='';
@@ -10581,62 +10731,45 @@ function fitReportCardsToPage(){
   const cards = Array.from(document.querySelectorAll('.report-card')).filter(c=>!c.closest('.print-hide-temp'));
   resetReportFit();
   if(!cards.length) return;
-  document.documentElement.style.setProperty('--rc-page-h', PAGE_H+'mm');
+  document.documentElement.style.setProperty('--rc-page-h', PAGE_H+'mm'); document.documentElement.style.setProperty('--rc-w', PAGE_W+'mm');
+  onPrintDone(resetReportFit, 'rcfit');
   const pg=document.createElement('style'); pg.id='rcPageCss'; pg.textContent='@page{size:'+PAPER+';margin:8mm}'; document.head.appendChild(pg);
   rcPrintSimCSS();
-  // Charts: swap each <canvas> for a picture of itself while printing, so shrinking the card can
-  // never blank or distort the chart. resetReportFit() puts the real canvas back after printing.
-  cards.forEach(el=>el.querySelectorAll('canvas').forEach(cv=>{
-    try{
-      const im=document.createElement('img'); im.className='rc-canvas-img'; im.src=cv.toDataURL('image/png');
-      im.style.cssText='display:block;width:100%;height:var(--rc-ch,120px);object-fit:fill;';
-      cv.setAttribute('data-rc-hidden','1'); cv.style.display='none'; cv.parentNode.insertBefore(im,cv.nextSibling);
-    }catch(e){}
-  }));
   const sim=document.createElement('div');
   sim.className='rcsim';
   sim.style.cssText='position:absolute;left:-10000px;top:0;visibility:hidden;width:'+PAGE_W+'mm;font-size:11px;font-family:var(--font);color:#1c2b3a;line-height:normal;';
   document.body.appendChild(sim);
+  const limit = PX(PAGE_H), MIN_K = 0.55;
+  const plan = [];
   cards.forEach(el=>{
     const c=el.cloneNode(true);
     c.classList.remove('print-only-block');
     c.style.cssText='height:auto;width:100%;margin:0;';
     sim.appendChild(c);
     const sc=c.querySelector('.rc-scale');
-    const heightAt=k=>{                          // real laid-out card height when shrunk by k
-      if(sc){ sc.style.zoom=k; }
-      return c.getBoundingClientRect().height;
-    };
-    const h=heightAt(1);                         // natural height at the real print width/typography
+    const heightAt=k=>{ if(sc) sc.style.zoom=k; return c.getBoundingClientRect().height; };
     let k=1, tooBig=false;
-    if(h > PX(PAGE_H)){
-      // Never shrink past ~55%: smaller than that stops being legible on paper.
-      const MIN_K=0.55;
-      if(heightAt(MIN_K) > PX(PAGE_H)){ k=MIN_K; tooBig=true; }
-      else{                                      // largest k in [MIN_K,1] that still fits one page
-        let lo=MIN_K, hi=1;
-        for(let i=0;i<10;i++){ const mid=(lo+hi)/2; if(heightAt(mid) <= PX(PAGE_H)) lo=mid; else hi=mid; }
-        k=lo;
+    const h=heightAt(1);                         // natural height at the real print width/typography
+    if(h > limit){
+      // Height shrinks almost linearly with zoom, so jump straight to the estimate and correct it
+      // (at most 4 layout passes) instead of a 12-pass binary search for every learner.
+      k = Math.max(MIN_K, limit/h*0.99);
+      let ok=false;
+      for(let i=0;i<4;i++){
+        const h2=heightAt(k);
+        if(h2 <= limit){ ok=true; break; }
+        if(k <= MIN_K){ break; }
+        k = Math.max(MIN_K, k*limit/h2*0.985);
       }
+      if(!ok) tooBig = (k <= MIN_K+1e-6) ? (heightAt(k) > limit) : false;
+      if(!ok && !tooBig){ k = Math.max(MIN_K, k*0.93); }
     }
     sim.removeChild(c);
-    const scaleEl=el.querySelector('.rc-scale');
-    el.style.width=PAGE_W+'mm';
-    if(k<1 && scaleEl){
-      // zoom shrinks the real layout box (unlike transform), so the printer sees a card that
-      // genuinely fits the page and nothing gets split off or clipped.
-      scaleEl.style.zoom=k;
-    }
-    if(tooBig){
-      // Exceptionally dense report: print at the smallest legible size and let it flow onto a 2nd
-      // page rather than lose any section.
-      el.style.height='auto'; el.style.overflow='visible';
-      el.style.pageBreakInside='auto'; el.style.breakInside='auto';
-    }else{
-      el.style.height=PAGE_H+'mm'; el.style.overflow='hidden';
-    }
+    plan.push({el, k, tooBig});
   });
   document.body.removeChild(sim);
+  // apply after every measurement is done (no layout thrashing); CSS (print only) does the rest
+  plan.forEach(({el,k,tooBig})=>{ el.style.setProperty('--rc-k', String(k)); el.classList.toggle('rc-big', !!tooBig); });
 }
 /* ---- Printing sheets (cumulative, class assessment, grade lists, analysis...): orientation, paper, repeating headings ---- */
 function sheetOrient(){ try{ const v=localStorage.getItem('edutrack_sheet_orient'); if(v==='portrait'||v==='landscape'||v==='auto') return v; }catch(e){} return 'auto'; }
@@ -10668,12 +10801,12 @@ function prepareSheetPrint(){
   const paper = rcPaper(); let o = sheetOrient();
   if(o==='auto') o = sheetWidestCols() >= 10 ? 'landscape' : 'portrait';
   const st = document.createElement('style'); st.id = 'sheetPageCss'; st.textContent = '@page{size:'+paper+' '+o+';margin:8mm}';
+  const rp = document.getElementById('rcPageCss'); if(rp) rp.remove();
   document.head.appendChild(st);
+  onPrintDone(()=>{ const e=document.getElementById('sheetPageCss'); if(e) e.remove(); }, 'sheetcss');
 }
 window.addEventListener('beforeprint', prepareSheetPrint);
-window.addEventListener('afterprint', ()=>{ const e = document.getElementById('sheetPageCss'); if(e) e.remove(); });
 window.addEventListener('beforeprint', fitReportCardsToPage);
-window.addEventListener('afterprint', resetReportFit);
 // Asks before producing report forms for an exam whose results are still awaiting DOS/HOI approval.
 // (Was called by both generators below but never defined, so the buttons threw an error and nothing appeared.)
 function confirmUnapproved(school, examId){
@@ -10685,21 +10818,65 @@ function confirmUnapproved(school, examId){
 }
 // Shared by every "Generate" button: builds the cards, shows them, draws the charts, and reports any
 // problem on screen instead of failing silently.
-function showReports(areaSel, learners, examId, title){
+const RC_BATCH_OPTS=[10,20,30,50,0];
+function rcBatchSize(){ try{ const v=parseInt(localStorage.getItem('edutrack_rc_batch'),10); if(RC_BATCH_OPTS.includes(v)) return v; }catch(e){} return 30; }
+function rcSetBatch(v){ try{ localStorage.setItem('edutrack_rc_batch', String(v)); }catch(e){} if(RC_LAST){ RC_LAST.part=0; rcRenderPart(0); } }
+let RC_LAST = null, RC_TOKEN = null;
+function rcImagesReady(root){
+  const pend=[...root.querySelectorAll('img')].filter(i=>!i.complete);
+  if(!pend.length) return null;
+  return Promise.race([Promise.all(pend.map(i=>new Promise(r=>{ i.addEventListener('load',r,{once:true}); i.addEventListener('error',r,{once:true}); }))), new Promise(r=>setTimeout(r,3000))]);
+}
+function rcPrintNow(){
+  const area = RC_LAST && qs(RC_LAST.areaSel);
+  const wait = area ? rcImagesReady(area) : null;
+  flushPrintJobs();
+  if(wait) wait.then(()=>safePrint()); else safePrint();
+}
+function rcGoPart(p){ rcRenderPart(p); }
+function rcRenderPart(p){
+  const R = RC_LAST; if(!R) return;
+  const area = qs(R.areaSel); if(!area) return;
+  const bs = rcBatchSize(), total = R.built.length, n = (bs && total>bs) ? Math.ceil(total/bs) : 1;
+  p = Math.max(0, Math.min(n-1, p|0)); R.part = p;
+  const from = n>1 ? p*bs : 0, to = n>1 ? Math.min(total, from+bs) : total;
+  const sel = `<select class="no-print" onchange="rcSetBatch(+this.value)" style="width:auto;margin:0" title="Printing fewer reports at a time is faster and never fails on phones">${RC_BATCH_OPTS.map(v=>`<option value="${v}" ${rcBatchSize()===v?'selected':''}>${v?'Print '+v+' per batch':'Print ALL at once (slow)'}</option>`).join('')}</select>`;
+  const parts = n>1 ? `<div class="flexbtns no-print" style="margin:6px 0">${Array.from({length:n},(_,i)=>`<button class="${i===p?'':'ghost'}" onclick="rcGoPart(${i})">Part ${i+1} · ${i*bs+1}–${Math.min(total,(i+1)*bs)}</button>`).join('')}</div>` : '';
+  const label = n>1 ? `Print Part ${p+1} of ${n} (${from+1}–${to})` : R.title;
+  const next = n>1 && p<n-1 ? `<button class="ghost" onclick="rcGoPart(${p+1})">Next part ▶</button>` : '';
+  area.innerHTML = R.info + parts + R.built.slice(from,to).map(r=>r.html).join('') +
+    `<div class="flexbtns no-print">${rcPaperPick()}${inkPick(true)}${sel}<button class="gold" onclick="rcPrintNow()">🖨 ${label}</button>${next}</div><p class="small no-print">Tip: in the print dialog set <b>Paper size</b> to the same size you chose here (A4 recommended) and leave Margins on Default / Scale on 100%.${total>bs&&bs?' Large grades print in batches so the phone/browser does not run out of memory — print each part, then tap <b>Next part</b>.':''}</p>`;
+  if(n>1){ try{ area.scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){} }
+}
+async function showReports(areaSel, learners, examId, title){
   const area = qs(areaSel), school = currentSchool();
   if(!area){ toast('Report area not found — reopen the Reports page','err'); return; }
   const exam = school.exams.find(x=>x.id===examId);
   if(!exam){ area.innerHTML='<div class="msg err">That exam no longer exists. Pick the Exam / Term again.</div>'; return; }
   if(!learners.length){ area.innerHTML='<div class="msg err">No learners found for this grade'+(genderMode('repGender')!=='all'?' with the chosen gender filter':'')+'. Add learners first.</div>'; return; }
+  const token = RC_TOKEN = {};
+  rcResetCtx();
   const built = [], failed = [];
-  learners.forEach(l=>{ try{ built.push(buildReportHTML(school, l.id, examId)); }catch(err){ console.error('Report failed for', l && l.name, err); failed.push((l&&l.name)||'?'); } });
+  area.innerHTML = `<div class="no-print small" id="rcProg" style="margin:8px 0">⏳ Preparing reports… 0 / ${learners.length}</div>`;
+  let t0 = performance.now();
+  for(let i=0;i<learners.length;i++){
+    const l = learners[i];
+    try{ built.push(buildReportHTML(school, l.id, examId)); }catch(err){ console.error('Report failed for', l && l.name, err); failed.push((l&&l.name)||'?'); }
+    // give the browser a breath every ~40ms so the screen stays alive and shows progress
+    if(performance.now()-t0 > 40){
+      const pe = document.getElementById('rcProg'); if(pe) pe.textContent = '⏳ Preparing reports… '+(i+1)+' / '+learners.length;
+      await new Promise(r=>setTimeout(r,0));
+      if(token!==RC_TOKEN) return;               // user started another run meanwhile
+      t0 = performance.now();
+    }
+  }
+  if(token!==RC_TOKEN) return;
   const marked = Object.keys(school.marks[examId]||{}).length;
   const info = `<div class="no-print small" style="margin:8px 0">${built.length} report form(s) ready · ${escapeHtml(exam.name)} (${escapeHtml(exam.term)} ${exam.year})`
     + (marked===0 ? ' · <b style="color:#9c2c2c">⚠ no marks have been entered for this exam yet — the forms will be blank</b>' : '')
     + (failed.length ? `<br><b style="color:#9c2c2c">⚠ Could not build ${failed.length}: ${escapeHtml(failed.slice(0,8).join(', '))}${failed.length>8?'…':''}</b>` : '') + '</div>';
-  area.innerHTML = info + built.map(r=>r.html).join('') +
-    `<div class="flexbtns no-print">${rcPaperPick()}${inkPick(true)}<button class="gold" onclick="window.print()">🖨 ${title}</button></div><p class="small no-print">Tip: in the print dialog set <b>Paper size</b> to the same size you chose here (A4 recommended) and leave Margins on Default / Scale on 100%.</p>`;
-  built.forEach(r=>{ try{ drawProgressChart(r.chartId, r.historyPoints); }catch(e){} });
+  RC_LAST = {areaSel, built, info, title, part:0};
+  rcRenderPart(0);
   try{ area.scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){}
 }
 function generateReport(sid, examId){
