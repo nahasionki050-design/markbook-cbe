@@ -45,7 +45,9 @@
   --font-brand:'Sora','Inter','Segoe UI',Arial,sans-serif;
 }
 *{box-sizing:border-box;}
-html{scroll-behavior:smooth;}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;}
+button,select,label,.chip,[onclick]{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto;}}
 body{margin:0;font-family:var(--font);background:var(--bg);color:#1c2b3a;-webkit-font-smoothing:antialiased;}
 ::selection{background:var(--gold);color:#3a2a06;}
 ::-webkit-scrollbar{width:10px;height:10px;}
@@ -492,9 +494,10 @@ function storageGet(key){
   try{ return localStorage.getItem(key); }
   catch(e){ storageOK=false; return Object.prototype.hasOwnProperty.call(memoryStore,key) ? memoryStore[key] : null; }
 }
+let storageFull = false;
 function storageSet(key, value){
   try{ localStorage.setItem(key, value); }
-  catch(e){ storageOK=false; memoryStore[key]=value; }
+  catch(e){ storageOK=false; memoryStore[key]=value; storageFull = !!(e && (e.name==='QuotaExceededError' || e.code===22 || e.code===1014)); }
   if(!storageOK) showStorageWarning();
 }
 // Print style for assessment sheets and report forms: 'color' (default) or 'bw' (for printers without colour).
@@ -506,7 +509,7 @@ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded'
 function showStorageWarning(){
   const el = document.getElementById('storageWarning');
   if(el && !el.innerHTML){
-    el.innerHTML = "<div class=\"storage-warning\">⚠ This browser is blocking local storage, so changes will NOT be saved after you close this tab. Try a normal (non-private) browser window, or check your browser's storage/cookie settings.</div>";
+    el.innerHTML = storageFull ? "<div class=\"storage-warning\">⚠ The phone's storage for this app is FULL, so new changes may NOT be saved. Download a backup now, then remove old exams or large images (logo/signatures) to free space.</div>" : "<div class=\"storage-warning\">⚠ This browser is blocking local storage, so changes will NOT be saved after you close this tab. Try a normal (non-private) browser window, or check your browser's storage/cookie settings.</div>";
   }
 }
 function loadDB(){
@@ -516,7 +519,16 @@ function loadDB(){
     storageSet(DB_KEY, JSON.stringify(fresh));
     return fresh;
   }
-  return migrateDB(JSON.parse(raw));
+  try{ return migrateDB(JSON.parse(raw)); }
+  catch(err){
+    // Unreadable/corrupt saved data used to leave a blank screen on every launch. Keep a copy of the
+    // raw text (so it can be recovered) and start clean; cloud sync, if set up, refills the school.
+    console.error('Saved data could not be read', err);
+    try{ localStorage.setItem(DB_KEY+'_corrupt_'+Date.now(), raw); }catch(e){}
+    window.__dbRecovered = true;
+    const fresh = { adminPassword: null, adminSync: null, settings:{trialDays:14}, schools: {} };
+    try{ return migrateDB(fresh); }catch(e2){ return fresh; }
+  }
 }
 // Brings a database object (freshly loaded, or just imported from a backup file) up to
 // the current data shape. Safe to call repeatedly — every step is a no-op once already
@@ -805,9 +817,25 @@ function saveDB(db, opts){
     const activeSchool = (session && (session.role==='dos'||session.role==='teacher')) ? db.schools[session.schoolCode] : null;
     if(activeSchool) activeSchool._updatedAt = Date.now();
   }
-  storageSet(DB_KEY, JSON.stringify(db));
+  _dbRef = db; _dbDirty = true;
+  if(!_dbTimer) _dbTimer = setTimeout(flushDB, 350);
   if(!opts || !opts.skipCloud){ scheduleCloudPush(); scheduleAdminCloudPush(); }
 }
+// Serialising the whole database is the slowest thing the app does on a phone, and many screens call
+// saveDB several times in a row. Writes are now merged into one (about a third of a second later) and
+// are forced out immediately whenever the app is hidden, closed or reloaded, so nothing is lost.
+var _dbRef = null, _dbDirty = false, _dbTimer = 0;
+function flushDB(){
+  if(_dbTimer){ clearTimeout(_dbTimer); _dbTimer = 0; }
+  if(!_dbDirty || !_dbRef) return;
+  _dbDirty = false;
+  try{ storageSet(DB_KEY, JSON.stringify(_dbRef)); }
+  catch(e){ console.error('Could not save', e); showStorageWarning(); }
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) flushDB(); });
+window.addEventListener('pagehide', flushDB);
+window.addEventListener('beforeunload', flushDB);
+window.addEventListener('freeze', flushDB);
 let DB = loadDB();
 window.addEventListener('load', ()=>{ try{ ensureSignaturesTrimmed(); }catch(e){} });
 
@@ -1460,7 +1488,7 @@ function redrawKeepingState(fn){
     if(el.value!==o.value){ el.value = o.value; if(el.tagName==='SELECT' && el.value===o.value && el.getAttribute('onchange')) reselect.push(el); }
   });
   reselect.forEach(el=>el.dispatchEvent(new Event('change',{bubbles:true})));
-  window.scrollTo(0, y);
+  window.scrollTo({top:y, left:0, behavior:'instant'});
 }
 // If someone is mid-edit, wait until they pause (about a second and a half after the last keystroke,
 // and not inside a field) — their typing is never interrupted and nothing shakes.
@@ -2138,7 +2166,7 @@ function startAccessAutoRetry(code, config){
   }, 10000);
 }
 /* ============================= SESSION ============================= */
-let session = JSON.parse(sessionStorage.getItem('cbc_session')||'null');
+let session = null; try{ session = JSON.parse(sessionStorage.getItem('cbc_session')||'null'); }catch(e){ session = null; }
 // Holds the trimmed, single-learner view a parent session works from (see
 // buildParentSafeSchool below). Deliberately a plain in-memory variable, never written
 // to DB/localStorage: a parent's own device should end this session holding nothing
@@ -2168,8 +2196,11 @@ function resetInactivityTimer(){
     }
   }, INACTIVITY_LIMIT_MS);
 }
+// Scroll / mouse-move fire dozens of times a second; re-arming the timer that often wastes battery,
+// so it is re-armed at most once a second.
+let _inactT = 0;
 ['mousemove','mousedown','keydown','scroll','touchstart','click'].forEach(evt=>{
-  window.addEventListener(evt, resetInactivityTimer, {passive:true});
+  window.addEventListener(evt, ()=>{ const n=Date.now(); if(n-_inactT<1000) return; _inactT=n; resetInactivityTimer(); }, {passive:true});
 });
 // Also re-arm whenever the tab regains focus/visibility, in case timers were throttled
 // while the tab was backgrounded.
@@ -4436,14 +4467,14 @@ function exUpCard(s,t){const today=new Date().toLocaleDateString('en-CA'),du=[];
   return `<div class="card no-print"><b>📝 Upcoming invigilation</b><table style="margin-top:6px">${du.slice(0,4).map(u=>{const tm=exTime(u.x,u.si,u.n,exR(s,u.x,u.a).mins);return `<tr><td>${exFmt(u.d)}${u.d===today?' <span class="chip">Today</span>':''}</td><td>${fm(tm[0])}–${fm(tm[1])}</td><td>${escapeHtml(ttCn(s,u.c))} · ${escapeHtml(ttAn(s,u.a))}</td></tr>`;}).join('')}</table>${du.length>4?`<p class="small" style="margin:4px 0 0">+ ${du.length-4} more — see Exam Timetable.</p>`:''}</div>`;}
 /* ============================= DUTY ROTA (DOS/HOI + Teacher portal) =============================
    school.dutyRotas = [x]. x = {id,name,label,start,end (ISO dates), perDuty (1|2|3), genderPair,
-     considerFar ('normal'|'light'|'exclude'), exclude:[teacherId], skipWeeks:[weekKey],
+     considerFar ('normal'|'light'|'exclude'|'near'), exclude:[teacherId], skipWeeks:[weekKey],
      cells:{weekKey:{ids:[teacherId...], l:true/false}}, notes, published, genAt}
    One team of `perDuty` teacher(s) goes on duty each week of the period. The generator keeps
    everyone's total turns roughly equal (least-used teacher is always considered first), and — when
    "Pair genders" is on — puts at least one man and one woman on duty together each week, cycling
    fairly through each gender on its own so nobody repeats before everyone of that gender has had an
    equal turn. A teacher flagged as living far from school can be given fewer turns, or left out of
-   duty altogether, without touching anything else about their account. weekKey = ISO Monday date. */
+   duty altogether, without touching anything else about their account — or always be placed on duty together with a teacher who lives near school (needs 2+ teachers per week). weekKey = ISO Monday date. */
 let drUI={id:'',tab:'setup'};
 function drMon(iso){const d=exDate(iso),dow=d.getDay()||7;d.setDate(d.getDate()-(dow-1));return exIso(d);}
 function drWeeks(x){const out=[];if(!x.start||!x.end)return out;let m=drMon(x.start);const endMon=drMon(x.end);let n=0;
@@ -4458,7 +4489,16 @@ function drNorm(x){const D={name:'Duty Rota',label:'',start:'',end:'',perDuty:1,
   ['exclude','skipWeeks'].forEach(k=>{if(!Array.isArray(x[k]))x[k]=[];});
   if(!x.cells||typeof x.cells!=='object')x.cells={};
   return x;}
-const drFind=id=>{const x=(currentSchool().dutyRotas||[]).find(q=>q.id===id);return x?drNorm(x):null;};
+// Takes a teacher off every week of a rota if they are no longer eligible for it — unticked under
+// "Teachers in this rota", left out because they live far (when that option is on), or deleted.
+// Weeks left with nobody are dropped, so the rota never shows or prints an excluded teacher.
+function drPrune(s,x){
+  const ok=new Set(drCand(s,x).map(t=>t.id));
+  Object.keys(x.cells).forEach(k=>{const c=x.cells[k];
+    c.ids=(c.ids||[]).filter(id=>ok.has(id));
+    if(!c.ids.length)delete x.cells[k];});
+  return x;}
+const drFind=id=>{const s=currentSchool(),x=(s.dutyRotas||[]).find(q=>q.id===id);return x?drPrune(s,drNorm(x)):null;};
 function drSave(){saveDB(DB);}
 const drRedraw=()=>redrawKeepingState(renderDOS);
 const drTn=(s,id)=>{const t=s.teachers.find(q=>q.id===id);return t?t.name:'—';};
@@ -4485,6 +4525,7 @@ function drGen(s,x,keep){
   if(keep)weeks.forEach(w=>{const old=x.cells[w.k];if(old&&old.l)cells[w.k]={ids:(old.ids||[]).filter(id=>all.some(t=>t.id===id)),l:true};});
   Object.values(cells).forEach(c=>c.ids.forEach(id=>{cnt[id]=(cnt[id]||0)+1;}));
   const male=all.filter(t=>t.gender==='M'),female=all.filter(t=>t.gender==='F');
+  const nearPool=all.filter(t=>!t.farFromSchool),nearIds=new Set(nearPool.map(t=>t.id));
   const score=t=>(cnt[t.id]||0)+(far(t)?0.5:0)+Math.random()*0.01;
   const pick=(pool,used)=>{const left=pool.filter(t=>!used.includes(t.id));if(!left.length)return null;left.sort((a,b)=>score(a)-score(b));return left[0];};
   let flip=false,un=[];
@@ -4498,6 +4539,14 @@ function drGen(s,x,keep){
       for(let i=0;i<fWant;i++){const t=pick(female,ids);if(t)ids.push(t.id);}
     }
     while(ids.length<P){const t=pick(all,ids);if(!t)break;ids.push(t.id);}
+    // "Pair with a teacher who lives near": a team made only of far-away teachers gets one of
+    // them swapped for the least-used near teacher (same gender first when pairing genders).
+    if(x.considerFar==='near' && P>=2 && ids.length && !ids.some(id=>nearIds.has(id))){
+      const last=ids.length-1, out=all.find(t=>t.id===ids[last]);
+      let pool=nearPool.filter(t=>!ids.includes(t.id));
+      if(x.genderPair && out){const same=pool.filter(t=>t.gender===out.gender);if(same.length)pool=same;}
+      if(pool.length){pool.sort((a,b)=>score(a)-score(b));ids[last]=pool[0].id;}
+    }
     ids.forEach(id=>{cnt[id]=(cnt[id]||0)+1;});
     cells[w.k]={ids,l:false};
     if(ids.length<P)un.push(w);
@@ -4507,10 +4556,20 @@ function drGen(s,x,keep){
 function drIssues(s,x){const weeks=drWeeks(x),P=Math.max(1,Math.min(3,+x.perDuty||1));
   const short=weeks.filter(w=>((x.cells[w.k]||{}).ids||[]).length<P);
   return {exp:weeks.length*P,got:weeks.reduce((a,w)=>a+((x.cells[w.k]||{}).ids||[]).length,0),
-    list:short.map(w=>`Week of ${drWeekLabel(w)}: only ${((x.cells[w.k]||{}).ids||[]).length} of ${P} duty teacher(s) placed — not enough eligible teachers left that week.`)};}
+    list:short.map(w=>`Week of ${drWeekLabel(w)}: only ${((x.cells[w.k]||{}).ids||[]).length} of ${P} duty teacher(s) placed — not enough eligible teachers left that week.`)
+      .concat(drNearIssues(s,x,weeks,P))};}
+// For the "pair with a teacher who lives near" option: weeks where a far-away teacher is on duty
+// with nobody who lives near school, plus a reminder when only 1 teacher goes on duty per week.
+function drNearIssues(s,x,weeks,P){
+  if(x.considerFar!=='near')return [];
+  const far=id=>{const t=s.teachers.find(q=>q.id===id);return !!(t&&t.farFromSchool);};
+  if(P<2)return s.teachers.some(t=>t.farFromSchool&&!x.exclude.includes(t.id))?['Pairing with a teacher who lives near needs 2 or more teachers on duty each week — with 1 per week, teachers who live far are treated like everyone else.']:[];
+  return weeks.filter(w=>{const ids=((x.cells[w.k]||{}).ids||[]);return ids.length&&ids.some(far)&&ids.every(far);})
+    .map(w=>`Week of ${drWeekLabel(w)}: a teacher who lives far is on duty with no teacher who lives near school — not enough near teachers available.`);
+}
 // ---- DOS/HOI screens ----
 function drTabBtn(k){drUI.tab=k;renderDOS();}
-function tplDutyRota(s){const L=(s.dutyRotas||[]).map(drNorm);const x=L.find(q=>q.id===drUI.id)||L[0];if(x)drUI.id=x.id;
+function tplDutyRota(s){const L=(s.dutyRotas||[]).map(r=>drPrune(s,drNorm(r)));const x=L.find(q=>q.id===drUI.id)||L[0];if(x)drUI.id=x.id;
   return `<div class="card"><h2 class="no-print">👮 Duty Rota</h2><p class="small no-print">Set the period and how many teachers go on duty together each week, let the generator place them fairly, then fine-tune or print.</p>
   <div class="row no-print"><div><label>Duty rota</label><select onchange="drUI.id=this.value;renderDOS()">${L.map(q=>`<option value="${q.id}" ${q.id===drUI.id?'selected':''}>${escapeHtml(q.name)}</option>`).join('')||'<option>— none yet —</option>'}</select></div>
   <div><label>Name</label><input id="drNewName" placeholder="e.g. Term 3 Duty Roster"></div><div style="align-self:flex-end"><button onclick="drAdd()">+ Create</button></div></div>
@@ -4518,7 +4577,7 @@ function tplDutyRota(s){const L=(s.dutyRotas||[]).map(drNorm);const x=L.find(q=>
 function drTabSetup(s,x){const id=x.id,weeks=drWeeks(x);
   return `<div class="row"><div><label>Name</label><input value="${escapeHtml(x.name)}" onchange="drSet('${id}','name',this.value)"></div><div><label>Label on prints</label><input value="${escapeHtml(x.label)}" placeholder="e.g. Term 3, 2026" onchange="drSet('${id}','label',this.value)"></div><div><label>Period starts</label><input type="date" value="${x.start}" onchange="drSet('${id}','start',this.value)"></div><div><label>Period ends</label><input type="date" value="${x.end}" onchange="drSet('${id}','end',this.value)"></div></div>
   <div class="row"><div><label>Teachers on duty together</label><select onchange="drSet('${id}','perDuty',+this.value)"><option value="1" ${x.perDuty===1?'selected':''}>1 teacher</option><option value="2" ${x.perDuty===2?'selected':''}>2 teachers</option><option value="3" ${x.perDuty===3?'selected':''}>3 teachers</option></select></div>
-  <div><label>If a teacher lives far from school</label><select onchange="drSet('${id}','considerFar',this.value)"><option value="normal" ${x.considerFar==='normal'?'selected':''}>Treat the same as everyone</option><option value="light" ${x.considerFar==='light'?'selected':''}>Give them fewer turns</option><option value="exclude" ${x.considerFar==='exclude'?'selected':''}>Leave them out of duty altogether</option></select></div></div>
+  <div><label>If a teacher lives far from school</label><select onchange="drSet('${id}','considerFar',this.value)"><option value="normal" ${x.considerFar==='normal'?'selected':''}>Treat the same as everyone</option><option value="light" ${x.considerFar==='light'?'selected':''}>Give them fewer turns</option><option value="near" ${x.considerFar==='near'?'selected':''}>Assign duty together with a teacher who lives near</option><option value="exclude" ${x.considerFar==='exclude'?'selected':''}>Leave them out of duty altogether</option></select>${x.considerFar==='near'?`<div class="small" style="margin-top:4px">${(+x.perDuty||1)<2?'⚠️ Set "teachers on duty each week" to 2 or 3 — with 1 per week a far teacher cannot be paired.':'Every team that includes a teacher living far from school will also have at least one who lives near, so someone close can open up and lock up. Mark who lives far in <b>Teachers &amp; Permissions</b>.'}</div>`:''}</div></div>
   <label class="chip" style="cursor:pointer;margin-top:8px"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.genderPair?'checked':''} onchange="drSet('${id}','genderPair',this.checked)">Pair a man and a woman on duty together each week (falls back to anyone available if one gender runs out)</label><br>
   <label class="chip" style="cursor:pointer;margin-top:6px"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${x.carryHistory?'checked':''} onchange="drSet('${id}','carryHistory',this.checked)">Carry fairness over from past duty rotas (a new term continues the same rotation instead of starting everyone back at zero)</label>
   <p class="small" style="margin-top:4px">Set each teacher's gender and whether they live far from school in <b>Teachers &amp; Permissions</b>.</p>
@@ -4539,7 +4598,10 @@ function drAdd(){const s=currentSchool(),nm=((qs('#drNewName')||{}).value||'').t
   const x=drNorm({id:uid('dr_'),name:nm});s.dutyRotas.push(x);drUI.id=x.id;drUI.tab='setup';drSave();drRedraw();}
 function drDel(id){if(!confirm('Delete this duty rota?'))return;const s=currentSchool();s.dutyRotas=(s.dutyRotas||[]).filter(q=>q.id!==id);drUI.id='';drSave();drRedraw();}
 function drSet(id,k,v){const x=drFind(id);if(!x)return;x[k]=v;drSave();drRedraw();}
-function drExcl(id,tid,on){const x=drFind(id);x.exclude=on?x.exclude.filter(q=>q!==tid):[...new Set(x.exclude.concat(tid))];drSave();drRedraw();}
+function drExcl(id,tid,on){const x=drFind(id);x.exclude=on?x.exclude.filter(q=>q!==tid):[...new Set(x.exclude.concat(tid))];
+  const had=Object.values(x.cells).some(c=>(c.ids||[]).includes(tid));
+  drPrune(currentSchool(),x);drSave();drRedraw();
+  if(!on&&had)toast('Removed from the rota. Press Generate to refill the empty weeks (🔒 locked weeks are kept).');}
 function drSkip(id,wk,on){const x=drFind(id);x.skipWeeks=on?[...new Set(x.skipWeeks.concat(wk))]:x.skipWeeks.filter(q=>q!==wk);drSave();drRedraw();}
 function drGenerate(id){const s=currentSchool(),x=drFind(id),keep=!!(qs('#drKeep')||{}).checked;
   if(!x.start||!x.end){toast('Set the period start and end in Setup','err');return;}
@@ -4553,7 +4615,7 @@ function drEdit(xid,wk){const s=currentSchool(),x=drFind(xid),c=x.cells[wk]||{id
   drmCtx={xid,wk};const P=Math.max(1,Math.min(3,+x.perDuty||1)),w=drWeeks(x).find(q=>q.k===wk)||{mon:wk,sun:wk},o=document.createElement('div');
   o.id='drModal';o.style.cssText='position:fixed;inset:0;background:rgba(9,30,55,.55);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;';
   o.innerHTML=`<div class="card" style="max-width:380px;width:100%;max-height:90vh;overflow:auto"><h2 style="margin-top:0">Duty: ${escapeHtml(drWeekLabel(w))}</h2>
-  ${Array.from({length:P},(_,i)=>`<label>Teacher ${i+1}</label><select class="drmT"><option value="">— none —</option>${s.teachers.map(t=>`<option value="${t.id}" ${c.ids[i]===t.id?'selected':''}>${escapeHtml(t.name)}${t.gender?' ('+t.gender+')':''}${t.farFromSchool?' 🚗':''}</option>`).join('')}</select>`).join('')}
+  ${Array.from({length:P},(_,i)=>`<label>Teacher ${i+1}</label><select class="drmT"><option value="">— none —</option>${drCand(s,x).map(t=>`<option value="${t.id}" ${c.ids[i]===t.id?'selected':''}>${escapeHtml(t.name)}${t.gender?' ('+t.gender+')':''}${t.farFromSchool?' 🚗':''}</option>`).join('')}</select>`).join('')}
   <label class="chip" style="cursor:pointer;margin-top:8px"><input type="checkbox" id="drmL" style="width:auto;display:inline-block;margin-right:4px" ${c.l?'checked':''}>🔒 Lock (kept when re-generating)</label>
   <div class="flexbtns" style="margin-top:12px"><button onclick="drmSave()">Save</button><button class="ghost" onclick="drmClose()">Cancel</button></div></div>`;
   document.body.appendChild(o);}
@@ -4567,7 +4629,7 @@ function drPgMaster(s,x){const weeks=drWeeks(x);
   return ttPage(s,'Duty Rota',drSub(x),body,x.notes?escapeHtml(x.notes):'');}
 function drPrint(id){const s=currentSchool(),x=drFind(id);if(!Object.keys(x.cells).length){toast('Generate the duty rota first','err');return;}ttPrintHTML(drPgMaster(s,x));}
 // ---- Teacher portal ----
-const drPub=s=>(s.dutyRotas||[]).map(drNorm).filter(x=>x.published&&Object.keys(x.cells).length);
+const drPub=s=>(s.dutyRotas||[]).map(r=>drPrune(s,drNorm(r))).filter(x=>x.published&&Object.keys(x.cells).length);
 function drUpCard(s,t){const today=drMon(exIso(new Date())),items=[];
   drPub(s).forEach(x=>drWeeks(x).forEach(w=>{if(w.mon<today)return;const c=x.cells[w.k];if(c&&c.ids.includes(t.id))items.push({x,w});}));
   items.sort((a,b)=>a.w.mon<b.w.mon?-1:1);
@@ -5169,7 +5231,7 @@ const HELP_SECTIONS = [
       <tr><td><b>Grades</b></td><td>Create and manage the school's grades/classes.</td></tr>
       <tr><td><b>Learning Areas</b></td><td>Create and manage the subjects/learning areas taught.</td></tr>
       <tr><td><b>Grading System</b></td><td>View the CBC rubric the app grades against (see below).</td></tr>
-      <tr><td><b>Learners</b></td><td>Add, edit, move learners between grades; set each learner's Parent Portal PIN. A learner you add appears in the Finance Portal automatically; if you delete one, Finance still keeps them until Finance removes them.</td></tr>
+      <tr><td><b>Learners</b></td><td>Add, edit, move learners between grades; set each learner's Parent Portal PIN. A learner you add appears in the Finance Portal automatically, and Finance can add learners too (they appear in your list); if you delete one, Finance still keeps them until Finance removes them.</td></tr>
       <tr><td><b>Exams</b></td><td>Create an exam for a grade/term; open or close it for mark entry; approve/disapprove its results.</td></tr>
       <tr><td><b>Teachers &amp; Permissions</b></td><td>Add teacher accounts, assign grade/learning-area combinations, set their permissions.</td></tr>
       <tr><td><b>Enter/Edit Marks</b></td><td>Enter or correct marks directly, for any grade or learning area.</td></tr>
@@ -6034,6 +6096,7 @@ function stuCountText(school){
   const l = filteredStudents(school), b = l.filter(s=>s.gender==='M').length, g = l.filter(s=>s.gender==='F').length, u = l.length-b-g;
   return `Showing ${l.length} of ${school.students.length} learner(s) · Boys: ${b} · Girls: ${g}` + (u ? ` · Gender not set: ${u}` : '');
 }
+let _stuRowsT=0; function debStuRows(){ clearTimeout(_stuRowsT); _stuRowsT=setTimeout(renderStudentRows,200); }
 function renderStudentRows(){
   const school = currentSchool(); if(!school || !qs('#stuRows')) return;
   qs('#stuRows').innerHTML = studentRowsHTML(school);
@@ -6067,7 +6130,7 @@ Amina Hassan"></textarea>
   <div class="row">
     <div><label>Filter by Grade</label><select id="stuFilter" onchange="stuFilterGrade=this.value;renderStudentRows()"><option value="">All grades</option>${school.classes.map(c=>`<option value="${c.id}" ${c.id===stuFilterGrade?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
     <div><label>Filter by Gender</label><select id="stuFilterG" onchange="stuFilterGender=this.value;renderStudentRows()"><option value="">All</option><option value="M" ${stuFilterGender==='M'?'selected':''}>Boys</option><option value="F" ${stuFilterGender==='F'?'selected':''}>Girls</option><option value="none" ${stuFilterGender==='none'?'selected':''}>Gender not set</option></select></div>
-    <div><label>Search name / admission / assessment no. / parent</label><input id="stuSearch" value="${escapeHtml(stuSearch)}" oninput="stuSearch=this.value;renderStudentRows()" placeholder="Type to search…"></div>
+    <div><label>Search name / admission / assessment no. / parent</label><input id="stuSearch" value="${escapeHtml(stuSearch)}" oninput="stuSearch=this.value;debStuRows()" placeholder="Type to search…"></div>
   </div>
   <p class="small" id="stuCount">${stuCountText(school)}</p>
   <table style="margin-top:6px"><tr><th>Adm No.</th><th>Assess. No.</th><th>Name</th><th>Gender</th><th>Grade</th><th>Parent PIN</th><th>Parent Phone</th>${school.parentDetails!==false?'<th>Parent / Guardian Name</th><th>Relationship</th><th>Parent ID No.</th><th>Other Phone</th>':''}<th>Actions</th></tr><tbody id="stuRows">${studentRowsHTML(school)}</tbody></table></div>`;
@@ -8567,10 +8630,61 @@ function financeLearnersHTML(school){
     const act = !canEdit() ? '' : h ? `<button class="ghost" onclick="finRestoreLearner('${s.id}')">Restore</button>` : `<button class="danger" onclick="finRemoveLearner('${s.id}')">✕ Remove from Finance</button>`;
     return `<tr${h?' style="opacity:.55"':''}><td>${s.adm?escapeHtml(s.adm):'—'}</td><td>${escapeHtml(s.name)}</td><td>${tag}</td><td>${act}</td></tr>`;
   }).join('') || '<tr><td colspan="4" class="small">No learners in this grade.</td></tr>';
-  return `<div class="card"><h2>👥 Finance Learners</h2>
+  const addForm = !canEdit() ? '' : `<div class="card no-print" style="background:#f8fafc;margin:8px 0 12px"><h3 style="margin:0 0 4px">➕ Add a learner</h3>
+  <p class="small">Learners you add here are saved to the school's main learner list, so the DOS/HOI and teachers see them too (and learners added by the DOS/HOI appear here). Leave Admission No. blank if it isn't assigned yet.</p>
+  <div class="row">
+    <div><label>Admission No. <span class="small">(optional)</span></label><input id="finStuAdm" placeholder="Leave blank if not assigned yet"></div>
+    <div><label>Learner Name</label><input id="finStuName"></div>
+    <div><label>Gender</label><select id="finStuGender"><option value="">— Select —</option><option value="M">Boy</option><option value="F">Girl</option></select></div>
+    <div><label>Grade</label><select id="finStuClass">${school.classes.map(c=>`<option value="${c.id}" ${c.id===cid?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
+    <div><label>Parent Phone <span class="small">(optional, for fee SMS)</span></label><input id="finStuPhone" placeholder="e.g. 0712345678"></div>
+    <div><label>Parent / Guardian Name <span class="small">(optional)</span></label><input id="finStuParent"></div>
+    <div style="align-self:flex-end"><button onclick="finAddLearner()">Add Learner</button></div>
+  </div>
+  <p class="small" style="margin-top:8px">Bulk paste — one learner per line, "Admission,Name,Gender,ParentPhone" (Gender Boy/Girl or M/F; admission, gender and phone may be left out). They go into the Grade chosen above:</p>
+  <textarea id="finBulkStu" rows="3" placeholder="1001,John Mwangi,Boy,0712345678&#10;,Faith Wanjiru,Girl,&#10;Amina Hassan"></textarea>
+  <div class="flexbtns"><button class="ghost" onclick="finBulkAddLearners()">Add Bulk to Selected Grade</button></div></div>`;
+  return `<div class="card"><h2>👥 Finance Learners</h2>${addForm}
   <p class="small">Learners added by the DOS/HOI appear here automatically. If the DOS/HOI later deletes a learner, they <b>stay here</b> with their fees, balances and receipts until Finance removes them. Removing here never affects the DOS/HOI lists, and payment history is kept.</p>
   <div class="row"><div><label>Grade</label><select onchange="finState.classId=this.value;renderFinance()">${school.classes.map(c=>`<option value="${c.id}" ${c.id===cid?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div></div>
   <div style="overflow-x:auto"><table><thead><tr><th>Adm No</th><th>Name</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+// Finance can add learners directly. They go into the school's main learner list (school.students),
+// exactly like ones the DOS/HOI adds, so both portals share one list. A Parent PIN is generated
+// automatically (the DOS/HOI hands it out from the Learners tab).
+function finAddLearner(){
+  if(!canEdit()){ noEdit(); return; }
+  const school = currentSchool(), v = id=>(qs(id)?qs(id).value:'').trim().replace(/\s+/g,' ');
+  const adm = v('#finStuAdm'), name = v('#finStuName'), classId = qs('#finStuClass')?qs('#finStuClass').value:'';
+  if(!name||!classId){ toast('Enter at least the learner name and grade','err'); return; }
+  if(adm && school.students.some(s=>s.adm===adm)){ toast('Admission number already exists','err'); return; }
+  const rid = takeRetainedId(school, adm);
+  school.students.push({id:rid||uid('stu_'), adm, assessNo:'', name, classId, gender:normGender(qs('#finStuGender')?qs('#finStuGender').value:''),
+    parentPhone:v('#finStuPhone'), parentName:v('#finStuParent'), parentRel:'', parentId:'', parentPhone2:'', parentPin:genParentPin()});
+  finState.classId = classId; saveDB(DB); toast(name+' added'); renderFinance();
+}
+function finBulkAddLearners(){
+  if(!canEdit()){ noEdit(); return; }
+  const school = currentSchool(), classId = qs('#finStuClass')?qs('#finStuClass').value:'';
+  const lines = (qs('#finBulkStu')?qs('#finBulkStu').value:'').split('\n').map(l=>l.trim()).filter(Boolean);
+  if(!classId){ toast('Choose a grade first','err'); return; }
+  let added=0, skipped=0;
+  lines.forEach(l=>{
+    let adm='', name='', parentPhone='', gender='';
+    if(l.includes(',')){
+      const parts = l.split(',').map(x=>x.trim());
+      for(let k=1;k<parts.length;k++){ const gg = normGender(parts[k]); if(gg){ gender = gg; parts.splice(k,1); break; } }
+      if(parts.length===1){ name = parts[0]; }
+      else { adm = parts[0]; name = (parts.length>2 ? parts.slice(1,-1) : parts.slice(1)).join(',').trim(); parentPhone = parts.length>2 ? parts[parts.length-1] : ''; }
+    } else name = l;
+    if(!name) return;
+    if(adm && school.students.some(s=>s.adm===adm)){ skipped++; return; }
+    const rid = takeRetainedId(school, adm);
+    school.students.push({id:rid||uid('stu_'), adm, assessNo:'', name, classId, gender, parentPhone, parentName:'', parentRel:'', parentId:'', parentPhone2:'', parentPin:genParentPin()});
+    added++;
+  });
+  finState.classId = classId; saveDB(DB);
+  toast(added+' learner(s) added'+(skipped?' — '+skipped+' skipped (admission number already exists)':'')); renderFinance();
 }
 function finRemoveLearner(id){
   if(!canEdit()){ noEdit(); return; }
@@ -8598,7 +8712,7 @@ const FINANCE_HELP_SECTIONS = [
       <tr><td><b>Dashboard</b></td><td>Quick links and a fees overview (billed, paid, balance) by grade.</td></tr>
       <tr><td><b>Fee Balances</b></td><td>Pick a grade and term, upload a CSV to set balances and next-term fees, and see each learner's summary.</td></tr>
       <tr><td><b>Fee Structure &amp; Invoices</b></td><td>Create fee terms, set tuition, add fee items, assign optional services, generate invoices.</td></tr>
-      <tr><td><b>Learners</b></td><td>The learners Finance holds. See the rules below.</td></tr>
+      <tr><td><b>Learners</b></td><td>The learners Finance holds. You can <b>add learners</b> here (one by one or a bulk paste) — they are saved to the school's main list so the DOS/HOI sees them too. See the rules below.</td></tr>
       <tr><td><b>Payments &amp; Reminders</b></td><td>Record payments and print receipts; send fee-reminder SMS to parents who owe.</td></tr>
       <tr><td><b>Cash Book &amp; Expenses</b></td><td>Collections by method and date, and expenses by category.</td></tr>
       <tr><td><b>SMS Credit</b></td><td>See your SMS balance and request top-ups.</td></tr>
@@ -11592,8 +11706,44 @@ async function sendSmsBatch(school, recipients, meta, msgElId){
 }
 
 /* ============================= INIT ============================= */
+/* ============================= CRASH SHIELD =============================
+   A screen that throws while drawing used to leave a blank page. Every main screen is now wrapped:
+   the error is logged and a small recovery card (Try again / Reload / Log out) is shown instead.
+   Stray errors elsewhere never close the app — they are logged and a gentle notice is shown at most
+   once every 10 seconds. The last error is kept in storage ('edutrack_last_error') for diagnosis. */
+(function crashShield(){
+  function note(err, where){
+    try{ localStorage.setItem('edutrack_last_error', JSON.stringify({t:new Date().toISOString(), where:where||'', msg:String(err&&err.message||err).slice(0,300), stack:String(err&&err.stack||'').slice(0,600)})); }catch(e){}
+  }
+  function card(err, name, again){
+    note(err, name);
+    const box = document.getElementById('app'); if(!box) return;
+    box.innerHTML = '<div class="card"><h2>⚠ This screen could not load</h2><p class="small">Your data is safe. Tap <b>Try again</b>; if it keeps happening, <b>Reload</b> the app or log out and back in.</p>'
+      + '<div class="flexbtns"><button id="csRetry">Try again</button><button class="ghost" onclick="location.reload()">Reload app</button><button class="ghost" onclick="logout()">Log out</button></div></div>';
+    const b = document.getElementById('csRetry'); if(b) b.onclick = ()=>{ try{ again(); }catch(e){ card(e,name,again); } };
+  }
+  ['renderLogin','renderAdmin','renderDOS','renderTeacher','renderFinance','renderSadmin'].forEach(n=>{
+    const f = window[n]; if(typeof f!=='function') return;
+    window[n] = function(){
+      try{ return f.apply(this, arguments); }
+      catch(err){ console.error('Screen failed: '+n, err); const a=arguments, self=this; card(err, n, ()=>window[n].apply(self,a)); }
+    };
+  });
+  let last = 0;
+  function soft(msg){ const n=Date.now(); if(n-last<10000) return; last=n; try{ toast(msg,'err'); }catch(e){} }
+  window.addEventListener('error', ev=>{
+    const m = String(ev && ev.message || '');
+    if(/ResizeObserver|Script error/i.test(m)) return;
+    note(ev && (ev.error||ev.message), 'window.error');
+    soft('Something went wrong on this screen. Your data is safe — if it looks wrong, go back and try again.');
+  });
+  window.addEventListener('unhandledrejection', ev=>{ note(ev && ev.reason, 'promise'); });
+  window.__edutrackCrashCard = card;
+})();
+
 resetInactivityTimer(); // arm the 15-minute timeout right away if a session survived a page refresh
-route();
+try{ route(); }catch(err){ console.error(err); window.__edutrackCrashCard(err,'route',route); }
+if(window.__dbRecovered) setTimeout(()=>{ try{ toast('Saved data on this phone could not be read. A copy was kept. Sign in and use Sync/restore to bring your school back.','err'); }catch(e){} }, 800);
 
 // Remember which login button was used, so the automatic retry can press it again.
 ['doDosLogin','doTeacherLogin','doFinanceLogin','doSadminLogin','doParentLogin'].forEach(n=>{
