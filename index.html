@@ -45,7 +45,8 @@
   --font-brand:'Sora','Inter','Segoe UI',Arial,sans-serif;
 }
 *{box-sizing:border-box;}
-html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;scrollbar-gutter:stable;}
+#syncBadge{display:inline-block;min-width:9em;white-space:nowrap;}
 button,select,label,.chip,[onclick]{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto;}}
 body{margin:0;font-family:var(--font);background:var(--bg);color:#1c2b3a;-webkit-font-smoothing:antialiased;}
@@ -829,6 +830,7 @@ function flushDB(){
   if(_dbTimer){ clearTimeout(_dbTimer); _dbTimer = 0; }
   if(!_dbDirty || !_dbRef) return;
   _dbDirty = false;
+  try{ maybeAutoSnapshot(); }catch(e){}
   try{ storageSet(DB_KEY, JSON.stringify(_dbRef)); }
   catch(e){ console.error('Could not save', e); showStorageWarning(); }
 }
@@ -1203,10 +1205,42 @@ function scheduleCloudPush(){
     }).catch(e=>console.warn('Cloud sync push failed', e));
   }, 300);
 }
-function pushMarkToCloud(code, examId, sid, areaId, val){
-  if(!syncState.enabled || !fbDb) return;
-  markLeafRef(code, examId, sid, areaId).set(val).catch(e=>console.warn('Mark sync failed', e));
+/* Marks entered on this device are first written to a small saved "outbox" and only removed once the
+   cloud confirms them. Before this, a mark entered while sync was offline or reconnecting was never
+   sent, and the next download from the cloud then replaced the device's copy — silently erasing it.
+   Now unsent marks are retried (on reconnect, every 30 s, when the app returns to the screen) and are
+   always re-applied on top of anything downloaded, so they can no longer be wiped out. */
+const MARK_OUTBOX_KEY = 'edutrack_mark_outbox';
+let markOutbox = (()=>{ try{ const o = JSON.parse(localStorage.getItem(MARK_OUTBOX_KEY)||'{}')||{}; const cut = Date.now()-14*864e5; Object.keys(o).forEach(k=>{ if(!o[k] || (o[k].t||0)<cut) delete o[k]; }); return o; }catch(e){ return {}; } })();
+function saveOutbox(){ try{ localStorage.setItem(MARK_OUTBOX_KEY, JSON.stringify(markOutbox)); }catch(e){} }
+function sendOutboxEntry(k){
+  const o = markOutbox[k];
+  if(!o || !syncState.enabled || !fbDb || (syncState.connectedCode && o.c!==syncState.connectedCode)) return;
+  const t = o.t;
+  try{
+    markLeafRef(o.c, o.e, o.s, o.a).set(o.v).then(()=>{ const cur = markOutbox[k]; if(cur && cur.t===t){ delete markOutbox[k]; saveOutbox(); } })
+      .catch(e=>console.warn('Mark sync failed — will retry', e));
+  }catch(e){ console.warn('Mark sync failed — will retry', e); }
 }
+function flushMarkOutbox(){ Object.keys(markOutbox).forEach(sendOutboxEntry); }
+function pushMarkToCloud(code, examId, sid, areaId, val){
+  markOutbox[[code,examId,sid,areaId].join('\u0001')] = {c:code, e:examId, s:sid, a:areaId, v:(val==null?null:val), t:Date.now()};
+  saveOutbox();
+  sendOutboxEntry([code,examId,sid,areaId].join('\u0001'));
+}
+// Lays this device's not-yet-confirmed marks over a marks object downloaded from the cloud.
+function withOutbox(code, examId, obj){
+  let out = obj;
+  Object.keys(markOutbox).forEach(k=>{
+    const o = markOutbox[k]; if(!o || o.c!==code || o.e!==examId) return;
+    out = out || {}; const m = out[o.s] = out[o.s] || {};
+    if(o.v==null) delete m[o.a]; else m[o.a] = o.v;
+  });
+  return out;
+}
+setInterval(()=>{ try{ flushMarkOutbox(); }catch(e){} }, 30000);
+window.addEventListener('online', ()=>{ try{ flushMarkOutbox(); }catch(e){} });
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{ flushMarkOutbox(); }catch(e){} } });
 
 /* ============================= PLATFORM-WIDE AUTO DISCOVERY =============================
    Reuses the exact same Multi-Device Sync mechanism above, but points it at ONE shared
@@ -1699,16 +1733,22 @@ function mergeExamStates(base, other){
   });
   return changed;
 }
+// Several people saving at once used to fire a toast for every change; show at most one every 20 seconds.
+let _syncToastAt = 0;
+function syncNoteToast(m){ if(Date.now()-_syncToastAt < 20000) return; _syncToastAt = Date.now(); toast(m); }
 function mergeExamMarksFromCloud(code, examId, remote){
   const school = DB.schools[code]; if(!school) return;
   if(!school.marks) school.marks = {};
   const first = !syncState.examReady[examId];
   syncState.examReady[examId] = true;
-  const cur = school.marks[examId] || {}, incoming = remote || {};
+  const cur = school.marks[examId] || {};
+  const incoming = withOutbox(code, examId, remote ? JSON.parse(JSON.stringify(remote)) : null) || {};
+  flushMarkOutbox();
   if(deepEqual(cur, incoming)) return;
-  if(remote) school.marks[examId] = incoming; else delete school.marks[examId];
+  if(countMarkCells(incoming) < countMarkCells(cur)){ try{ takeSnapshot('Before marks update from another device', {code:code, minGapMs:120000}); }catch(e){} }
+  if(remote || Object.keys(incoming).length) school.marks[examId] = incoming; else delete school.marks[examId];
   saveDB(DB, {skipCloud:true});
-  if(!first){ toast('🔄 Marks updated from another device'); softRefresh(['marks']); }
+  if(!first){ syncNoteToast('🔄 Marks updated from another device'); softRefresh(['marks']); }
 }
 function mergeDataFromCloud(code, remote){
   if(!remote){ syncState.dataReady = true; return; }
@@ -1735,7 +1775,7 @@ function mergeDataFromCloud(code, remote){
     DB.schools[code] = next;
     saveDB(DB, pushBack ? undefined : {skipCloud:true});
   }
-  if(changed.length && syncState.dataReady){ toast('🔄 Updated from another device'); softRefresh(changed); }
+  if(changed.length && syncState.dataReady){ syncNoteToast('🔄 Updated from another device'); softRefresh(changed); }
   syncState.dataReady = true;
   syncExamMarksListeners(code);   // exams may have been added / closed / reopened
   enforceAccessForActiveSession(code);
@@ -1798,7 +1838,7 @@ async function bootstrapFromCloudIfNeeded(code, config){
     exams.forEach(e=>{ if(examIsLive(e)){ holdForLive(examMarksRef(code, e.id)); fetchIds.push(e.id); } else if(!localMarks[e.id]) fetchIds.push(e.id); });
     const snaps = await Promise.all(fetchIds.map(id=>examMarksRef(code, id).once('value')));
     const fresh = {}; fetchIds.forEach((id,i)=>{ const v = snaps[i].val(); if(v) fresh[id] = v; });
-    const buildMarks = base=>{ const m = {}; exams.forEach(e=>{ const v = fetchIds.includes(e.id) ? (fresh[e.id] || (base||{})[e.id]) : (base||{})[e.id]; if(v) m[e.id] = v; }); return m; };
+    const buildMarks = base=>{ const m = {}; exams.forEach(e=>{ let v = fetchIds.includes(e.id) ? (fresh[e.id] || (base||{})[e.id]) : (base||{})[e.id]; v = withOutbox(code, e.id, v); if(v) m[e.id] = v; }); return m; };
     if(remote){
       const localTime = local ? (local._updatedAt||0) : -1;
       if(!local || (remote._updatedAt||0) >= localTime){
@@ -1851,6 +1891,7 @@ function attachLiveListeners(school){
   };
   syncState.dataListenerRef.on('value', syncState.dataListenerFn);
   syncExamMarksListeners(code);
+  flushMarkOutbox();
   releaseKeepAlive(true);   // exam listeners now hold their data; the data hold expires on its own
 }
 function detachLiveListeners(keepHeld){
@@ -2630,9 +2671,9 @@ function route(){
       return;
     }
   }
-  whoBar.innerHTML = `${escapeHtml(session.label)}<span id="syncBadge"></span> &nbsp;|&nbsp; <button class="ghost" onclick="logout()">Logout</button>`;
+  whoBar.innerHTML = `${escapeHtml(session.label)}<span id="syncBadge"></span> &nbsp;|&nbsp; ${session.role==='dos'?'<button class="ghost" onclick="openRestorePoints()" title="Undo a mistake or recover lost marks">🕘 Undo</button> ':''}<button class="ghost" onclick="logout()">Logout</button>`;
   if(session.role==='admin') renderAdmin();
-  else if(session.role==='dos'){ renderDOS(); maybeShowWaGroupPrompt(); }
+  else if(session.role==='dos'){ renderDOS(); maybeShowWaGroupPrompt(); try{ takeSnapshot('Signed in', {kind:'login', minGapMs:30*60000}); }catch(e){} }
   else if(session.role==='teacher') renderTeacher();
   else if(session.role==='finance') renderFinance();
   else if(session.role==='sadmin') renderSadmin();
@@ -3116,7 +3157,7 @@ async function doDosLogin(){
     setSession({role:'dos', schoolCode:code, userId:cachedRec.id, label:`${cachedRec.name} · ${cached.name}`});
     route();
     const config = resolveLoginSyncConfig(code);
-    if(config) bootstrapFromCloudIfNeeded(code, config).then(()=>{ if(session && session.role==='dos' && session.schoolCode===code) route(); });
+    if(config) bootstrapFromCloudIfNeeded(code, config).then(()=>{ if(session && session.role==='dos' && session.schoolCode===code) calmRedraw(route); });
     return;
   }
   const config = resolveLoginSyncConfig(code);
@@ -3147,7 +3188,7 @@ async function doTeacherLogin(){
     setSession({role:'teacher', schoolCode:code, userId:cachedRec.id, label:`${cachedRec.name} (Teacher) · ${cached.name}`});
     route();
     const config = resolveLoginSyncConfig(code);
-    if(config) bootstrapFromCloudIfNeeded(code, config).then(()=>{ if(session && session.role==='teacher' && session.schoolCode===code) route(); });
+    if(config) bootstrapFromCloudIfNeeded(code, config).then(()=>{ if(session && session.role==='teacher' && session.schoolCode===code) calmRedraw(route); });
     return;
   }
   const config = resolveLoginSyncConfig(code);
@@ -3178,7 +3219,7 @@ async function doFinanceLogin(){
     setSession({role:'finance', schoolCode:code, userId:cachedRec.id, label:`${cachedRec.name} (Finance) · ${cached.name}`});
     route();
     const config = resolveLoginSyncConfig(code);
-    if(config) bootstrapFromCloudIfNeeded(code, config).then(()=>{ if(session && session.role==='finance' && session.schoolCode===code) route(); });
+    if(config) bootstrapFromCloudIfNeeded(code, config).then(()=>{ if(session && session.role==='finance' && session.schoolCode===code) calmRedraw(route); });
     return;
   }
   const config = resolveLoginSyncConfig(code);
@@ -3209,7 +3250,7 @@ async function doSadminLogin(){
     setSession({role:'sadmin', schoolCode:code, userId:cachedRec.id, label:`${cachedRec.name} (School Admin) · ${cached.name}`});
     route();
     const config = resolveLoginSyncConfig(code);
-    if(config) bootstrapFromCloudIfNeeded(code, config).then(()=>{ if(session && session.role==='sadmin' && session.schoolCode===code) route(); });
+    if(config) bootstrapFromCloudIfNeeded(code, config).then(()=>{ if(session && session.role==='sadmin' && session.schoolCode===code) calmRedraw(route); });
     return;
   }
   const config = resolveLoginSyncConfig(code);
@@ -4692,14 +4733,19 @@ function dosAttention(school){
     ? school.exams.filter(e=>e.resultsApproval==='pending' && Object.keys(school.marks[e.id]||{}).length>0).length : 0;
   return {editReqs, awaiting, total: editReqs+awaiting};
 }
+// A tap that opens the menu can be followed by a duplicate/"ghost" click on the dimmed backdrop that has
+// just appeared under the finger; ignore backdrop taps for the first half-second after opening.
+let _menuOpenedAt = 0;
+function dosMenuBackdrop(){ if(Date.now()-_menuOpenedAt < 500) return; dosMenuOpen(false); }
 function dosMenuOpen(open){
   const d = qs('#dosDrawer'), b = qs('#dosBackdrop');
   if(!d || !b) return;
+  if(open){ if(d.classList.contains('open')) return; _menuOpenedAt = Date.now(); }
   d.classList.toggle('open', open); b.classList.toggle('open', open);
   d.setAttribute('aria-hidden', open ? 'false' : 'true');
   document.body.classList.toggle('dos-menu-open', open);
   const btn = qs('#dosMenuBtn'); if(btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  if(open){ const a = d.querySelector('.dd-item.active') || d.querySelector('.dd-item'); if(a) a.focus(); }
+  if(open){ const a = d.querySelector('.dd-item.active') || d.querySelector('.dd-item'); if(a) a.focus({preventScroll:true}); }
   else if(btn) btn.focus();
 }
 function gotoDosTab(k){
@@ -4743,7 +4789,7 @@ function portalShell(o){
     <div class="dos-title">${titleOf(o.tab)}</div>
     <div class="dos-school">${escapeHtml(o.side||'')}</div>
   </div>
-  <div class="dos-backdrop no-print" id="dosBackdrop" onclick="dosMenuOpen(false)"></div>
+  <div class="dos-backdrop no-print" id="dosBackdrop" onclick="dosMenuBackdrop()"></div>
   <nav class="dos-drawer no-print" id="dosDrawer" aria-label="Main menu" aria-hidden="true">
     <div class="dd-head"><button class="dd-close" aria-label="Close menu" onclick="dosMenuOpen(false)">✕</button>
       <div class="dd-name">${escapeHtml(o.headName||'')}</div><div class="dd-code">${escapeHtml(o.headSub||'')}</div></div>
@@ -5148,7 +5194,7 @@ function renderDOS(){
     <div class="dos-title">${titleOf(dosTab)}</div>
     <div class="dos-school">${escapeHtml(school.name)}</div>
   </div>
-  <div class="dos-backdrop no-print" id="dosBackdrop" onclick="dosMenuOpen(false)"></div>
+  <div class="dos-backdrop no-print" id="dosBackdrop" onclick="dosMenuBackdrop()"></div>
   <nav class="dos-drawer no-print" id="dosDrawer" aria-label="Main menu" aria-hidden="true">
     <div class="dd-head"><button class="dd-close" aria-label="Close menu" onclick="dosMenuOpen(false)">✕</button>
       <div class="dd-name">${escapeHtml(school.name)}</div><div class="dd-code">School Code: ${school.code}</div></div>
@@ -5964,12 +6010,14 @@ function gradingIssues(rows){
   return issues;
 }
 function tplGrading(school){
+  if(gradingClassId==='__multi') return tplGradingMulti(school);
   const cls = gradingClassId ? school.classes.find(c=>c.id===gradingClassId) : null;
   const editingCustom = !!(cls && cls.gradingSystem && cls.gradingSystem.length);
   const rows = editingCustom ? cls.gradingSystem : school.gradingSystem;
   const issues = gradingIssues(rows);
   return `<div class="card"><h2>🎯 Editable Grading / Performance Level System</h2>
-  <p class="small">Editing here only affects this grade — others keep the school default.</p>
+  <p class="small">Editing here only affects this grade — others keep the school default. To give the same grading to several grades in one go, choose <b>🧩 Several grades at once</b> in the list below.</p>
+  <div class="flexbtns">${gradingUndoBtn()}<button class="ghost" onclick="openRestorePoints()">🕘 Restore points</button></div>
   ${issues.length ? `<div class="msg err"><b>⚠ ${issues.length} issue${issues.length>1?'s':''} with this grading table:</b>
     <ul style="margin:4px 0 0 18px;padding:0">${issues.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul>
     <p style="margin:6px 0 0">Fix these before relying on it — a score that falls outside every band is silently graded using whichever row happens to be last in the table below, which is rarely what you want.</p>
@@ -5977,13 +6025,14 @@ function tplGrading(school){
   <div class="row">
     <div><label>Editing</label><select id="gradingTarget" onchange="gradingClassId=this.value; renderDOS()">
       <option value="">🏫 School Default (used by any grade without its own custom grading)</option>
+      <option value="__multi">🧩 Several grades at once — customise once, apply to many</option>
       ${school.classes.map(c=>`<option value="${c.id}" ${gradingClassId===c.id?'selected':''}>${escapeHtml(c.name)}${c.gradingSystem&&c.gradingSystem.length?' (custom)':''}</option>`).join('')}
     </select></div>
   </div>
   ${cls && !editingCustom ? `<p class="msg ok">${escapeHtml(cls.name)} is currently using the school default grading shown below. Customize it to set different bands just for this grade.</p>
   <div class="flexbtns"><button onclick="customizeClassGrading('${cls.id}')">🔧 Customize Grading for ${escapeHtml(cls.name)}</button></div>` : ''}
   ${cls && editingCustom ? `<p class="msg ok">${escapeHtml(cls.name)} is using its own custom grading — changes below affect only this grade.</p>
-  <div class="flexbtns"><button class="danger" onclick="revertClassGrading('${cls.id}')">↩ Revert ${escapeHtml(cls.name)} to School Default</button></div>` : ''}
+  <div class="flexbtns"><button class="danger" onclick="revertClassGrading('${cls.id}')">↩ Revert ${escapeHtml(cls.name)} to School Default</button><button class="ghost" onclick="gdStartFrom('${cls.id}')">🧩 Apply this grading to other grades…</button></div>` : ''}
   <p class="small">Icon and Badge Color control how this level's badge looks wherever it's shown (reports, sheets, results analysis) — the level code itself is always shown exactly as typed here, e.g. "EE1".</p>
   <table style="margin-top:10px"><tr><th>Level Code</th><th>Label</th><th>Min %</th><th>Max %</th><th>Points</th><th>Auto Remark</th><th>Icon</th><th>Badge Color</th><th>Preview</th><th></th></tr>
   ${rows.map((g,i)=>`<tr>
@@ -6026,7 +6075,24 @@ function suggestRemarkForLevelCode(code){
   };
   return bank[prefix] || '';
 }
+// Undo for grading changes: every edit first remembers the school default and every grade's custom grading.
+let gradingUndo = [];
+function pushGradingUndo(){
+  const school = currentSchool();
+  gradingUndo.push(JSON.stringify({def:school.gradingSystem, cls:school.classes.map(c=>[c.id, c.gradingSystem||null])}));
+  if(gradingUndo.length>40) gradingUndo.shift();
+  try{ takeSnapshot('Before grading change', {minGapMs:120000, kind:'grading'}); }catch(e){}
+}
+function undoGrading(){
+  if(!gradingUndo.length){ toast('Nothing to undo'); return; }
+  const school = currentSchool(), st = JSON.parse(gradingUndo.pop());
+  school.gradingSystem = st.def;
+  st.cls.forEach(([id,gs])=>{ const c = school.classes.find(x=>x.id===id); if(!c) return; if(gs) c.gradingSystem = gs; else delete c.gradingSystem; });
+  saveDB(DB); toast('↩ Grading change undone'); redrawKeepingState(renderDOS);
+}
+const gradingUndoBtn = ()=>`<button class="ghost" ${gradingUndo.length?'':'disabled'} onclick="undoGrading()" title="Undo the last grading change">↩ Undo last change${gradingUndo.length?' ('+gradingUndo.length+')':''}</button>`;
 function updGrade(i,field,val){
+  pushGradingUndo();
   const g = activeGradingArray(currentSchool())[i];
   g[field] = (field==='min'||field==='max'||field==='points') ? Number(val) : val;
   // Auto-fill a full remark the moment a level's code is set/changed to a recognized CBC
@@ -6036,25 +6102,112 @@ function updGrade(i,field,val){
     const suggested = suggestRemarkForLevelCode(val);
     if(suggested) g.remark = suggested;
   }
-  saveDB(DB); renderDOS();
+  saveDB(DB); redrawKeepingState(renderDOS);
 }
 function addGrade(){
+  pushGradingUndo();
   activeGradingArray(currentSchool()).push({level:'NL', label:'New Level', min:0, max:0, points:0, remark:'', icon:'', color:''});
-  saveDB(DB); renderDOS();
+  saveDB(DB); redrawKeepingState(renderDOS);
 }
-function delGrade(i){ activeGradingArray(currentSchool()).splice(i,1); saveDB(DB); renderDOS(); }
+function delGrade(i){ pushGradingUndo(); activeGradingArray(currentSchool()).splice(i,1); saveDB(DB); redrawKeepingState(renderDOS); }
 // Gives a class its own grading table (a copy of whatever it's currently using — its
 // inherited school default), so edits from here on apply ONLY to this class.
 function customizeClassGrading(classId){
   const school = currentSchool();
   const cls = school.classes.find(c=>c.id===classId);
+  pushGradingUndo();
   cls.gradingSystem = JSON.parse(JSON.stringify(gradingFor(school, classId)));
-  saveDB(DB); renderDOS();
+  saveDB(DB); redrawKeepingState(renderDOS);
 }
 function revertClassGrading(classId){
   const cls = currentSchool().classes.find(c=>c.id===classId);
+  pushGradingUndo();
   delete cls.gradingSystem;
-  saveDB(DB); renderDOS();
+  saveDB(DB); redrawKeepingState(renderDOS);
+}
+
+
+// ---- Several grades at once: edit ONE grading table, then apply it to every grade you tick ----
+let gradingDraft = null, gradingPick = new Set(), gradingFrom = '';
+function gdStartFrom(classId){
+  const school = currentSchool();
+  gradingClassId = '__multi'; gradingFrom = classId || '';
+  gradingDraft = JSON.parse(JSON.stringify(gradingFor(school, classId || '')));
+  gradingPick = new Set(); redrawKeepingState(renderDOS);
+}
+function gdLoad(){ const v = (qs('#gdFrom')||{}).value || ''; gdStartFrom(v); }
+function gdRowsHTML(){
+  return `<table style="margin-top:8px"><tr><th>Level Code</th><th>Label</th><th>Min %</th><th>Max %</th><th>Points</th><th>Auto Remark</th><th>Icon</th><th>Badge Color</th><th></th></tr>`
+  + gradingDraft.map((g,i)=>`<tr>
+    <td><input value="${escapeHtml(g.level)}" onchange="gdUpd(${i},'level',this.value)"></td>
+    <td><input value="${escapeHtml(g.label)}" onchange="gdUpd(${i},'label',this.value)"></td>
+    <td><input type="number" value="${g.min}" onchange="gdUpd(${i},'min',this.value)"></td>
+    <td><input type="number" value="${g.max}" onchange="gdUpd(${i},'max',this.value)"></td>
+    <td><input type="number" value="${g.points}" onchange="gdUpd(${i},'points',this.value)"></td>
+    <td><input value="${escapeHtml(g.remark)}" onchange="gdUpd(${i},'remark',this.value)"></td>
+    <td><input class="lvl-icon-input" value="${escapeHtml(g.icon||'')}" maxlength="4" onchange="gdUpd(${i},'icon',this.value)"></td>
+    <td><input type="color" class="lvl-color-input" value="${g.color||'#6b7c8f'}" onchange="gdUpd(${i},'color',this.value)"></td>
+    <td><button class="danger" onclick="gdDel(${i})">✕</button></td></tr>`).join('') + `</table>`;
+}
+function gdIssuesHTML(){
+  const iss = gradingIssues(gradingDraft);
+  return iss.length ? `<div class="msg err"><b>⚠ ${iss.length} issue${iss.length>1?'s':''} with this grading table:</b><ul style="margin:4px 0 0 18px;padding:0">${iss.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>` : '';
+}
+function gdUpd(i,field,val){
+  const g = gradingDraft[i]; if(!g) return;
+  g[field] = (field==='min'||field==='max'||field==='points') ? Number(val) : val;
+  if(field==='level' && !g.remark){ const sug = suggestRemarkForLevelCode(val); if(sug) g.remark = sug; const b = qs('#gdTable'); if(b) b.innerHTML = gdRowsHTML(); }
+  const e = qs('#gdIssues'); if(e) e.innerHTML = gdIssuesHTML();      // only the warning box updates, so nothing jumps while you type
+}
+function gdAdd(){ gradingDraft.push({level:'NL', label:'New Level', min:0, max:0, points:0, remark:'', icon:'', color:''}); const b = qs('#gdTable'); if(b) b.innerHTML = gdRowsHTML(); const e = qs('#gdIssues'); if(e) e.innerHTML = gdIssuesHTML(); }
+function gdDel(i){ gradingDraft.splice(i,1); const b = qs('#gdTable'); if(b) b.innerHTML = gdRowsHTML(); const e = qs('#gdIssues'); if(e) e.innerHTML = gdIssuesHTML(); }
+function gdPick(id,on){ if(on) gradingPick.add(id); else gradingPick.delete(id); const c = qs('#gdCount'); if(c) c.textContent = gradingPick.size; }
+function gdPickAll(mode){
+  const school = currentSchool();
+  gradingPick = new Set(school.classes.filter(c=>mode==='all' || (mode==='custom' && c.gradingSystem && c.gradingSystem.length) || (mode==='default' && !(c.gradingSystem && c.gradingSystem.length))).map(c=>c.id));
+  document.querySelectorAll('.gdChk').forEach(x=>{ x.checked = gradingPick.has(x.dataset.id); }); const c = qs('#gdCount'); if(c) c.textContent = gradingPick.size;
+}
+function gdApply(){
+  const school = currentSchool(), ids = [...gradingPick].filter(id=>school.classes.some(c=>c.id===id));
+  if(!ids.length){ toast('Tick at least one grade first','err'); return; }
+  if(!gradingDraft.length){ toast('The grading table is empty','err'); return; }
+  const iss = gradingIssues(gradingDraft);
+  if(iss.length && !confirm('This grading table has '+iss.length+' issue(s) (gaps, overlaps or points out of order). Apply it anyway?')) return;
+  pushGradingUndo();
+  ids.forEach(id=>{ school.classes.find(c=>c.id===id).gradingSystem = JSON.parse(JSON.stringify(gradingDraft)); });
+  saveDB(DB); toast('✅ Grading applied to '+ids.length+' grade'+(ids.length>1?'s':'')); redrawKeepingState(renderDOS);
+}
+function gdRevert(){
+  const school = currentSchool(), ids = [...gradingPick].filter(id=>school.classes.some(c=>c.id===id && c.gradingSystem && c.gradingSystem.length));
+  if(!ids.length){ toast('None of the ticked grades has custom grading','err'); return; }
+  if(!confirm('Put '+ids.length+' ticked grade(s) back on the school default grading?')) return;
+  pushGradingUndo();
+  ids.forEach(id=>{ delete school.classes.find(c=>c.id===id).gradingSystem; });
+  saveDB(DB); toast('↩ '+ids.length+' grade(s) back on the school default'); redrawKeepingState(renderDOS);
+}
+function tplGradingMulti(school){
+  if(!gradingDraft) gradingDraft = JSON.parse(JSON.stringify(school.gradingSystem));
+  return `<div class="card"><h2>🎯 Editable Grading — several grades at once</h2>
+  <p class="small">Edit the table once, tick the grades it should apply to, then press <b>Apply</b>. Nothing changes until you apply, and <b>↩ Undo</b> brings back the previous grading.</p>
+  <div class="flexbtns">${gradingUndoBtn()}<button class="ghost" onclick="openRestorePoints()">🕘 Restore points</button></div>
+  <div class="row">
+    <div><label>Editing</label><select id="gradingTarget" onchange="gradingClassId=this.value; renderDOS()">
+      <option value="">🏫 School Default (used by any grade without its own custom grading)</option>
+      <option value="__multi" selected>🧩 Several grades at once — customise once, apply to many</option>
+      ${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}${c.gradingSystem&&c.gradingSystem.length?' (custom)':''}</option>`).join('')}
+    </select></div>
+    <div><label>Start the table from</label><select id="gdFrom"><option value="">🏫 School default</option>${school.classes.map(c=>`<option value="${c.id}" ${gradingFrom===c.id?'selected':''}>${escapeHtml(c.name)}'s current grading</option>`).join('')}</select></div>
+    <div style="align-self:flex-end"><button class="ghost" onclick="gdLoad()">Load</button></div>
+  </div>
+  <h3 style="margin:12px 0 4px">1. Edit the grading table</h3>
+  <div id="gdIssues">${gdIssuesHTML()}</div>
+  <div style="overflow-x:auto"><div id="gdTable">${gdRowsHTML()}</div></div>
+  <div class="flexbtns"><button onclick="gdAdd()">➕ Add Level</button></div>
+  <h3 style="margin:12px 0 4px">2. Tick the grades to apply it to <span class="small">(<b id="gdCount">${gradingPick.size}</b> ticked)</span></h3>
+  <div class="flexbtns" style="margin-bottom:6px"><button class="ghost" onclick="gdPickAll('all')">Tick all</button><button class="ghost" onclick="gdPickAll('none')">Tick none</button><button class="ghost" onclick="gdPickAll('default')">Only grades on the default</button><button class="ghost" onclick="gdPickAll('custom')">Only grades with custom grading</button></div>
+  <div class="flexbtns">${school.classes.map(c=>`<label class="chip" style="cursor:pointer"><input type="checkbox" class="gdChk" data-id="${c.id}" style="width:auto;display:inline-block;margin-right:4px" ${gradingPick.has(c.id)?'checked':''} onchange="gdPick('${c.id}',this.checked)">${escapeHtml(c.name)}${c.gradingSystem&&c.gradingSystem.length?' <span class="small">(custom)</span>':''}</label>`).join('')}</div>
+  <div class="flexbtns" style="margin-top:10px"><button class="gold" onclick="gdApply()">✅ Apply to ticked grades</button><button class="danger" onclick="gdRevert()">↩ Put ticked grades back on the school default</button></div>
+  </div>`;
 }
 
 /* --- Students --- */
@@ -11706,6 +11859,123 @@ async function sendSmsBatch(school, recipients, meta, msgElId){
 }
 
 /* ============================= INIT ============================= */
+
+/* ============================= RESTORE POINTS (UNDO) =============================
+   The app keeps dated copies of the school's data on this phone (in IndexedDB, which has far more room
+   than normal storage): when you sign in, every ~10 minutes while you work, before anything you confirm
+   with an "Are you sure?" box (deleting, clearing, importing…), before grading changes and before a
+   download from another device would remove marks. 🕘 Undo (top bar) lists them. Two safe actions:
+   • Recover missing marks — puts back marks that are in the copy but gone now (never overwrites a mark that exists).
+   • Restore setup & lists — puts back classes, learners, teachers, exams, grading, fees… from that moment, but keeps
+     all current marks and the account/subscription details. Restoring takes its own restore point first, so it can be undone too. */
+const SNAP_DB = 'edutrack_restore_points', SNAP_STORE = 'snaps', SNAP_KEEP = 25;
+function snapOpen(){
+  return new Promise((res,rej)=>{
+    if(!window.indexedDB) return rej(new Error('IndexedDB not available'));
+    const r = indexedDB.open(SNAP_DB, 1);
+    r.onupgradeneeded = ()=>{ r.result.createObjectStore(SNAP_STORE, {keyPath:'id'}); };
+    r.onsuccess = ()=>res(r.result); r.onerror = ()=>rej(r.error);
+  });
+}
+function snapReq(store, mode, fn){ return snapOpen().then(db=>new Promise((res,rej)=>{ const tx = db.transaction(SNAP_STORE, mode), st = tx.objectStore(SNAP_STORE); const out = fn(st); tx.oncomplete = ()=>{ db.close(); res(out&&out.result!==undefined?out.result:undefined); }; tx.onerror = ()=>{ db.close(); rej(tx.error); }; })); }
+function countMarkCells(marksExam){ let n = 0; Object.keys(marksExam||{}).forEach(sid=>{ const m = marksExam[sid]||{}; Object.keys(m).forEach(a=>{ if(m[a]!=null && m[a]!=='') n++; }); }); return n; }
+function countAllMarks(school){ let n = 0; Object.keys((school&&school.marks)||{}).forEach(e=>{ n += countMarkCells(school.marks[e]); }); return n; }
+function _hash(str){ let h = 5381; for(let i=0;i<str.length;i+=3) h = ((h<<5)+h+str.charCodeAt(i))|0; return h; }
+const _snapLast = {};
+// Saves a restore point for the school. minGapMs skips it if one of the same kind was taken that recently.
+function takeSnapshot(label, opts){
+  opts = opts || {};
+  try{
+    const code = opts.code || (session && session.schoolCode);
+    const school = code && DB.schools[code]; if(!school) return Promise.resolve(false);
+    const kind = opts.kind || label;
+    if(opts.minGapMs && Date.now()-(_snapLast[code+kind]||0) < opts.minGapMs) return Promise.resolve(false);
+    const json = JSON.stringify(school), sum = json.length+':'+_hash(json);
+    if(_snapLast[code+'sum']===sum && !opts.force) return Promise.resolve(false);   // nothing changed since the last copy
+    _snapLast[code+kind] = Date.now(); _snapLast[code+'sum'] = sum;
+    const rec = {id:Date.now()+'_'+Math.random().toString(36).slice(2,6), code:code, ts:Date.now(), label:label, sum:sum, marks:countAllMarks(school),
+                 learners:(school.students||[]).length, exams:(school.exams||[]).length, json:json};
+    return snapReq(null,'readwrite',st=>st.put(rec)).then(()=>snapPrune(code)).then(()=>true).catch(e=>{ console.warn('Restore point not saved', e); return false; });
+  }catch(e){ console.warn('Restore point failed', e); return Promise.resolve(false); }
+}
+function snapList(code){
+  return snapOpen().then(db=>new Promise((res,rej)=>{
+    const out = [], tx = db.transaction(SNAP_STORE,'readonly'), req = tx.objectStore(SNAP_STORE).openCursor();
+    req.onsuccess = ()=>{ const c = req.result; if(c){ if(c.value.code===code) out.push({id:c.value.id, ts:c.value.ts, label:c.value.label, marks:c.value.marks, learners:c.value.learners, exams:c.value.exams, size:(c.value.json||'').length}); c.continue(); } };
+    tx.oncomplete = ()=>{ db.close(); res(out.sort((a,b)=>b.ts-a.ts)); }; tx.onerror = ()=>{ db.close(); rej(tx.error); };
+  }));
+}
+function snapGet(id){ return snapOpen().then(db=>new Promise((res,rej)=>{ const tx = db.transaction(SNAP_STORE,'readonly'), req = tx.objectStore(SNAP_STORE).get(id); tx.oncomplete = ()=>{ db.close(); res(req.result); }; tx.onerror = ()=>{ db.close(); rej(tx.error); }; })); }
+function snapPrune(code){
+  return snapList(code).then(list=>{ const drop = list.slice(SNAP_KEEP); if(!drop.length) return; return snapReq(null,'readwrite',st=>{ drop.forEach(d=>st.delete(d.id)); }); });
+}
+// A confirm() the person accepts almost always precedes something destructive — keep a restore point first.
+(function(){
+  const nativeConfirm = window.confirm.bind(window);
+  window.confirm = function(msg){
+    const ok = nativeConfirm(msg);
+    if(ok && session && (session.role==='dos'||session.role==='teacher'||session.role==='finance')){ try{ takeSnapshot('Before: '+String(msg||'').split('\n')[0].slice(0,70), {minGapMs:15000, kind:'confirm'}); }catch(e){} }
+    return ok;
+  };
+})();
+// Automatic restore points: at sign-in and then at most every 10 minutes while changes are being saved.
+let _autoSnapAt = 0;
+function maybeAutoSnapshot(){ if(!session || !session.schoolCode) return; if(Date.now()-_autoSnapAt < 10*60*1000) return; _autoSnapAt = Date.now(); takeSnapshot('Automatic', {kind:'auto'}); }
+function _ago(ts){ const m = Math.round((Date.now()-ts)/60000); if(m<1) return 'just now'; if(m<60) return m+' min ago'; const h = Math.round(m/60); if(h<24) return h+' h ago'; return Math.round(h/24)+' day(s) ago'; }
+function closeRestorePoints(){ const d = document.getElementById('rpOverlay'); if(d) d.remove(); }
+async function openRestorePoints(){
+  closeRestorePoints();
+  const school = currentSchool(), code = school.code;
+  const ov = document.createElement('div'); ov.id = 'rpOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,25,45,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:16px;';
+  ov.innerHTML = '<div class="card" style="max-width:640px;width:100%;margin:0"><h2>🕘 Undo / Restore points</h2><p class="small">Pick a saved copy of your school\'s data. <b>Recover missing marks</b> only adds back marks that are gone now. <b>Restore setup &amp; lists</b> brings back classes, learners, teachers, exams, grading, fees… from that time (current marks are kept). Either can itself be undone.</p><div id="rpBody" class="small">Loading…</div><div class="flexbtns"><button class="ghost" onclick="rpNow()">➕ Save a restore point now</button><button class="ghost" onclick="closeRestorePoints()">Close</button></div></div>';
+  ov.addEventListener('click', e=>{ if(e.target===ov) closeRestorePoints(); });
+  document.body.appendChild(ov);
+  rpRender();
+}
+async function rpNow(){ await takeSnapshot('Saved by you', {force:true}); toast('Restore point saved'); rpRender(); }
+async function rpRender(){
+  const body = document.getElementById('rpBody'); if(!body) return;
+  const school = currentSchool();
+  try{
+    const list = await snapList(school.code);
+    if(!list.length){ body.innerHTML = 'No restore points yet. One is saved automatically as you work, or press <b>Save a restore point now</b>.'; return; }
+    body.innerHTML = `<p>Right now: <b>${countAllMarks(school)}</b> marks · <b>${(school.students||[]).length}</b> learners · <b>${(school.exams||[]).length}</b> exams</p><div style="max-height:50vh;overflow:auto"><table><tr><th>When</th><th>What</th><th>Marks</th><th>Learners</th><th></th></tr>`
+      + list.map(r=>`<tr><td>${new Date(r.ts).toLocaleString()}<br><span class="small">${_ago(r.ts)}</span></td><td>${escapeHtml(r.label)}</td><td>${r.marks}</td><td>${r.learners}</td><td style="white-space:nowrap"><button class="ghost" onclick="rpRecoverMarks('${r.id}')">Recover marks</button> <button class="ghost" onclick="rpRestoreSetup('${r.id}')">Restore setup</button></td></tr>`).join('') + '</table></div>';
+  }catch(e){ body.innerHTML = 'Restore points are not available in this browser ('+escapeHtml(String(e.message||e))+').'; }
+}
+async function rpRecoverMarks(id){
+  const school = currentSchool(); const rec = await snapGet(id); if(!rec) return;
+  let snap; try{ snap = JSON.parse(rec.json); }catch(e){ toast('That restore point could not be read','err'); return; }
+  const marks = snap.marks || {}; let added = 0;
+  school.marks = school.marks || {};
+  Object.keys(marks).forEach(examId=>{
+    if(!(school.exams||[]).some(x=>x.id===examId)) return;                      // exam no longer exists
+    Object.keys(marks[examId]||{}).forEach(sid=>{
+      if(!(school.students||[]).some(x=>x.id===sid)) return;                    // learner no longer exists
+      Object.keys(marks[examId][sid]||{}).forEach(a=>{
+        const v = marks[examId][sid][a]; if(v==null || v==='') return;
+        const cur = (school.marks[examId] = school.marks[examId]||{}); const m = (cur[sid] = cur[sid]||{});
+        if(m[a]==null || m[a]===''){ m[a] = v; added++; pushMarkToCloud(school.code, examId, sid, a, v); }
+      });
+    });
+  });
+  if(added){ await takeSnapshot('Before recovering marks', {force:true, kind:'rp'}); saveDB(DB); toast('✅ '+added+' mark(s) recovered'); } else toast('No missing marks found in that copy');
+  rpRender(); try{ softRefresh(['marks']); }catch(e){}
+}
+const RESTORE_KEEP = ['marks','syncConfig','smsCredits','status','trialEndsAt','trialDays','code','dos'];
+async function rpRestoreSetup(id){
+  if(!nativeConfirmSafe('Restore the school setup and lists (classes, learners, teachers, exams, grading, fees…) to this restore point?\n\nCurrent marks and account details are kept. A restore point of how things are now is saved first, so you can undo this.')) return;
+  const school = currentSchool(); const rec = await snapGet(id); if(!rec) return;
+  let snap; try{ snap = JSON.parse(rec.json); }catch(e){ toast('That restore point could not be read','err'); return; }
+  await takeSnapshot('Before restoring an earlier copy', {force:true, kind:'rp'});
+  const next = Object.assign({}, snap); RESTORE_KEEP.forEach(k=>{ if(school[k]!==undefined) next[k] = school[k]; else delete next[k]; });
+  next._updatedAt = Date.now() + 1;
+  DB.schools[school.code] = ensureSchoolShape(next);
+  saveDB(DB); closeRestorePoints(); toast('✅ Restored to '+new Date(rec.ts).toLocaleString()); try{ route(); }catch(e){}
+}
+function nativeConfirmSafe(m){ return window.confirm(m); }
+
 /* ============================= CRASH SHIELD =============================
    A screen that throws while drawing used to leave a blank page. Every main screen is now wrapped:
    the error is logged and a small recovery card (Try again / Reload / Log out) is shown instead.
