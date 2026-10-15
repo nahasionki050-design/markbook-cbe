@@ -430,6 +430,26 @@ body.dos-menu-open{overflow:hidden;}
 .dos-quick{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
 .dos-quick button{flex:1;min-width:130px;background:#fff;color:var(--navy);border:1.5px solid var(--border);box-shadow:0 1px 4px rgba(18,58,99,.06);padding:12px 10px;}
 .dos-quick button:hover{background:#eef4fb;border-color:var(--navy);}
+.pw-wrap{position:relative;display:block;width:100%}
+.pw-wrap>input{padding-right:44px!important}
+.pw-eye{position:absolute!important;right:5px;top:50%;transform:translateY(-50%)!important;width:34px;height:34px;padding:0!important;display:flex;align-items:center;justify-content:center;background:transparent!important;color:#5a6b7c!important;border:0!important;box-shadow:none!important;border-radius:8px}
+.pw-eye:hover{background:#eef2f7!important;color:var(--navy)!important}
+.sch-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:8px 0}.sch-toolbar>div{flex:1 1 180px}
+.sch-chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
+.sch-chip{background:#eef2f7;color:var(--navy);border:1px solid var(--border);box-shadow:none;padding:6px 12px;border-radius:20px;font-weight:600}
+.sch-chip b{background:var(--navy);color:#fff;border-radius:10px;padding:1px 7px;margin-left:4px;font-size:11px}
+.sch-chip.on{background:var(--navy);color:#fff}.sch-chip.on b{background:var(--gold);color:#3a2a06}
+.sch-card{border:1px solid var(--border);border-left:4px solid var(--navy);border-radius:12px;padding:12px 14px;margin:10px 0;background:#fff;box-shadow:0 1px 6px rgba(18,58,99,.05)}
+.sch-card.st-active{border-left-color:var(--ee)}.sch-card.st-trial{border-left-color:var(--ae)}.sch-card.st-expired,.sch-card.st-suspended{border-left-color:var(--be)}
+.sch-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}.sch-top b{font-size:16px;color:var(--navy)}
+.sch-meta{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0;font-size:12.5px;color:#4a5b6c}
+.sch-btns{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+details.sch-more{display:inline-block}details.sch-more>summary{cursor:pointer;list-style:none;background:#eef2f7;border:1px solid var(--border);color:var(--navy);padding:8px 14px;border-radius:7px;font-size:13px;font-weight:700}
+details.sch-more[open]{display:block;width:100%;margin-top:6px}details.sch-more[open]>.sch-btns{margin-top:8px;padding:8px;background:#f6f9fc;border-radius:8px}
+.sch-reset{margin-top:10px;border-top:1px dashed var(--border);padding-top:8px}
+.rp-grp{font-weight:700;color:var(--navy);margin:10px 0 4px}
+.rp-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px;border:1px solid #e3e9f0;border-radius:8px;margin:4px 0;background:#fbfcfe}.rp-row .who{flex:1 1 150px;min-width:130px}.rp-row .pwf{flex:1 1 190px;min-width:160px}
+.rp-ok{background:#eefbf2;border:1px solid #bfe8cc;border-radius:8px;padding:8px 10px;margin-top:8px;font-size:13px}
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px;}
 .stat-tile{background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;box-shadow:0 2px 10px rgba(18,58,99,.06);}
 .stat-tile b{display:block;font-size:24px;font-family:var(--font-brand);color:var(--navy);line-height:1.2;}
@@ -3671,36 +3691,7 @@ function renderAdmin(){
     <div class="flexbtns"><button onclick="adminRetrieveSchoolByCode()">🔍 Retrieve School</button></div>
     <div id="adminLookupMsg"></div>
   </div>`,
-    schools: `  <div class="card">
-    <h2>📋 All Schools (${schools.length}) ${schools.some(s=>s.syncConfig&&s.syncConfig.enabled)?`<button class="ghost" style="font-size:11px;padding:3px 8px;font-weight:600" onclick="refreshAllSchoolsFromCloud(false)">🔄 Refresh from cloud</button>`:''}</h2>
-    <p class="small" style="margin-top:-6px">Grade/Student counts are pulled from the cloud automatically when you open this page; use Refresh if a school's DOS just added data on their own device.</p>
-    <table>
-      <tr><th>Code</th><th>Name</th><th>HOI</th><th>DOS Username</th><th>Status</th><th>Grades</th><th>Students</th><th>Actions</th></tr>
-      ${schools.map(s=>`
-        <tr>
-          <td class="school-code">${s.code}</td>
-          <td>${escapeHtml(s.name)}</td>
-          <td>${escapeHtml(s.hoiName)}</td>
-          <td>${escapeHtml((s.dos[0]&&s.dos[0].username)||'-')}</td>
-          <td>${schoolStatusLabel(s)}</td>
-          <td>${s.classes.length}</td>
-          <td>${s.students.length}</td>
-          <td>
-            <button class="ghost" onclick="showCredentials('${s.code}')">🪪 Credentials</button>
-            <button class="ghost" onclick="editSchoolCode('${s.code}')">✏️ Edit Code</button>
-            <button class="ghost" onclick="showLink('${s.code}','dos')">DOS Link</button>
-            <button class="ghost" onclick="showLink('${s.code}','parent')">Parent Link</button>
-            <button class="ghost" onclick="resetDosPasswordAdmin('${s.code}')">🔑 Reset DOS Password</button>
-            ${s.status!=='active'?`<button onclick="activateSchool('${s.code}')">Activate (Mark Paid)</button>`:''}
-            ${s.status!=='suspended'?`<button class="danger" onclick="suspendSchool('${s.code}')">Suspend</button>`:`<button class="ghost" onclick="unsuspendSchool('${s.code}')">Unsuspend</button>`}
-            ${s.status!=='active'?`<button class="ghost" onclick="extendTrialDays('${s.code}',30)">+30 days</button>`:''}
-            <button class="ghost" onclick="editSchoolTrialDays('${s.code}')">Edit Trial</button>
-            <button class="danger" onclick="deleteSchool('${s.code}')">Delete</button>
-          </td>
-        </tr>`).join('') || '<tr><td colspan="8" class="small">No schools yet. Open ☰ Menu → Register a School — you can add unlimited schools.</td></tr>'}
-    </table>
-    <div id="linkArea"></div>
-  </div>`,
+    schools: tplAdminSchools(schools),
     backup: `  <div class="card">
     <h2>💾 Backup &amp; Restore (Device Change)</h2>
     <p class="small">This app stores its data only in the browser/device it's running on. Before switching devices, wiping browser data, or reinstalling, export a backup. On the new device, open this same file and import the backup — every school, its DOS/teacher accounts, learners and marks will be restored exactly as they were, so nothing already created gets lost. Exporting includes the current admin password too, so restoring on a fresh device brings your admin account back rather than forcing you to create a new one.</p>
@@ -3843,6 +3834,88 @@ function doChangeAdminCloudPassword(){
     qs('#cloudPwMsg').innerHTML = `<div class="msg err">Could not update — ${escapeHtml((e&&e.message)||'check your current password')}.</div>`;
   });
 }
+
+/* --- Admin: organised list of registered schools + password reset for school administration accounts --- */
+let admSchQ='', admSchStatus='all', admSchSort='name', admSchLimit=12;
+function admSchKind(s){ if(s.status==='suspended') return 'suspended'; if(s.status==='active') return 'active'; return (s.trialEndsAt-Date.now())<=0 ? 'expired' : 'trial'; }
+function admSchFiltered(){
+  const q=admSchQ.trim().toLowerCase(); let L=Object.values(DB.schools);
+  if(admSchStatus!=='all') L=L.filter(s=>admSchKind(s)===admSchStatus);
+  if(q) L=L.filter(s=>[s.name,s.code,s.hoiName,(s.dos[0]||{}).username,s.email,s.phone].some(v=>String(v||'').toLowerCase().includes(q)));
+  const by={name:(x,y)=>String(x.name||'').localeCompare(String(y.name||'')), learners:(x,y)=>y.students.length-x.students.length, recent:(x,y)=>(y.createdAt||0)-(x.createdAt||0),
+    status:(x,y)=>{ const r=k=>({expired:0,trial:1,suspended:2,active:3})[admSchKind(k)]; return r(x)-r(y) || (x.trialEndsAt||0)-(y.trialEndsAt||0); }};
+  return L.sort(by[admSchSort]||by.name);
+}
+function admChipsHTML(){
+  const all=Object.values(DB.schools), cnt=k=>all.filter(s=>admSchKind(s)===k).length;
+  const chip=(k,l,n)=>`<button class="sch-chip ${admSchStatus===k?'on':''}" onclick="admSchSet('status','${k}')">${l} <b>${n}</b></button>`;
+  return chip('all','All',all.length)+chip('active','Active (paid)',cnt('active'))+chip('trial','On trial',cnt('trial'))+chip('expired','Trial expired',cnt('expired'))+chip('suspended','Suspended',cnt('suspended'));
+}
+function admSchSet(k,v){ if(k==='status') admSchStatus=v; else if(k==='sort') admSchSort=v; admSchLimit=12; admSchRefresh(); }
+function admSchRefresh(){ if(qs('#admSchList')) qs('#admSchList').innerHTML=admSchListHTML(); if(qs('#admSchChips')) qs('#admSchChips').innerHTML=admChipsHTML(); }
+function admSchMore(){ admSchLimit+=12; admSchRefresh(); }
+function admSchCardHTML(s){
+  const c=s.code, k=admSchKind(s), joined=s.createdAt?new Date(s.createdAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'';
+  return `<div class="sch-card st-${k}">
+    <div class="sch-top"><div><b>${escapeHtml(s.name)}</b><div class="small">Code <span class="school-code">${c}</span> · HOI: ${escapeHtml(s.hoiName||'-')}</div></div>${schoolStatusLabel(s)}</div>
+    <div class="sch-meta"><span>🏷 ${s.classes.length} grades</span><span>🧑‍🎓 ${s.students.length} learners</span><span>👩‍🏫 ${(s.teachers||[]).length} teachers</span><span>👤 DOS login: <b>${escapeHtml((s.dos[0]&&s.dos[0].username)||'-')}</b></span>${joined?`<span>📅 Registered ${joined}</span>`:''}</div>
+    <div class="sch-btns">
+      <button onclick="admOpenReset('${c}')">🔑 Reset passwords</button>
+      <button class="ghost" onclick="showCredentials('${c}')">🪪 Credentials</button>
+      <button class="ghost" onclick="showLink('${c}','dos')">DOS link</button>
+      <button class="ghost" onclick="showLink('${c}','parent')">Parent link</button>
+      <details class="sch-more"><summary>⋯ More</summary><div class="sch-btns">
+        ${s.status!=='active'?`<button onclick="activateSchool('${c}')">Activate (Mark Paid)</button>`:''}
+        ${s.status!=='suspended'?`<button class="danger" onclick="suspendSchool('${c}')">Suspend</button>`:`<button class="ghost" onclick="unsuspendSchool('${c}')">Unsuspend</button>`}
+        ${s.status!=='active'?`<button class="ghost" onclick="extendTrialDays('${c}',30)">+30 days</button>`:''}
+        <button class="ghost" onclick="editSchoolTrialDays('${c}')">Edit Trial</button>
+        <button class="ghost" onclick="editSchoolCode('${c}')">✏️ Edit Code</button>
+        <button class="danger" onclick="deleteSchool('${c}')">Delete</button></div></details>
+    </div>
+    <div class="sch-reset" id="rp_${c}" style="display:none"></div></div>`;
+}
+function admSchListHTML(){
+  const L=admSchFiltered(), shown=L.slice(0,admSchLimit);
+  if(!Object.keys(DB.schools).length) return '<p class="small">No schools yet. Open ☰ Menu → Register a School — you can add unlimited schools.</p>';
+  if(!L.length) return '<p class="small">No school matches your search or filter.</p>';
+  return `<p class="small" style="margin:2px 0">Showing ${shown.length} of ${L.length} school(s)</p>`+shown.map(admSchCardHTML).join('')+(L.length>shown.length?`<div style="text-align:center"><button class="ghost" onclick="admSchMore()">Show ${Math.min(12,L.length-shown.length)} more…</button></div>`:'');
+}
+function tplAdminSchools(schools){
+  return `<div class="card"><h2>📋 Registered Schools (${schools.length}) ${schools.some(s=>s.syncConfig&&s.syncConfig.enabled)?`<button class="ghost" style="font-size:11px;padding:3px 8px;font-weight:600" onclick="refreshAllSchoolsFromCloud(false)">🔄 Refresh from cloud</button>`:''}</h2>
+    <div class="sch-toolbar"><div style="flex:2 1 240px"><label>🔍 Search name, code, head teacher or DOS username</label><input value="${escapeHtml(admSchQ)}" placeholder="Type to find a school…" oninput="admSchQ=this.value;admSchLimit=12;clearTimeout(window._asT);window._asT=setTimeout(admSchRefresh,150)"></div>
+      <div><label>Sort by</label><select onchange="admSchSet('sort',this.value)"><option value="name" ${admSchSort==='name'?'selected':''}>Name A–Z</option><option value="status" ${admSchSort==='status'?'selected':''}>Needs attention first</option><option value="recent" ${admSchSort==='recent'?'selected':''}>Newest first</option><option value="learners" ${admSchSort==='learners'?'selected':''}>Most learners</option></select></div></div>
+    <div class="sch-chips" id="admSchChips">${admChipsHTML()}</div>
+    <p class="small" style="margin:0 0 4px">Grade and learner counts are pulled from the cloud when you open this page; use Refresh if a school just added data on its own device.</p>
+    <div id="linkArea"></div>
+    <div id="admSchList">${admSchListHTML()}</div></div>`;
+}
+function admGenPw(){ const ch='abcdefghjkmnpqrstuvwxyz23456789', a=new Uint32Array(8); (window.crypto||window.msCrypto).getRandomValues(a); return [...a].map(n=>ch[n%ch.length]).join(''); }
+function admOpenReset(code){
+  const box=qs('#rp_'+code); if(!box) return; if(box.style.display!=='none'){ box.style.display='none'; return; }
+  const s=DB.schools[code]; if(!s) return;
+  const groups=[['👔 DOS / Head of Institution','dos'],['🗂 School Administrator','sadmins'],['💰 Finance Office','finance']];
+  box.innerHTML=`<b>🔑 Reset passwords — ${escapeHtml(s.name)}</b><p class="small" style="margin:4px 0 0">Type a new password, or leave it blank to generate one. The person can change it afterwards from their own account.</p>`
+   + groups.map(([t,k])=>{ const L=s[k]||[]; return `<div class="rp-grp">${t}</div>`+(L.map(a=>`<div class="rp-row"><div class="who"><b>${escapeHtml(a.name||a.username)}</b><div class="small">Username: ${escapeHtml(a.username)}</div></div>
+      <div class="pwf"><input type="password" autocomplete="new-password" id="rpw_${code}_${a.id}" placeholder="New password (blank = auto)"></div>
+      <button class="ghost" title="Generate a random password" onclick="qs('#rpw_${code}_${a.id}').value=admGenPw();var i=qs('#rpw_${code}_${a.id}');i.type='text'">🎲</button>
+      <button onclick="admDoReset('${code}','${k}','${a.id}')">Reset</button></div>`).join('')||'<p class="small" style="margin:2px 0">No accounts yet.</p>'); }).join('')
+   + `<div id="rpmsg_${code}"></div>`;
+  box.style.display='block'; box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+async function admDoReset(code,list,id){
+  const inp=qs('#rpw_'+code+'_'+id), typed=(inp&&inp.value||'').trim();
+  if(typed && typed.length<4){ toast('Use at least 4 characters','err'); return; }
+  const pw=typed||admGenPw(); let who=null;
+  const fresh=await adminEditAndPush(code, sc=>{ const a=(sc[list]||[]).find(x=>x.id===id); if(a){ a.password=pw; who=a; } });
+  if(!fresh||!who){ toast('Account not found','err'); return; }
+  if(inp) inp.value='';
+  const m=qs('#rpmsg_'+code); if(m) m.innerHTML=`<div class="rp-ok">✅ Password reset for <b>${escapeHtml(who.name||who.username)}</b>.<br>Username: <b>${escapeHtml(who.username)}</b> · New password: <b>${escapeHtml(pw)}</b>
+    <button class="ghost" style="margin-left:6px" onclick="admCopy(this.dataset.t,this)" data-t="${escapeHtml('School code: '+code+' | Username: '+who.username+' | Password: '+pw)}">📋 Copy</button>
+    <div class="small">${escapeHtml(adminPushNote().trim())}</div></div>`;
+  toast('Password reset');
+}
+function admCopy(t,btn){ const done=()=>{ if(btn){ btn.textContent='✓ Copied'; } toast('Copied'); };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done,done); else { const x=document.createElement('textarea'); x.value=t; document.body.appendChild(x); x.select(); try{document.execCommand('copy');}catch(e){} x.remove(); done(); } }
 async function resetDosPasswordAdmin(code){
   const s = DB.schools[code];
   if(!s || !s.dos.length){ toast('This school has no DOS account to reset','err'); return; }
@@ -12708,6 +12781,33 @@ if(window.__dbRecovered) setTimeout(()=>{ try{ toast('Saved data on this phone c
   window[n] = function(){ _lastLoginFn = window[n]; return f.apply(this, arguments); };
 });
 
+</script>
+<script>
+/* Tap-to-show / hide on EVERY password field in every portal (login screens, change-password forms, PINs).
+   Fields are picked up automatically, including ones the app draws later. */
+(function(){
+  var EYE='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  var EYEOFF='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A10.9 10.9 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+  function enhance(){
+    document.querySelectorAll('input[type="password"]:not([data-eye])').forEach(function(inp){
+      inp.setAttribute('data-eye','1'); if(!inp.parentNode) return;
+      var w=document.createElement('span'); w.className='pw-wrap'; inp.parentNode.insertBefore(w,inp); w.appendChild(inp);
+      var b=document.createElement('button'); b.type='button'; b.className='pw-eye'; b.title='Show / hide password'; b.setAttribute('aria-label','Show password'); b.innerHTML=EYE;
+      b.addEventListener('mousedown',function(e){ e.preventDefault(); });
+      b.addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); var show=inp.type==='password'; inp.type=show?'text':'password'; b.innerHTML=show?EYEOFF:EYE; b.setAttribute('aria-label',show?'Hide password':'Show password'); });
+      w.appendChild(b);
+    });
+  }
+  var t=null; function later(){ clearTimeout(t); t=setTimeout(enhance,20); }
+  function start(){ enhance(); new MutationObserver(later).observe(document.body,{childList:true,subtree:true}); }
+  if(document.body) start(); else document.addEventListener('DOMContentLoaded',start);
+})();
+</script>
+
+<script>
+/* Result panels (credentials, links) open at the top of the schools list: bring them into view. */
+(function(){ ['showCredentials','showLink','resetDosPasswordAdmin'].forEach(function(n){ var f=window[n]; if(typeof f!=='function') return;
+  window[n]=function(){ var r=f.apply(this,arguments); var go=function(){ var a=document.getElementById('linkArea'); if(a&&a.innerHTML) a.scrollIntoView({behavior:'smooth',block:'nearest'}); }; if(r&&r.then) r.then(go); else go(); return r; }; }); })();
 </script>
 </body>
 </html>
