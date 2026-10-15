@@ -179,7 +179,7 @@ tr:hover td{background:#eef4fb;}
 .rc-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;background:#f5f8fc;border:1px solid var(--border);border-radius:10px;padding:12px 16px;font-size:14px;align-content:center;line-height:1.5;}
 .rc-info-grid b{color:var(--navy);}
 .rc-overall-box{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border:1px solid var(--navy);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
-.rc-overall-box .rc-grade{font-size:28px;font-weight:800;letter-spacing:.5px;}
+.rc-overall-box .rc-grade{font-size:28px;font-weight:800;letter-spacing:.5px;color:#ffd54a;}
 .rc-overall-box .rc-sub{font-size:13px;opacity:.92;margin-top:4px;}
 table.rc-table{font-size:14px;}
 table.rc-table th{background:var(--navy);color:#fff;font-size:13px;text-transform:uppercase;letter-spacing:.2px;border-color:var(--navy2);padding:9px 8px;}
@@ -443,13 +443,14 @@ tr.gender-head td{background:#eef2f7 !important;font-weight:700;text-align:left 
   html,body{background:#fff !important;color:#000;}
   body{font-family:'Segoe UI',Roboto,Arial,Helvetica,sans-serif;text-rendering:geometricPrecision;-webkit-font-smoothing:auto;}
   .print-only-block,.print-only-block *{font-family:'Segoe UI',Roboto,Arial,Helvetica,sans-serif;text-shadow:none;}
-  :where(.print-only-block){color:#000;}
-  :where(.print-only-block) :where(td,li,p,span,div,b,strong){color:#000;}
   .print-only-block .small,.print-only-block .rc-key,.print-only-block .rc-key *,.report-header .sch-contact,.report-header .sch-contact span,.print-only-block .rc-doctitle{color:#000 !important;opacity:1 !important;}
   .rc-motto,.sch-motto{color:#6b4e00 !important;opacity:1 !important;}
+  .rc-code,.rc-footer{color:#3d4c5e !important;}
+  .rc-overall-box,.rc-overall-box .rc-sub{color:#fff !important;opacity:1 !important;}
+  .rc-overall-box .rc-grade{color:#ffd54a !important;}
   .print-only-block td{font-weight:600;}
   .print-only-block .report-header p{font-weight:600;}
-  .print-only-block th{font-weight:800;color:#06223f;}
+  :where(.print-only-block) th{font-weight:800;}
   .print-only-block td,.print-only-block th{border-color:#3f4b5a;}
   .print-only-block table{border-color:#3f4b5a;}
   .print-only-block .badge{box-shadow:none !important;text-shadow:none !important;opacity:1 !important;filter:none !important;font-weight:800;}
@@ -688,6 +689,7 @@ function ensureSchoolShape(s){
     if(typeof t.canApproveResults !== 'boolean') t.canApproveResults = false; // approve/disapprove exam results
     if(typeof t.canApproveEditRequests !== 'boolean') t.canApproveEditRequests = false; // decide other teachers' pending edit requests
     if(typeof t.canManageEntry !== 'boolean') t.canManageEntry = false; // open/close the entry period
+    if(typeof t.canEditExamMax !== 'boolean') t.canEditExamMax = true;   // change an exam's total (max) marks for their own learning areas
     // gender ('M'/'F'/'' — optional, left blank if the DOS/HOI never sets it) and
     // farFromSchool are only used by the Duty Rota generator (pairing/alternating gender
     // fairly, and going easy on — or excluding — a teacher who commutes a long way).
@@ -915,23 +917,29 @@ let firebaseApp = null, fbDb = null;
 const syncBase = {};
 const syncState = { enabled:false, connectedCode:null, pushTimer:null, marksReady:false, dataReady:false, marksListenerRef:null, dataListenerRef:null, dataListenerFn:null, examListeners:{}, examReady:{}, triedClosed:{}, keepAlive:[], keepTimer:null, dataFetchTimer:null, sdkLoading:null };
 
-function loadFirebaseSdk(cb){
+let _sdkFailToastAt = 0;
+function sdkFailed(onFail){
+  if(onFail){ try{ onFail(); }catch(e){} }
+  if(Date.now()-_sdkFailToastAt > 60000){ _sdkFailToastAt = Date.now(); toast('Could not reach the sync service — your work is saved on this phone and will upload automatically when you are back online.','err'); }
+}
+function loadFirebaseSdk(cb, onFail){
   if(window.firebase && window.firebase.database){ cb(); return; }
-  if(syncState.sdkLoading){ syncState.sdkLoading.then(cb); return; }
+  if(syncState.sdkLoading){ syncState.sdkLoading.then(cb, ()=>sdkFailed(onFail)); return; }
   syncState.sdkLoading = new Promise((resolve, reject)=>{
+    const fail = el=>{ try{ if(el) el.remove(); }catch(e){} syncState.sdkLoading = null; reject(new Error('sdk')); };   // allow a retry later
     const s1 = document.createElement('script');
     s1.src = 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js';
     s1.onload = ()=>{
       const s2 = document.createElement('script');
       s2.src = 'https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js';
       s2.onload = resolve;
-      s2.onerror = reject;
+      s2.onerror = ()=>fail(s2);
       document.head.appendChild(s2);
     };
-    s1.onerror = reject;
+    s1.onerror = ()=>fail(s1);
     document.head.appendChild(s1);
   });
-  syncState.sdkLoading.then(cb).catch(()=>toast('Could not reach the sync service — check your internet connection.','err'));
+  syncState.sdkLoading.then(cb, ()=>sdkFailed(onFail));
 }
 // Signs the app itself in (anonymously) before it ever touches the database, so a rule
 // of ".read"/".write": "auth != null" on the Firebase console side can turn away a bare
@@ -968,7 +976,7 @@ function initSyncRaw(config){
         if(auth.currentUser){ resolve(fbDb); return; }
         auth.signInAnonymously().then(()=>resolve(fbDb)).catch(reject);
       }catch(e){ reject(e); }
-    });
+    }, ()=>reject(new Error('Sync service unreachable')));
   });
 }
 function parseFirebaseConfigText(text){
@@ -1234,12 +1242,13 @@ function scheduleCloudPush(){
 const MARK_OUTBOX_KEY = 'edutrack_mark_outbox';
 let markOutbox = (()=>{ try{ const o = JSON.parse(localStorage.getItem(MARK_OUTBOX_KEY)||'{}')||{}; const cut = Date.now()-14*864e5; Object.keys(o).forEach(k=>{ if(!o[k] || (o[k].t||0)<cut) delete o[k]; }); return o; }catch(e){ return {}; } })();
 function saveOutbox(){ try{ localStorage.setItem(MARK_OUTBOX_KEY, JSON.stringify(markOutbox)); }catch(e){} }
+let _outboxWasWaiting = Object.keys(markOutbox).length>0;
 function sendOutboxEntry(k){
   const o = markOutbox[k];
   if(!o || !syncState.enabled || !fbDb || (syncState.connectedCode && o.c!==syncState.connectedCode)) return;
   const t = o.t;
   try{
-    markLeafRef(o.c, o.e, o.s, o.a).set(o.v).then(()=>{ const cur = markOutbox[k]; if(cur && cur.t===t){ delete markOutbox[k]; saveOutbox(); } })
+    markLeafRef(o.c, o.e, o.s, o.a).set(o.v).then(()=>{ const cur = markOutbox[k]; if(cur && cur.t===t){ delete markOutbox[k]; saveOutbox(); if(_outboxWasWaiting && !Object.keys(markOutbox).length){ _outboxWasWaiting = false; try{ toast('✅ All marks entered offline have been uploaded'); updateSyncBadge('refresh'); }catch(e){} } } })
       .catch(e=>console.warn('Mark sync failed — will retry', e));
   }catch(e){ console.warn('Mark sync failed — will retry', e); }
 }
@@ -1247,6 +1256,7 @@ function flushMarkOutbox(){ Object.keys(markOutbox).forEach(sendOutboxEntry); }
 function pushMarkToCloud(code, examId, sid, areaId, val){
   markOutbox[[code,examId,sid,areaId].join('\u0001')] = {c:code, e:examId, s:sid, a:areaId, v:(val==null?null:val), t:Date.now()};
   saveOutbox();
+  if(!(syncState.enabled && fbDb && syncState.connectedCode===code)) _outboxWasWaiting = true;   // saved locally, will upload later
   sendOutboxEntry([code,examId,sid,areaId].join('\u0001'));
 }
 // Lays this device's not-yet-confirmed marks over a marks object downloaded from the cloud.
@@ -1922,24 +1932,50 @@ function detachLiveListeners(keepHeld){
   syncState.examListeners = {}; syncState.examReady = {}; syncState.triedClosed = {};
   if(!keepHeld) releaseKeepAlive();
 }
+let _syncConnecting = null;
 function ensureSyncConnected(school){
   if(!school || !school.syncConfig || !school.syncConfig.enabled){ updateSyncBadge(null); return; }
   if(syncState.connectedCode===school.code && fbDb){ updateSyncBadge(true); return; }
+  if(_syncConnecting===school.code) return;                 // an attempt is already running
+  _syncConnecting = school.code;
   syncState.enabled = true;
   updateSyncBadge('connecting');
   initSync(school.syncConfig.config).then(()=>{
+    _syncConnecting = null;
     syncState.connectedCode = school.code;
     attachLiveListeners(school);
     updateSyncBadge(true);
-  }).catch(()=>updateSyncBadge(false));
+    flushMarkOutbox();
+  }).catch(()=>{ _syncConnecting = null; updateSyncBadge(false); });
 }
+/* Keeps trying to connect while signed in. A phone that was offline when the app opened (or lost signal in the
+   middle of the day) now connects by itself the moment the network returns, and uploads waiting marks. */
+function syncReconnectTick(){
+  try{
+    if(!session || !session.schoolCode) return;
+    const school = DB.schools[session.schoolCode];
+    if(school && school.syncConfig && school.syncConfig.enabled) ensureSyncConnected(school);
+    flushMarkOutbox();
+  }catch(e){}
+}
+window.addEventListener('online', ()=>setTimeout(syncReconnectTick, 400));
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) syncReconnectTick(); });
+setInterval(syncReconnectTick, 20000);
+function syncNow(){ toast('Uploading waiting marks…'); syncReconnectTick(); }
+// Marks that were saved on this phone but are not yet confirmed by the cloud (ignores the instant a normal save takes).
+function pendingMarkCount(){ const cut = Date.now()-3000; return Object.keys(markOutbox).filter(k=>markOutbox[k] && markOutbox[k].t<cut).length; }
+let _badgeState = null;
 function updateSyncBadge(state){
   const el = qs('#syncBadge'); if(!el) return;
-  if(state===true) el.innerHTML = '&nbsp;|&nbsp;<span title="Multi-device sync is on">🟢 Synced</span>';
-  else if(state==='connecting') el.innerHTML = '&nbsp;|&nbsp;<span title="Connecting…">🔄 Connecting…</span>';
-  else if(state===false) el.innerHTML = '&nbsp;|&nbsp;<span title="Could not reach the sync service">🔴 Sync offline</span>';
-  else el.innerHTML = '';
+  if(state==='refresh') state = _badgeState; else _badgeState = state;
+  const n = pendingMarkCount();
+  const wait = n ? ` &nbsp;|&nbsp;<span onclick="syncNow()" style="cursor:pointer;font-weight:700" title="Saved on this phone — they upload automatically when you are online. Tap to try now">⏳ ${n} mark${n>1?'s':''} waiting to upload</span>` : '';
+  if(state===true) el.innerHTML = '&nbsp;|&nbsp;<span title="Multi-device sync is on">🟢 Synced</span>'+wait;
+  else if(state==='connecting') el.innerHTML = '&nbsp;|&nbsp;<span title="Connecting…">🔄 Connecting…</span>'+wait;
+  else if(state===false) el.innerHTML = '&nbsp;|&nbsp;<span title="Could not reach the sync service">🔴 Sync offline</span>'+wait;
+  else el.innerHTML = wait;
 }
+setInterval(()=>{ try{ updateSyncBadge('refresh'); }catch(e){} }, 4000);
 
 /* ============================= ADMIN CLOUD ACCOUNT SYNC =============================
    Lets the platform admin log in with the SAME password on every device, and have every
@@ -1969,15 +2005,15 @@ function updateSyncBadge(state){
 let fbAdminApp = null, fbAdminAuth = null, fbAdminDb = null;
 const adminSyncState = { pushTimer:null, dataListenerRef:null, ready:false };
 
-function loadFirebaseAuthSdk(cb){
+function loadFirebaseAuthSdk(cb, onFail){
   loadFirebaseSdk(()=>{
     if(window.firebase && window.firebase.auth){ cb(); return; }
     const s3 = document.createElement('script');
     s3.src = 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js';
     s3.onload = cb;
-    s3.onerror = ()=>toast('Could not reach the sync service — check your internet connection.','err');
+    s3.onerror = ()=>{ try{ s3.remove(); }catch(e){} sdkFailed(onFail); };
     document.head.appendChild(s3);
-  });
+  }, onFail);
 }
 function initAdminCloud(config){
   return new Promise((resolve, reject)=>{
@@ -5313,11 +5349,12 @@ const HELP_SECTIONS = [
       <tr><td><b>My Account</b></td><td>Set your own email/phone for password-reset codes; manage cloud sync; download a backup.</td></tr>
     </tbody></table>` },
 
-  { title: '👩‍🏫 Teacher permissions (6 switches)', body: `
-    <p>When adding or editing a teacher under <b>Teachers &amp; Permissions</b>, six switches control what that teacher can do:</p>
+  { title: '👩‍🏫 Teacher permissions (7 switches)', body: `
+    <p>When adding or editing a teacher under <b>Teachers &amp; Permissions</b>, seven switches control what that teacher can do:</p>
     <ul>
       <li><b>Can Print Reports?</b> — lets the teacher generate and print learner progress reports.</li>
       <li><b>Can Print Assessment Sheets?</b> — lets the teacher generate and print class assessment sheets.</li>
+      <li><b>Can Edit Exam Total Marks?</b> — on by default. Lets a teacher change the total (max) marks of an exam for their own learning area(s) without waiting for you, while that exam is still open for entry and not approved. A teacher can't set a total lower than a score already entered, and every change is recorded under the exam (who, when, old and new total).</li>
       <li><b>Can Post Assignments?</b> — lets the teacher send printable assignments/homework to the Parent Portal, for their own assigned grade(s) only.</li>
       <li><b>Can Approve/Disapprove Results?</b>, <b>Can Decide Edit Requests?</b>, <b>Can Open/Close Entry?</b> — these
       three only take effect for grades where the teacher is set as <b>Class Teacher</b>. They let a class teacher
@@ -6827,8 +6864,9 @@ function tplExamCard(school, e){
     <div class="row" style="margin-top:6px">
       ${areasForClass(school,e.classId).map(a=>`<div><label>${escapeHtml(a.name)}</label><input type="number" min="1" value="${e.maxMarksByArea[a.id]??100}" ${paperLocked(e,a.id)?'disabled title="Set automatically from the papers total"':''} onchange="updExamMaxMarks('${e.id}','${a.id}',this.value)"></div>`).join('') || '<p class="small">No learning areas assigned to this grade.</p>'}
     </div>
-    <p class="small">Scores aren't rescaled — lowering the max below entered scores pushes their % above 100.</p>
+    <p class="small">Scores aren't rescaled — lowering the max below entered scores pushes their % above 100. Teachers can also change totals for their own learning areas while entry is open; those changes are listed below.</p>
   </details>
+  ${examMaxLogHTML(school,e)}
   ${paperDefHTML(school,e)}
   <details style="margin:0 0 10px">
     <summary class="small" style="cursor:pointer">🗓 Report Card Dates &amp; Attendance</summary>
@@ -7261,7 +7299,7 @@ function tplTeachers(school){
   </div>
   <div class="flexbtns"><button onclick="addTeacher()">➕ Add Teacher</button></div>
   <p class="small">Email/phone are only used so a teacher can reset a forgotten password themselves via a code sent to them — leave blank and they'll need to ask you instead. Gender and "Lives far from school" are only used by the Duty Rota generator, to pair/alternate gender fairly and to go easy on — or exclude — a teacher with a long commute. You (or the teacher, once logged in) can add or edit these later in the table below.</p>
-  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Gender</th><th>Lives far?</th><th>Assigned Grade / Learning Area</th><th>Class Teacher For</th><th>Can Print Reports?</th><th>Can Print Assessment Sheets?</th><th>Can Post Assignments?</th><th>Can Add Exam Questions?</th><th>Can Approve/<br>Disapprove Results?</th><th>Can Decide Edit Requests?</th><th>Can Open/Close Entry?</th><th>Actions</th></tr>
+  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Gender</th><th>Lives far?</th><th>Assigned Grade / Learning Area</th><th>Class Teacher For</th><th>Can Print Reports?</th><th>Can Print Assessment Sheets?</th><th>Can Post Assignments?</th><th>Can Add Exam Questions?</th><th>Can Approve/<br>Disapprove Results?</th><th>Can Decide Edit Requests?</th><th>Can Open/Close Entry?</th><th>Can Edit Exam Total Marks?</th><th>Actions</th></tr>
   ${school.teachers.map(t=>`<tr>
     <td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.username)}</td>
     <td><input value="${escapeHtml(t.email||'')}" placeholder="email" onchange="setTeacherContact('${t.id}','email',this.value)"></td>
@@ -7295,8 +7333,9 @@ function tplTeachers(school){
     <td><input type="checkbox" ${t.canApproveResults?'checked':''} onchange="toggleTeacherPerm('${t.id}','canApproveResults',this.checked)"></td>
     <td><input type="checkbox" ${t.canApproveEditRequests?'checked':''} onchange="toggleTeacherPerm('${t.id}','canApproveEditRequests',this.checked)"></td>
     <td><input type="checkbox" ${t.canManageEntry?'checked':''} onchange="toggleTeacherPerm('${t.id}','canManageEntry',this.checked)"></td>
+    <td><input type="checkbox" ${t.canEditExamMax!==false?'checked':''} onchange="toggleTeacherPerm('${t.id}','canEditExamMax',this.checked)"></td>
     <td><button class="ghost" onclick="resetTeacherPassword('${t.id}')">🔑 Reset Password</button> <button class="danger" onclick="delTeacher('${t.id}')">✕</button></td>
-  </tr>`).join('') || '<tr><td colspan="15" class="small">No teachers yet.</td></tr>'}
+  </tr>`).join('') || '<tr><td colspan="16" class="small">No teachers yet.</td></tr>'}
   </table>
   <p class="small" style="margin-top:8px"><b>Class Teacher For</b> marks which grade(s) a teacher is class teacher of. A grade can have more than one.</p>
   <p class="small">The next three permissions only apply to grade(s) checked under <b>Class Teacher For</b>, letting that teacher handle their own grade's exam sign-off without waiting on you: <b>Approve/Disapprove Results</b>, <b>Decide Edit Requests</b>, and <b>Open/Close Entry</b>. You can always act directly on any exam yourself regardless.</p>
@@ -7319,7 +7358,7 @@ function addTeacher(){
   const school = currentSchool();
   if(school.teachers.some(t=>t.username===username)){ toast('That username is already taken','err'); return; }
   school.teachers.push({id:uid('t_'), name, username, password, email, phone, gender, farFromSchool, assignments:[], canPrint:true, canPrintAssess:false, canPostAssignments:false, canAddQuestions:true,
-    classTeacherOf:[], canApproveResults:false, canApproveEditRequests:false, canManageEntry:false});
+    classTeacherOf:[], canApproveResults:false, canApproveEditRequests:false, canManageEntry:false, canEditExamMax:true});
   saveDB(DB); toast(`Teacher added. Password: ${password}`); renderDOS();
 }
 // Gender and farFromSchool are edited inline from the Teachers table, same pattern as
@@ -7759,7 +7798,7 @@ function teacherDenied(perm, classId, areaId){
 // the DOS/HOI (new/removed assignment, permission on/off) re-draws the teacher's screen.
 function teacherSig(school, t){
   return JSON.stringify([teacherClassIds(school,t).map(cid=>[cid, teacherAreaIds(school,t,cid).sort()]), !!t.canPrint, !!t.canPrintAssess, !!t.canPostAssignments, t.canAddQuestions!==false,
-    (t.classTeacherOf||[]).slice().sort(), !!t.canApproveResults, !!t.canApproveEditRequests, !!t.canManageEntry]);
+    (t.classTeacherOf||[]).slice().sort(), !!t.canApproveResults, !!t.canApproveEditRequests, !!t.canManageEntry, t.canEditExamMax!==false]);
 }
 
 // Class Teacher Tools: shown to a teacher for any grade(s) listed in their classTeacherOf,
@@ -8042,6 +8081,56 @@ function renderTeacherAreaOptions(){
   const note = qs('#tExamNote');
   if(note) note.innerHTML = hidden ? `${hidden} earlier exam${hidden>1?'s':''} already released ${hidden>1?'are':'is'} hidden here. ${exams.length?'':'No exam is open for marks entry right now.'}` : '';
 }
+
+/* ---------- Teachers changing an exam's total (max) marks themselves ----------
+   Allowed when: the teacher has the "Can Edit Exam Total Marks" switch (on by default), the exam is for one of their
+   own grade + learning-area assignments, entry is still open and results are not approved/released, and the area's
+   total isn't being built from separate papers. A new total can never be lower than a score already entered
+   (that would push someone above 100%), and every change is logged on the exam for the DOS/HOI. */
+function teacherCanEditMax(school, exam, areaId){
+  if(!session || session.role!=='teacher') return false;
+  const t = currentTeacher(); if(!t || t.canEditExamMax===false) return false;
+  if(!teacherMay(null, exam.classId, areaId)) return false;
+  if(isExamClosed(exam) || exam.resultsApproval==='approved' || examFinishedForTeacher(school, exam)) return false;
+  if(examParts(exam, areaId).length) return false;
+  return true;
+}
+function teacherMaxEditorHTML(school, exam, areaId, max){
+  if(!teacherCanEditMax(school, exam, areaId)) return `<p class="small no-print">Max marks for this learning area in this exam: <b>${max}</b>${session.role==='teacher'?' <span title="Not available once entry is closed or results are approved, or if the DOS/HOI switched it off for you">(locked — ask the DOS/HOI to change it)</span>':''}</p>`;
+  const last = (exam.maxLog||[]).filter(l=>l.areaId===areaId).slice(-1)[0];
+  return `<div class="no-print" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0">
+    <span class="small">Total marks for this learning area:</span>
+    <input id="tMaxInp" type="number" min="1" max="1000" step="1" value="${max}" style="width:90px">
+    <button class="ghost" onclick="teacherUpdMax('${exam.id}','${areaId}')">✏️ Change total</button>
+    <span class="small">Existing scores stay as entered; % and levels recalculate.${last?` Last changed ${last.from} → ${last.to} by ${escapeHtml(last.by)}.`:''}</span></div>`;
+}
+function teacherUpdMax(examId, areaId){
+  const school = currentSchool(); const exam = school.exams.find(x=>x.id===examId);
+  if(!exam || !teacherCanEditMax(school, exam, areaId)){ toast('You can no longer change the total for this exam — ask the DOS/HOI','err'); return; }
+  const inp = qs('#tMaxInp'); const val = Number(inp && inp.value);
+  const old = exam.maxMarksByArea[areaId] ?? 100;
+  if(!val || val<1 || val>1000 || !Number.isFinite(val)){ toast('Enter a total between 1 and 1000','err'); return; }
+  const nv = Math.round(val*10)/10;
+  if(nv===old){ toast('That is already the total'); return; }
+  const mk = school.marks[examId] || {};
+  const over = Object.keys(mk).filter(sid=>{ const v = (mk[sid]||{})[areaId]; return v!=null && v!=='' && Number(v) > nv; });
+  if(over.length){
+    const names = over.slice(0,4).map(sid=>{ const st = school.students.find(x=>x.id===sid); return st?st.name:'?'; }).join(', ');
+    toast(`Can't lower the total to ${nv}: ${over.length} learner(s) already have a higher score (${names}${over.length>4?'…':''}). Correct those scores first.`,'err'); return;
+  }
+  const entered = Object.keys(mk).filter(sid=>(mk[sid]||{})[areaId]!=null && (mk[sid]||{})[areaId]!=='').length;
+  if(!confirm(`Change the total marks from ${old} to ${nv}?` + (entered ? `\n\n${entered} score(s) already entered stay exactly as they are — only the total they are marked out of changes, so their % and levels will change.` : ''))) return;
+  exam.maxMarksByArea[areaId] = nv;
+  const t = currentTeacher();
+  exam.maxLog = (exam.maxLog||[]).concat({areaId:areaId, by:(t&&t.name)||'Teacher', byId:session.userId, from:old, to:nv, at:Date.now(), entered:entered}).slice(-60);
+  touchExam(exam); saveDB(DB);
+  toast(`✅ Total changed to ${nv}`); loadMarksGrid();
+}
+// DOS/HOI view: who changed which total, and when.
+function examMaxLogHTML(school, e){
+  const log = (e.maxLog||[]).slice().reverse(); if(!log.length) return '';
+  return `<details style="margin:0 0 10px"><summary class="small" style="cursor:pointer">🕘 Total-marks changes (${log.length})</summary><table style="margin-top:6px"><tr><th>When</th><th>Learning area</th><th>Changed by</th><th>From → To</th></tr>${log.map(l=>{ const a = areasForClass(school,e.classId).find(x=>x.id===l.areaId); return `<tr><td>${new Date(l.at).toLocaleString()}</td><td>${escapeHtml(a?a.name:l.areaId)}</td><td>${escapeHtml(l.by||'')}</td><td>${l.from} → <b>${l.to}</b></td></tr>`; }).join('')}</table></details>`;
+}
 function loadMarksGrid(){
   const school = currentSchool();
   const classId = qs('#tClass').value, areaId = qs('#tArea').value, examId = qs('#tExam').value;
@@ -8057,7 +8146,7 @@ function loadMarksGrid(){
   const myPend = {}; (exam.editRequests||[]).filter(r=>r.status==='pending' && r.areaId===areaId && r.teacherId===session.userId).forEach(r=>{ myPend[r.sid]=r.newVal; });
   if(examParts(exam,areaId).length){ qs('#marksGridArea').innerHTML = paperGridHTML(school, exam, classId, areaId, learners, {teacher:true, print:true}); return; }
   qs('#marksGridArea').innerHTML = `
-  <p class="small no-print">Max marks for this learning area in this exam: <b>${max}</b> (editable by DOS/HOI in Exams tab)</p>
+  ${teacherMaxEditorHTML(school, exam, areaId, max)}
   ${closed ? `<div class="msg err no-print">🔒 Entry is closed for this exam. Any change you make below is sent to the DOS/HOI as a request and only applies once approved.${myPending?` You have ${myPending} request(s) awaiting approval for this learning area.`:''}</div>` : ''}
   <div class="print-only-block">
   <table><tr><th>Adm No.</th>${assessTh(hasAssessNo(learners))}<th>Name</th><th>Score (out of ${max})</th><th>%</th><th>Level</th></tr>
