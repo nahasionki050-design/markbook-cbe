@@ -519,6 +519,78 @@ tr.gender-head td{background:#eef2f7 !important;font-weight:700;text-align:left 
   .print-only-block .badge{box-shadow:none !important;text-shadow:none !important;opacity:1 !important;filter:none !important;font-weight:800;}
   .print-only-block img{image-rendering:auto;}
 }
+
+/* ===== Premium academic stationery | visual-only enhancement ===== */
+:root{--paper-ink:#142b43;--paper-gold:#b88a38;--paper-line:#cbd6e1;}
+.report-card{border:1px solid #c7a66a;border-radius:4px;box-shadow:0 14px 38px rgba(15,36,61,.13);}
+.report-card .rc-topband{height:7px;background:linear-gradient(90deg,#102d49 0%,#102d49 72%,#b88a38 72%,#d6b66f 100%);}
+.report-card .rc-body{background:#fff;}
+.report-card .report-header{border-bottom:2px solid #142f4b;position:relative;padding-bottom:12px;}
+.report-card .report-header::after{content:'';display:block;width:72px;height:3px;background:#b88a38;position:absolute;bottom:-3px;left:calc(50% - 36px);}
+.report-card .report-header h2.sch-name{font-family:Georgia,'Times New Roman',serif;font-size:28px;letter-spacing:.6px;color:#102d49;}
+.report-card .rc-doctitle{display:inline-block;background:#102d49;color:#fff;font-size:12px;letter-spacing:2px;padding:6px 18px;margin:7px auto 4px;border-left:4px solid #c9a25c;}
+.report-card .rc-info-grid{background:#f7f9fc;border:1px solid #d5dfeb;border-radius:3px;gap:7px 14px;}
+.report-card .rc-info-grid b{font-size:11px;text-transform:uppercase;letter-spacing:.35px;}
+.report-card .rc-overall-box{border-radius:3px;background:#102d49;border-bottom:4px solid #c9a25c;}
+.report-card .rc-overall-box .rc-grade{color:#f6d78e;}
+.report-card .rc-table{border:1px solid #aebdcc;}
+.report-card .rc-table th{background:#163a5a;color:#fff;border-color:#34536d;font-size:11px;letter-spacing:.35px;}
+.report-card .rc-table td{border-color:#c5d0db;}
+.report-card .rc-table tr:nth-child(even) td{background:#f3f7fb;}
+.report-card .rc-table tr.rc-total td{background:#f5eddd;border-top:2px solid #b88a38;}
+.report-card .rc-chart-label,.report-card .rc-analysis h4,.report-card .rc-pathway h4{color:#102d49;letter-spacing:.3px;}
+.report-card .rc-remark{background:#faf6ed;border-left:4px solid #b88a38;border-radius:2px;}
+.report-card .rc-analysis,.report-card .rc-pathway{border-color:#cbd6e1;border-radius:3px;}
+.report-card .rc-tile{border:1px solid #dce3eb;border-radius:3px;}
+.report-card .rc-stamp{border-radius:50%;min-height:76px;}
+.report-card .rc-footer{border-top:1px solid #d7dfe8;padding-top:6px;color:#506176;letter-spacing:.3px;}
+/* All generated registers, assessment sheets, rotas, statements and lists */
+.print-only-block:not(.report-card){background:#fff;color:#182b40;}
+.print-only-block:not(.report-card) h2,.print-only-block:not(.report-card) h3{color:#123a63;letter-spacing:.3px;}
+.print-only-block:not(.report-card) table{border-collapse:collapse;border:1px solid #9cadbd;}
+.print-only-block:not(.report-card) th{background:#173b5c;color:#fff;border:1px solid #536a80;font-weight:800;}
+.print-only-block:not(.report-card) td{border-color:#c1cbd6;}
+.print-only-block:not(.report-card) tr:nth-child(even) td{background:#f2f6fa;}
+@media print{
+  .report-card{border:1px solid #8397aa !important;box-shadow:none !important;}
+  .report-card .rc-topband{height:5px;}
+  .report-card .rc-doctitle{font-size:11px;padding:4px 14px;}
+  .report-card .rc-info-grid b{font-size:10px;}
+  .report-card .rc-stamp{min-height:58px;}
+  .print-only-block:not(.report-card) th{background:#173b5c !important;color:#fff !important;}
+  .print-only-block:not(.report-card) thead{display:table-header-group;}
+  .print-only-block:not(.report-card) tr{break-inside:avoid;page-break-inside:avoid;}
+  body.print-bw .print-only-block:not(.report-card) th{background:#dedede !important;color:#000 !important;}
+  body.print-bw .report-card .rc-doctitle{background:#fff !important;color:#000 !important;border:1px solid #000 !important;}
+  body.print-bw .report-card .rc-overall-box .rc-grade,body.print-bw .report-card .rc-overall-box .rc-sub{color:#000 !important;}
+}
+
+/* ===== EduTrack refined typography and official print hierarchy ===== */
+.print-only-block{font-family:'Inter','Segoe UI',Arial,sans-serif;letter-spacing:0;line-height:1.38;}
+.print-only-block h1,.print-only-block h2,.print-only-block h3,.print-only-block h4{font-family:'Sora','Inter','Segoe UI',Arial,sans-serif;font-weight:800;line-height:1.22;overflow-wrap:anywhere;}
+.print-only-block:not(.report-card) h1,.print-only-block:not(.report-card) h2{font-size:clamp(17px,2.2vw,23px);letter-spacing:.55px;text-align:center;text-transform:uppercase;border-bottom:2px solid #b88a38;padding-bottom:9px;margin:4px 0 11px;}
+.print-only-block:not(.report-card) h3{font-size:15px;text-transform:uppercase;letter-spacing:.65px;border-left:4px solid #b88a38;padding-left:9px;margin:12px 0 7px;}
+.print-only-block:not(.report-card) h4{font-size:13px;letter-spacing:.35px;margin:9px 0 5px;}
+.print-only-block:not(.report-card) th{font-size:11px;line-height:1.25;letter-spacing:.35px;text-transform:uppercase;vertical-align:middle;padding:8px 6px;overflow-wrap:anywhere;}
+.print-only-block:not(.report-card) td{font-size:11.5px;line-height:1.35;padding:6px;vertical-align:middle;}
+.print-only-block:not(.report-card) p{line-height:1.45;}
+.report-card .report-header h2.sch-name{font-family:'Sora','Inter','Segoe UI',Arial,sans-serif;font-weight:800;letter-spacing:.55px;line-height:1.16;}
+.report-card .rc-doctitle{font-family:'Sora','Inter','Segoe UI',Arial,sans-serif;font-weight:800;letter-spacing:1.3px;}
+.report-card .rc-chart-label,.report-card .rc-analysis h4,.report-card .rc-pathway h4{font-family:'Sora','Inter','Segoe UI',Arial,sans-serif;font-weight:800;}
+.report-card .rc-table th{font-family:'Inter','Segoe UI',Arial,sans-serif;font-weight:800;line-height:1.3;overflow-wrap:anywhere;}
+.report-card .rc-remark{line-height:1.48;}
+@media print{
+ .print-only-block{font-family:'Segoe UI',Arial,sans-serif !important;}
+ .print-only-block h1,.print-only-block h2,.print-only-block h3,.print-only-block h4{font-family:'Segoe UI',Arial,sans-serif !important;}
+ .print-only-block:not(.report-card) h1,.print-only-block:not(.report-card) h2{font-size:17px;margin:2px 0 8px;padding-bottom:6px;}
+ .print-only-block:not(.report-card) h3{font-size:12.5px;margin:8px 0 5px;}
+ .print-only-block:not(.report-card) th{font-size:10px;padding:5px 4px;}
+ .print-only-block:not(.report-card) td{font-size:10.5px;padding:4px 5px;}
+ .print-only-block:not(.report-card) h1,.print-only-block:not(.report-card) h2,.print-only-block:not(.report-card) h3,.print-only-block:not(.report-card) h4{break-after:avoid;page-break-after:avoid;}
+ .print-only-block:not(.report-card) thead{display:table-header-group;}
+ .print-only-block:not(.report-card) table{width:100%;}
+ body.print-bw .print-only-block:not(.report-card) h1,body.print-bw .print-only-block:not(.report-card) h2{border-bottom-color:#000 !important;}
+}
 </style>
 </head>
 <body>
@@ -6374,39 +6446,64 @@ function tplGradingMulti(school){
 }
 
 /* --- Students --- */
-let stuFilterGrade = '', stuSearch = '', stuFilterGender = '';
+let stuFilterGrade = '', stuSearch = '', stuFilterGender = '', stuMissing = '', stuSort = 'grade';
 function filteredStudents(school){
   const q = stuSearch.trim().toLowerCase();
   const g = school.classes.some(c=>c.id===stuFilterGrade) ? stuFilterGrade : '';
+  const miss = {adm:s=>!s.adm, pin:s=>!s.parentPin, phone:s=>!s.parentPhone, gender:s=>s.gender!=='M'&&s.gender!=='F'};
   return [...school.students].filter(s=>{
     if(g && s.classId!==g) return false;
     if(stuFilterGender){ if(stuFilterGender==='none'){ if(s.gender==='M'||s.gender==='F') return false; } else if(s.gender!==stuFilterGender) return false; }
-    if(q && !(String(s.name||'').toLowerCase().includes(q) || String(s.adm||'').toLowerCase().includes(q) || String(s.assessNo||'').toLowerCase().includes(q) || String(s.parentName||'').toLowerCase().includes(q))) return false;
+    if(stuMissing && miss[stuMissing] && !miss[stuMissing](s)) return false;
+    if(q && !(String(s.name||'').toLowerCase().includes(q) || String(s.adm||'').toLowerCase().includes(q) || String(s.assessNo||'').toLowerCase().includes(q) || String(s.parentName||'').toLowerCase().includes(q) || String(s.parentPhone||'').toLowerCase().includes(q))) return false;
     return true;
   }).sort((a,b)=>{
+    if(stuSort==='name') return String(a.name||'').localeCompare(String(b.name||''));
+    if(stuSort==='adm') return admOrName(a,b);
     const ca = school.classes.find(c=>c.id===a.classId), cb = school.classes.find(c=>c.id===b.classId);
-    const cn = (ca?ca.name:'').localeCompare(cb?cb.name:'');
+    const cn = (ca?ca.name:'').localeCompare(cb?cb.name:'', undefined, {numeric:true});
     if(cn!==0) return cn;
     return admOrName(a,b);
   });
 }
 function studentRowsHTML(school){
-  const list = filteredStudents(school);
-  return list.map(s=>{
-    const cls = school.classes.find(c=>c.id===s.classId);
-    return `<tr><td><input value="${escapeHtml(s.adm||'')}" placeholder="— none —" style="min-width:90px" onchange="updStudentAdm('${s.id}', this.value, this)"></td>
-    <td><input value="${escapeHtml(s.assessNo||'')}" placeholder="— none —" style="min-width:110px" onchange="updStudentAssessNo('${s.id}', this.value, this)"></td>
-    <td><input value="${escapeHtml(s.name)}" style="min-width:170px" onchange="updStudentName('${s.id}', this.value, this)"></td>
-    <td><select onchange="updStudentGender('${s.id}', this.value)"><option value="" ${!s.gender?'selected':''}>— Not set —</option><option value="M" ${s.gender==='M'?'selected':''}>Boy</option><option value="F" ${s.gender==='F'?'selected':''}>Girl</option></select></td>
+  const list = filteredStudents(school), pd = school.parentDetails!==false, grouped = stuSort==='grade';
+  if(!list.length) return `<tr><td colspan="8" class="small" style="padding:18px">${school.students.length?'No learners match your filter. Try clearing the search or filters.':'No learners yet. Use “➕ Add a learner” above.'}</td></tr>`;
+  const mc = v => v ? '' : ' stu-miss';
+  let out = '', lastG = null, n = 0;
+  list.forEach(s=>{
+    const cls = school.classes.find(c=>c.id===s.classId), gk = cls?cls.id:'';
+    if(grouped && gk!==lastG){
+      lastG = gk; n = 0;
+      const inG = list.filter(x=>(x.classId||'')===gk || (!cls && !school.classes.some(c=>c.id===x.classId)));
+      const bo = inG.filter(x=>x.gender==='M').length, gi = inG.filter(x=>x.gender==='F').length;
+      out += `<tr class="stu-grp"><td colspan="8">🏷 ${cls?escapeHtml(cls.name):'Unassigned'} <span>· ${inG.length} learner(s) · ${bo} boys · ${gi} girls</span></td></tr>`;
+    }
+    n++;
+    out += `<tr class="stu-row"><td class="stu-n">${n}</td>
+    <td><input class="${mc(s.adm).trim()}" value="${escapeHtml(s.adm||'')}" placeholder="Adm no." style="min-width:80px" onchange="updStudentAdm('${s.id}', this.value, this)"></td>
+    <td class="stu-name"><input value="${escapeHtml(s.name)}" style="min-width:170px;font-weight:600" onchange="updStudentName('${s.id}', this.value, this)"></td>
+    <td><select class="${mc(s.gender==='M'||s.gender==='F').trim()}" onchange="updStudentGender('${s.id}', this.value)"><option value="" ${!s.gender?'selected':''}>—</option><option value="M" ${s.gender==='M'?'selected':''}>Boy</option><option value="F" ${s.gender==='F'?'selected':''}>Girl</option></select></td>
     <td><select onchange="updStudentClass('${s.id}', this.value, this)">${cls?'':'<option value="" selected>— Unassigned —</option>'}${school.classes.map(c=>`<option value="${c.id}" ${c.id===s.classId?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></td>
-    <td><input value="${escapeHtml(s.parentPin||'')}" placeholder="— not set —" style="min-width:90px" inputmode="numeric" onchange="updStudentPin('${s.id}', this.value, this)"> <button class="ghost" title="Generate a new PIN" onclick="regenStudentPin('${s.id}')">🔁</button></td>
-    <td><input value="${escapeHtml(s.parentPhone||'')}" placeholder="e.g. 0712345678" style="min-width:120px" inputmode="tel" onchange="updStudentPhone('${s.id}', this.value, this)"></td>
-    ${school.parentDetails!==false?`<td><input value="${escapeHtml(s.parentName||'')}" placeholder="Parent / guardian" style="min-width:150px" onchange="updStudentParent('${s.id}','parentName',this.value,this)"></td>
-    <td><select onchange="updStudentParent('${s.id}','parentRel',this.value,this)">${['','Mother','Father','Guardian','Other'].map(o=>`<option value="${o}" ${(s.parentRel||'')===o?'selected':''}>${o||'- Relationship -'}</option>`).join('')}</select></td>
-    <td><input value="${escapeHtml(s.parentId||'')}" placeholder="ID / passport no." style="min-width:110px" onchange="updStudentParent('${s.id}','parentId',this.value,this)"></td>
-    <td><input value="${escapeHtml(s.parentPhone2||'')}" placeholder="Other phone" style="min-width:110px" inputmode="tel" onchange="updStudentParent('${s.id}','parentPhone2',this.value,this)"></td>`:''}
-    <td><button class="danger" onclick="delStudent('${s.id}')">✕</button></td></tr>`;
-  }).join('') || `<tr><td colspan="${school.parentDetails!==false?12:8}" class="small">${school.students.length?'No learners match your filter.':'No learners yet.'}</td></tr>`;
+    <td><input class="${mc(s.parentPhone).trim()}" value="${escapeHtml(s.parentPhone||'')}" placeholder="07…" style="min-width:110px" inputmode="tel" onchange="updStudentPhone('${s.id}', this.value, this)"></td>
+    <td style="white-space:nowrap"><input class="${mc(s.parentPin).trim()}" value="${escapeHtml(s.parentPin||'')}" placeholder="PIN" style="width:76px" inputmode="numeric" onchange="updStudentPin('${s.id}', this.value, this)"> <button class="ghost" title="Generate a new PIN" onclick="regenStudentPin('${s.id}')">🔁</button></td>
+    <td style="white-space:nowrap"><button class="ghost" title="More details" onclick="stuToggle(this)">▾ More</button> <button class="danger" title="Delete learner" onclick="delStudent('${s.id}')">✕</button></td></tr>
+    <tr class="stu-more" style="display:none"><td></td><td colspan="7"><div class="stu-moregrid">
+      <label>KNEC Assessment No.<input value="${escapeHtml(s.assessNo||'')}" placeholder="— none —" onchange="updStudentAssessNo('${s.id}', this.value, this)"></label>
+      ${pd?`<label>Parent / Guardian<input value="${escapeHtml(s.parentName||'')}" placeholder="Name" onchange="updStudentParent('${s.id}','parentName',this.value,this)"></label>
+      <label>Relationship<select onchange="updStudentParent('${s.id}','parentRel',this.value,this)">${['','Mother','Father','Guardian','Other'].map(o=>`<option value="${o}" ${(s.parentRel||'')===o?'selected':''}>${o||'—'}</option>`).join('')}</select></label>
+      <label>Parent ID / Passport<input value="${escapeHtml(s.parentId||'')}" placeholder="ID no." onchange="updStudentParent('${s.id}','parentId',this.value,this)"></label>
+      <label>Other phone<input value="${escapeHtml(s.parentPhone2||'')}" placeholder="Second contact" inputmode="tel" onchange="updStudentParent('${s.id}','parentPhone2',this.value,this)"></label>`:''}
+    </div></td></tr>`;
+  });
+  return out;
+}
+function stuToggle(btn){ const r = btn.closest('tr').nextElementSibling; const open = r.style.display==='none'; r.style.display = open?'':'none'; btn.textContent = open?'▴ Less':'▾ More'; }
+function stuPick(k,v){ if(k==='grade') stuFilterGrade=v; else if(k==='gender') stuFilterGender=v; else if(k==='missing') stuMissing=v; else if(k==='sort') stuSort=v; renderStudentRows(); const sc=currentSchool(); if(sc&&qs('#stuChips')) qs('#stuChips').innerHTML=stuChipsHTML(sc); }
+function stuChipsHTML(school){
+  const cnt = id => school.students.filter(s=>s.classId===id).length, un = school.students.filter(s=>!school.classes.some(c=>c.id===s.classId)).length;
+  const chip = (id,label,n) => `<button class="stu-chip ${stuFilterGrade===id?'on':''}" onclick="stuPick('grade','${id}');var f=document.getElementById('stuFilter');if(f)f.value='${id}'">${label} <b>${n}</b></button>`;
+  return chip('', 'All', school.students.length) + school.classes.map(c=>chip(c.id, escapeHtml(c.name), cnt(c.id))).join('') + (un?`<span class="small" style="align-self:center">· ${un} unassigned</span>`:'');
 }
 function stuCountText(school){
   const l = filteredStudents(school), b = l.filter(s=>s.gender==='M').length, g = l.filter(s=>s.gender==='F').length, u = l.length-b-g;
@@ -6419,37 +6516,67 @@ function renderStudentRows(){
   if(qs('#stuCount')) qs('#stuCount').textContent = stuCountText(school);
 }
 function tplStudents(school){
-  return `<div class="card"><h2>🧑‍🎓 Learners</h2>
-  <label class="small" style="display:flex;gap:6px;align-items:center;margin:2px 0 8px"><input type="checkbox" style="width:auto;margin:0" ${school.parentDetails!==false?'checked':''} onchange="setParentDetails(this.checked)"> <b>Record parent / guardian details</b> (name, relationship, ID number, second phone) &mdash; all optional. Untick if your school doesn't want them: the columns and fields are hidden and nothing is deleted.</label>
-  <div class="row">
-    <div><label>Admission No. <span class="small">(optional)</span></label><input id="stuAdm" placeholder="Leave blank if not assigned yet"></div>
-    <div><label>KNEC Assessment No. <span class="small">(optional)</span></label><input id="stuAssessNo" placeholder="e.g. for KPSEA/KJSEA"></div>
+  const pd = school.parentDetails!==false;
+  return `<style>
+  .stu-chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+  .stu-chip{background:#eef2f7;color:var(--navy);border:1px solid var(--border);box-shadow:none;padding:6px 12px;border-radius:20px;font-weight:600}
+  .stu-chip b{background:var(--navy);color:#fff;border-radius:10px;padding:1px 7px;margin-left:4px;font-size:11px}
+  .stu-chip.on{background:var(--navy);color:#fff}.stu-chip.on b{background:var(--gold);color:#3a2a06}
+  .stu-wrap{max-height:70vh;overflow:auto;border:1px solid var(--border);border-radius:10px}
+  .stu-wrap table{border-collapse:separate;border-spacing:0;min-width:820px}
+  .stu-wrap th{position:sticky;top:0;z-index:3;background:#e7edf5}
+  .stu-wrap td,.stu-wrap th{border:0;border-bottom:1px solid #e3e9f0;text-align:left}
+  .stu-wrap td.stu-name{position:sticky;left:0;z-index:2;background:#fff}
+  .stu-n{color:#7a8a9a;width:34px;text-align:center!important;font-size:12px}
+  .stu-grp td{background:var(--navy)!important;color:#fff;font-weight:700;position:sticky;top:33px;z-index:2;padding:7px 10px}
+  .stu-grp td span{font-weight:400;opacity:.85;font-size:12px}
+  .stu-miss{background:#fff6e5!important;border-color:var(--gold)!important}
+  .stu-moregrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;font-size:12px;color:#5a6b7c;background:#f6f9fc;padding:8px;border-radius:8px}
+  details.stu-box{border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:8px 0;background:#fbfcfe}
+  details.stu-box summary{cursor:pointer;font-weight:700;color:var(--navy)}
+  </style>
+  <div class="card"><h2>🧑‍🎓 Learners</h2>
+  <div class="stu-chips" id="stuChips">${stuChipsHTML(school)}</div>
+
+  <details class="stu-box"><summary>➕ Add a learner</summary>
+  <div class="row" style="margin-top:8px">
     <div><label>Learner Name</label><input id="stuName"></div>
+    <div><label>Admission No. <span class="small">(optional)</span></label><input id="stuAdm" placeholder="Leave blank if not assigned yet"></div>
     <div><label>Gender</label><select id="stuGender"><option value="">— Select —</option><option value="M">Boy</option><option value="F">Girl</option></select></div>
-    <div><label>Grade</label><select id="stuClass">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
-    <div><label>Parent Phone <span class="small">(optional, for SMS)</span></label><input id="stuPhone" placeholder="e.g. 0712345678"></div>
-    ${school.parentDetails!==false?`<div><label>Parent / Guardian Name <span class="small">(optional)</span></label><input id="stuParent" placeholder="e.g. Mary Wanjiku"></div>
-    <div><label>Relationship <span class="small">(optional)</span></label><select id="stuRel"><option value="">- Select -</option><option>Mother</option><option>Father</option><option>Guardian</option><option>Other</option></select></div>
-    <div><label>Parent ID / Passport No. <span class="small">(optional)</span></label><input id="stuParentId" placeholder="Leave blank if not needed"></div>
-    <div><label>Other Phone <span class="small">(optional)</span></label><input id="stuPhone2" placeholder="Second contact"></div>`:''}
+    <div><label>Grade</label><select id="stuClass">${school.classes.map(c=>`<option value="${c.id}" ${c.id===stuFilterGrade?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
+    <div><label>Parent Phone <span class="small">(for SMS)</span></label><input id="stuPhone" placeholder="e.g. 0712345678"></div>
+    <div><label>KNEC Assessment No. <span class="small">(optional)</span></label><input id="stuAssessNo" placeholder="e.g. for KPSEA/KJSEA"></div>
+    ${pd?`<div><label>Parent / Guardian Name</label><input id="stuParent" placeholder="e.g. Mary Wanjiku"></div>
+    <div><label>Relationship</label><select id="stuRel"><option value="">- Select -</option><option>Mother</option><option>Father</option><option>Guardian</option><option>Other</option></select></div>
+    <div><label>Parent ID / Passport No.</label><input id="stuParentId" placeholder="Leave blank if not needed"></div>
+    <div><label>Other Phone</label><input id="stuPhone2" placeholder="Second contact"></div>`:''}
     <div style="align-self:flex-end"><button onclick="addStudent()">Add Learner</button></div>
-  </div>
-  <p class="small">Bulk paste — one learner per line, "Admission,Name,Gender,ParentPhone" — Gender is <b>Boy/Girl</b> (or M/F), and may be left out. Blank admission or phone OK:</p>
+  </div></details>
+
+  <details class="stu-box"><summary>📋 Add many learners at once (bulk paste)</summary>
+  <p class="small">One learner per line, “Admission,Name,Gender,ParentPhone”. Gender is <b>Boy/Girl</b> (or M/F) and may be left out. Blank admission or phone is OK. They go into the grade chosen in “Add a learner” above.</p>
   <textarea id="bulkStu" rows="3" placeholder="1001,John Mwangi,Boy,0712345678
 ,Faith Wanjiru,Girl,
 Amina Hassan"></textarea>
-  <label class="small" style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="checkbox" id="bulkHasAssess" style="width:auto;margin:0"> My lines have a <b>KNEC Assessment No.</b> as the 2nd column — "Admission,AssessmentNo,Name,Gender,ParentPhone"</label>
-  ${school.parentDetails!==false?'<label class="small" style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="checkbox" id="bulkHasParent" style="width:auto;margin:0"> My lines <b>end with Parent Name and Parent ID</b> (the last two columns, either may be left empty) &mdash; e.g. "1001,John Mwangi,Boy,0712345678,Mary Wanjiku,12345678"</label>':''}
-  <div class="flexbtns"><button class="ghost" onclick="bulkAddStudents()">Add Bulk to Selected Grade</button></div>
-  <p class="small" style="margin-top:12px">Edit a learner directly in the table below, including their <b>Parent PIN</b> — the fourth Parent Portal login factor. Hand each learner's PIN to that learner's parent directly (not on a public notice); it's never shown anywhere else in the app. Moving grades keeps their past results filed under the old one.</p>
-  <div class="flexbtns"><button class="ghost" onclick="fillMissingParentPins()">🔑 Generate PINs for learners without one</button></div>
-  <div class="row">
-    <div><label>Filter by Grade</label><select id="stuFilter" onchange="stuFilterGrade=this.value;renderStudentRows()"><option value="">All grades</option>${school.classes.map(c=>`<option value="${c.id}" ${c.id===stuFilterGrade?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
-    <div><label>Filter by Gender</label><select id="stuFilterG" onchange="stuFilterGender=this.value;renderStudentRows()"><option value="">All</option><option value="M" ${stuFilterGender==='M'?'selected':''}>Boys</option><option value="F" ${stuFilterGender==='F'?'selected':''}>Girls</option><option value="none" ${stuFilterGender==='none'?'selected':''}>Gender not set</option></select></div>
-    <div><label>Search name / admission / assessment no. / parent</label><input id="stuSearch" value="${escapeHtml(stuSearch)}" oninput="stuSearch=this.value;debStuRows()" placeholder="Type to search…"></div>
+  <label class="small" style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="checkbox" id="bulkHasAssess" style="width:auto;margin:0"> My lines have a <b>KNEC Assessment No.</b> as the 2nd column</label>
+  ${pd?'<label class="small" style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="checkbox" id="bulkHasParent" style="width:auto;margin:0"> My lines <b>end with Parent Name and Parent ID</b> (last two columns, either may be empty)</label>':''}
+  <div class="flexbtns"><button class="ghost" onclick="bulkAddStudents()">Add Bulk to Selected Grade</button></div></details>
+
+  <details class="stu-box"><summary>⚙️ Settings &amp; Parent PINs</summary>
+  <label class="small" style="display:flex;gap:6px;align-items:center;margin:8px 0"><input type="checkbox" style="width:auto;margin:0" ${pd?'checked':''} onchange="setParentDetails(this.checked)"> <b>Record parent / guardian details</b> (name, relationship, ID number, second phone), all optional. Untick to hide them; nothing is deleted.</label>
+  <p class="small">Each learner's <b>Parent PIN</b> is the fourth Parent Portal login factor. Hand it to that parent directly, not on a public notice. Moving a learner to another grade keeps their past results filed under the old one.</p>
+  <div class="flexbtns"><button class="ghost" onclick="fillMissingParentPins()">🔑 Generate PINs for learners without one</button></div></details>
+
+  <div class="row" style="margin-top:10px">
+    <div style="flex:2 1 220px"><label>🔍 Search name / admission / phone / parent</label><input id="stuSearch" value="${escapeHtml(stuSearch)}" oninput="stuSearch=this.value;debStuRows()" placeholder="Type to find a learner…"></div>
+    <div><label>Grade</label><select id="stuFilter" onchange="stuPick('grade',this.value)"><option value="">All grades</option>${school.classes.map(c=>`<option value="${c.id}" ${c.id===stuFilterGrade?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
+    <div><label>Gender</label><select id="stuFilterG" onchange="stuPick('gender',this.value)"><option value="">All</option><option value="M" ${stuFilterGender==='M'?'selected':''}>Boys</option><option value="F" ${stuFilterGender==='F'?'selected':''}>Girls</option><option value="none" ${stuFilterGender==='none'?'selected':''}>Gender not set</option></select></div>
+    <div><label>Show</label><select onchange="stuPick('missing',this.value)"><option value="">Everyone</option><option value="adm" ${stuMissing==='adm'?'selected':''}>Missing admission no.</option><option value="phone" ${stuMissing==='phone'?'selected':''}>Missing parent phone</option><option value="pin" ${stuMissing==='pin'?'selected':''}>Missing parent PIN</option><option value="gender" ${stuMissing==='gender'?'selected':''}>Missing gender</option></select></div>
+    <div><label>Sort by</label><select onchange="stuPick('sort',this.value)"><option value="grade" ${stuSort==='grade'?'selected':''}>Grade, then Adm no.</option><option value="adm" ${stuSort==='adm'?'selected':''}>Admission no.</option><option value="name" ${stuSort==='name'?'selected':''}>Name A–Z</option></select></div>
   </div>
   <p class="small" id="stuCount">${stuCountText(school)}</p>
-  <table style="margin-top:6px"><tr><th>Adm No.</th><th>Assess. No.</th><th>Name</th><th>Gender</th><th>Grade</th><th>Parent PIN</th><th>Parent Phone</th>${school.parentDetails!==false?'<th>Parent / Guardian Name</th><th>Relationship</th><th>Parent ID No.</th><th>Other Phone</th>':''}<th>Actions</th></tr><tbody id="stuRows">${studentRowsHTML(school)}</tbody></table></div>`;
+  <div class="stu-wrap"><table><thead><tr><th>#</th><th>Adm No.</th><th>Name</th><th>Gender</th><th>Grade</th><th>Parent Phone</th><th>Parent PIN</th><th>Actions</th></tr></thead><tbody id="stuRows">${studentRowsHTML(school)}</tbody></table></div>
+  <p class="small">Tip: highlighted boxes are missing information. Tap <b>▾ More</b> on a learner for assessment no. and parent details.</p></div>`;
 }
 // Optional parent/guardian details (name, relationship, ID/passport number, second phone). Kept in the DOS
 // view only: the ID number is never printed on reports and never sent to the Parent Portal.
@@ -9891,7 +10018,7 @@ function printDefaulters(){
   const total = list.reduce((t,x)=>t+x.b,0);
   const w = printWin();
   if(!w){ toast('Allow pop-ups to print','err'); return; }
-  w.document.write(`<html><head><title>Arrears List</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}${LH_CSS}h2{margin:0 0 4px;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:10px}th,td{border:1px solid #333;padding:5px 7px;text-align:left}th{background:#123a63;color:#fff}td.r{text-align:right}</style></head><body>
+  w.document.write(`<html><head><title>Arrears List</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}${LH_CSS}h2{margin:0 0 4px;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:10px}th,td{border:1px solid #333;padding:5px 7px;text-align:left}th{background:#123a63;color:#fff}td.r{text-align:right}body{line-height:1.42;color:#182b40}h1,h2,h3{font-family:'Segoe UI',Arial,sans-serif;font-weight:800;letter-spacing:.4px;line-height:1.2}h2{text-transform:uppercase;border-bottom:2px solid #b88a38;padding-bottom:7px;margin-bottom:8px!important}h3{border-left:3px solid #b88a38;padding-left:8px}th{font-weight:800;letter-spacing:.2px}td{line-height:1.35}@media print{thead{display:table-header-group}tr{break-inside:avoid}h1,h2,h3{break-after:avoid}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>
   ${schoolLetterhead(school)}<h3 style="text-align:center;color:#123a63;margin:4px 0 8px;font-size:17px;letter-spacing:.5px">FEE ARREARS LIST</h3><div>${escapeHtml(exam.name)} (${escapeHtml(String(exam.term))} ${escapeHtml(String(exam.year))}) · Printed ${new Date().toLocaleDateString()}</div>
   <table><tr><th>#</th><th>Adm No.</th><th>Name</th><th>Arrears (KES)</th><th>Next Term Fee (KES)</th></tr>
   ${list.map((x,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(x.s.adm||'')}</td><td>${escapeHtml(x.s.name)}</td><td class="r">${x.b.toLocaleString()}</td><td class="r">${x.n!=null?Number(x.n).toLocaleString():''}</td></tr>`).join('')||'<tr><td colspan="5">No learners owing.</td></tr>'}
@@ -10045,7 +10172,7 @@ function exportCollections(){
 function printCollections(){
   const d = collectionsData(); const nm = id=>(finRaw(d.school).find(x=>x.id===id)||{}).name||'—';
   const w = printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
-  w.document.write(`<html><head><title>Cash Book</title><style>body{font-family:Arial;padding:20px;font-size:12px}h2{margin:0;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #333;padding:4px 6px;text-align:left}th{background:#123a63;color:#fff}.r{text-align:right}</style></head><body>
+  w.document.write(`<html><head><title>Cash Book</title><style>body{font-family:Arial;padding:20px;font-size:12px}h2{margin:0;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #333;padding:4px 6px;text-align:left}th{background:#123a63;color:#fff}.r{text-align:right}body{line-height:1.42;color:#182b40}h1,h2,h3{font-family:'Segoe UI',Arial,sans-serif;font-weight:800;letter-spacing:.4px;line-height:1.2}h2{text-transform:uppercase;border-bottom:2px solid #b88a38;padding-bottom:7px;margin-bottom:8px!important}h3{border-left:3px solid #b88a38;padding-left:8px}th{font-weight:800;letter-spacing:.2px}td{line-height:1.35}@media print{thead{display:table-header-group}tr{break-inside:avoid}h1,h2,h3{break-after:avoid}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>
   <h2>${escapeHtml(d.school.name)} — Cash Book</h2><div>${d.f} to ${d.t} · Printed ${new Date().toLocaleDateString()}</div>
   <p><b>Collected:</b> KES ${d.income.toLocaleString()} &nbsp; <b>Expenses:</b> KES ${d.spent.toLocaleString()} &nbsp; <b>Net:</b> KES ${(d.income-d.spent).toLocaleString()}</p>
   <p>${Object.keys(d.byMethod).map(k=>`${escapeHtml(k)}: KES ${d.byMethod[k].toLocaleString()}`).join(' · ')}</p>
@@ -10078,7 +10205,7 @@ function printStatement(){
   const pays = school.payments.filter(p=>p.studentId===sid && !p.void).sort((a,b)=>a.date<b.date?-1:1);
   const paid = pays.reduce((t,p)=>t+p.amount,0), r = exam ? (recs[sid]||{}) : {};
   const w = printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
-  w.document.write(`<html><head><title>Fee Statement</title><style>body{font-family:Arial;padding:24px;font-size:13px}${LH_CSS}h2{margin:0;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:10px}th,td{border:1px solid #333;padding:5px 7px;text-align:left}th{background:#123a63;color:#fff}.r{text-align:right}</style></head><body>
+  w.document.write(`<html><head><title>Fee Statement</title><style>body{font-family:Arial;padding:24px;font-size:13px}${LH_CSS}h2{margin:0;color:#123a63}table{border-collapse:collapse;width:100%;margin-top:10px}th,td{border:1px solid #333;padding:5px 7px;text-align:left}th{background:#123a63;color:#fff}.r{text-align:right}body{line-height:1.42;color:#182b40}h1,h2,h3{font-family:'Segoe UI',Arial,sans-serif;font-weight:800;letter-spacing:.4px;line-height:1.2}h2{text-transform:uppercase;border-bottom:2px solid #b88a38;padding-bottom:7px;margin-bottom:8px!important}h3{border-left:3px solid #b88a38;padding-left:8px}th{font-weight:800;letter-spacing:.2px}td{line-height:1.35}@media print{thead{display:table-header-group}tr{break-inside:avoid}h1,h2,h3{break-after:avoid}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>
   ${schoolLetterhead(school)}<p style="text-align:center;font-size:17px;letter-spacing:.5px"><b>FEE STATEMENT</b> · Printed ${new Date().toLocaleDateString()}</p>
   <p>Learner: <b>${escapeHtml(st.name)}</b> · Adm No: <b>${escapeHtml(st.adm||'-')}</b></p>
   <table><tr><th>Date</th><th>Receipt</th><th>Method</th><th>Reference</th><th>Amount (KES)</th></tr>${pays.map(p=>`<tr><td>${escapeHtml(p.date)}</td><td>${escapeHtml(p.receiptNo)}</td><td>${escapeHtml(p.method)}</td><td>${escapeHtml(p.ref||'-')}</td><td class="r">${p.amount.toLocaleString()}</td></tr>`).join('')||'<tr><td colspan="5">No payments recorded.</td></tr>'}
@@ -10313,7 +10440,7 @@ function printFeeSheet(){
   const comp = (st.items||[]).filter(i=>!i.optional), opt = (st.items||[]).filter(i=>i.optional), fm = n=>Number(n).toLocaleString();
   const total = st.amount + comp.reduce((t,i)=>t+i.amount,0);
   const w = printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
-  w.document.write(`<html><head><title>Fee Structure</title><style>body{font-family:Arial;padding:30px;font-size:14px;max-width:640px;margin:auto}${LH_CSS}h2{margin:0;color:#123a63}.c{color:#555;margin:2px 0}table{border-collapse:collapse;width:100%;margin:8px 0 14px}th,td{border:1px solid #333;padding:7px 9px;text-align:left}th{background:#e8eef5}.r{text-align:right}</style></head><body>
+  w.document.write(`<html><head><title>Fee Structure</title><style>body{font-family:Arial;padding:30px;font-size:14px;max-width:640px;margin:auto}${LH_CSS}h2{margin:0;color:#123a63}.c{color:#555;margin:2px 0}table{border-collapse:collapse;width:100%;margin:8px 0 14px}th,td{border:1px solid #333;padding:7px 9px;text-align:left}th{background:#e8eef5}.r{text-align:right}body{line-height:1.42;color:#182b40}h1,h2,h3{font-family:'Segoe UI',Arial,sans-serif;font-weight:800;letter-spacing:.4px;line-height:1.2}h2{text-transform:uppercase;border-bottom:2px solid #b88a38;padding-bottom:7px;margin-bottom:8px!important}h3{border-left:3px solid #b88a38;padding-left:8px}th{font-weight:800;letter-spacing:.2px}td{line-height:1.35}@media print{thead{display:table-header-group}tr{break-inside:avoid}h1,h2,h3{break-after:avoid}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>
   ${schoolLetterhead(school)}
   <p><b>FEE STRUCTURE</b> — ${escapeHtml(cls)} · ${escapeHtml(String(exam.term))} ${escapeHtml(String(exam.year))}</p>
   <table><tr><th>Compulsory fees</th><th class="r">KES</th></tr><tr><td>Tuition</td><td class="r">${fm(st.amount)}</td></tr>${comp.map(i=>`<tr><td>${escapeHtml(i.name)}</td><td class="r">${fm(i.amount)}</td></tr>`).join('')}<tr><th>Total per term</th><th class="r">${fm(total)}</th></tr></table>
@@ -10340,7 +10467,7 @@ function printInvoices(onlySid){
     ${school.payInstructions?`<p style="margin-top:12px"><b>How to pay:</b><br>${escapeHtml(school.payInstructions).replace(/\n/g,'<br>')}</p>`:''}<p class="c" style="margin-top:14px">Please pay before the term opens and keep your receipt. Thank you.</p></div>`;
   }).join('');
   const w = printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
-  w.document.write(`<html><head><title>Invoices</title><style>body{font-family:Arial;font-size:13px}${LH_CSS}.pg{padding:26px;page-break-after:always;max-width:640px;margin:auto}.pg:last-child{page-break-after:auto}h2{margin:0;color:#123a63}.c{color:#555;margin:2px 0}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #333;padding:6px 8px;text-align:left}th{background:#e8eef5}.r{text-align:right}</style></head><body>${pages}</body></html>`);
+  w.document.write(`<html><head><title>Invoices</title><style>body{font-family:Arial;font-size:13px}${LH_CSS}.pg{padding:26px;page-break-after:always;max-width:640px;margin:auto}.pg:last-child{page-break-after:auto}h2{margin:0;color:#123a63}.c{color:#555;margin:2px 0}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #333;padding:6px 8px;text-align:left}th{background:#e8eef5}.r{text-align:right}body{line-height:1.42;color:#182b40}h1,h2,h3{font-family:'Segoe UI',Arial,sans-serif;font-weight:800;letter-spacing:.4px;line-height:1.2}h2{text-transform:uppercase;border-bottom:2px solid #b88a38;padding-bottom:7px;margin-bottom:8px!important}h3{border-left:3px solid #b88a38;padding-left:8px}th{font-weight:800;letter-spacing:.2px}td{line-height:1.35}@media print{thead{display:table-header-group}tr{break-inside:avoid}h1,h2,h3{break-after:avoid}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pages}</body></html>`);
   printWinGo(w);
 }
 function feeShowOnReport(school, classId, term, year){
@@ -10748,7 +10875,7 @@ function renderClosing(){ const d = closingData(); qs('#clArea').innerHTML = d ?
 function printClosing(){
   const d = closingData(); if(!d){ toast('No term selected','err'); return; }
   const w = printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
-  w.document.write(`<html><head><title>Closing Report</title><style>body{font-family:Arial;padding:22px;font-size:12px}h3{color:#123a63;margin:0 0 8px}table{border-collapse:collapse;width:100%;margin:8px 0}th,td{border:1px solid #333;padding:4px 7px;text-align:left}th{background:#e8eef5}</style></head><body>${closingHTML(d)}<p style="color:#666">Printed ${new Date().toLocaleString()}</p></body></html>`);
+  w.document.write(`<html><head><title>Closing Report</title><style>body{font-family:Arial;padding:22px;font-size:12px}h3{color:#123a63;margin:0 0 8px}table{border-collapse:collapse;width:100%;margin:8px 0}th,td{border:1px solid #333;padding:4px 7px;text-align:left}th{background:#e8eef5}body{line-height:1.42;color:#182b40}h1,h2,h3{font-family:'Segoe UI',Arial,sans-serif;font-weight:800;letter-spacing:.4px;line-height:1.2}h2{text-transform:uppercase;border-bottom:2px solid #b88a38;padding-bottom:7px;margin-bottom:8px!important}h3{border-left:3px solid #b88a38;padding-left:8px}th{font-weight:800;letter-spacing:.2px}td{line-height:1.35}@media print{thead{display:table-header-group}tr{break-inside:avoid}h1,h2,h3{break-after:avoid}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${closingHTML(d)}<p style="color:#666">Printed ${new Date().toLocaleString()}</p></body></html>`);
   printWinGo(w);
 }
 function feeCtx(){
@@ -10799,7 +10926,7 @@ function printReceipt(id){
   const st = finRaw(school).find(x=>x.id===p.studentId)||{}; const exam = finExams(school).find(e=>e.id===p.examId)||{};
   const w = printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
   const row=(a,b)=>`<tr><td style="color:#555;width:38%">${a}</td><td><b>${b}</b></td></tr>`;
-  w.document.write(`<html><head><title>${escapeHtml(p.receiptNo)}</title><style>body{font-family:Arial,sans-serif;max-width:420px;margin:20px auto;padding:18px;border:2px solid #123a63;border-radius:8px;font-size:13px}${LH_CSS}h2{margin:0;color:#123a63;text-align:center}.c{text-align:center;color:#555;margin:2px 0}table{width:100%;border-collapse:collapse;margin-top:10px}td{padding:6px 4px;border-bottom:1px dotted #bbb}.amt{font-size:20px;text-align:center;margin:12px 0;color:#1f8a4c}</style></head><body>
+  w.document.write(`<html><head><title>${escapeHtml(p.receiptNo)}</title><style>body{font-family:Arial,sans-serif;max-width:420px;margin:20px auto;padding:18px;border:2px solid #123a63;border-radius:8px;font-size:13px}${LH_CSS}h2{margin:0;color:#123a63;text-align:center}.c{text-align:center;color:#555;margin:2px 0}table{width:100%;border-collapse:collapse;margin-top:10px}td{padding:6px 4px;border-bottom:1px dotted #bbb}.amt{font-size:20px;text-align:center;margin:12px 0;color:#1f8a4c}body{line-height:1.42;color:#182b40}h1,h2,h3{font-family:'Segoe UI',Arial,sans-serif;font-weight:800;letter-spacing:.4px;line-height:1.2}h2{text-transform:uppercase;border-bottom:2px solid #b88a38;padding-bottom:7px;margin-bottom:8px!important}h3{border-left:3px solid #b88a38;padding-left:8px}th{font-weight:800;letter-spacing:.2px}td{line-height:1.35}@media print{thead{display:table-header-group}tr{break-inside:avoid}h1,h2,h3{break-after:avoid}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>
   ${schoolLetterhead(school,true)}<p class="c"><b>FEE PAYMENT RECEIPT</b></p>
   <div class="amt"><b>KES ${p.amount.toLocaleString()}</b></div>
   <table>${row('Receipt No.',escapeHtml(p.receiptNo))}${row('Date',escapeHtml(p.date))}${row('Learner',escapeHtml(st.name||'-'))}${row('Adm No.',escapeHtml(st.adm||'-'))}${row('Term',escapeHtml((exam.name||'')+' '+(exam.term||'')+' '+(exam.year||'')))}${row('Method',escapeHtml(p.method))}${row('Reference',escapeHtml(p.ref||'-'))}${row('Balance after payment', p.balanceAfter!=null ? 'KES '+p.balanceAfter.toLocaleString() : '—')}${row('Received by',escapeHtml(p.by))}</table>
