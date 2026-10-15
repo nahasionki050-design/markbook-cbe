@@ -178,6 +178,8 @@ tr:hover td{background:#eef4fb;}
 .rc-info{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin-bottom:14px;}
 .rc-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;background:#f5f8fc;border:1px solid var(--border);border-radius:10px;padding:12px 16px;font-size:14px;align-content:center;line-height:1.5;}
 .rc-info-grid b{color:var(--navy);}
+.rc-info-left{display:flex;gap:12px;align-items:stretch;min-width:0}.rc-info-left .rc-info-grid{flex:1;min-width:0}
+.rc-photo{width:86px;height:108px;object-fit:cover;border:1px solid #d5dfeb;border-radius:3px;align-self:center;flex:none;background:#fff}
 .rc-overall-box{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border:1px solid var(--navy);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
 .rc-overall-box .rc-grade{font-size:28px;font-weight:800;letter-spacing:.5px;color:#ffd54a;}
 .rc-overall-box .rc-sub{font-size:13px;opacity:.92;margin-top:4px;}
@@ -209,6 +211,8 @@ table.rc-table tr.rc-total td{background:#fdf6e5;font-weight:800;border-top:2px 
 .rc-chart-label{font-size:14px;font-weight:700;color:var(--navy);display:block;margin-bottom:6px;}
 .rc-sigrow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:28px;}
 .rc-sigrow.has-stamp{grid-template-columns:1fr 1fr 1fr 90px;gap:14px;}
+.report-card .rc-stamp.has-img{border:0;position:relative;overflow:visible;min-height:60px}
+.rc-stamp.has-img img{position:absolute;left:50%;top:50%;width:calc(100% * var(--ss,1.3));max-width:none;transform:translate(-50%,-50%) rotate(-6deg);mix-blend-mode:multiply;opacity:.93;pointer-events:none}
 .rc-stamp{border:1.5px dashed #8a9bad;border-radius:6px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#8a9bad;min-height:70px;}
 .rc-issued{font-size:12px;text-align:right;margin-top:4px;color:#345;}
 .sig-line{border-top:1px solid #333;margin-top:42px;padding-top:6px;font-size:14px;text-align:center;}
@@ -792,6 +796,13 @@ function ensureSchoolShape(s){
   });
   if(typeof s.hoiSignature !== 'string') s.hoiSignature = '';
   if(typeof s.logo !== 'string') s.logo = '';
+  // Rubber stamps: a school can keep several (e.g. Primary, Junior). Each {id,name,img,size,report,invoice,tt,grades[]}.
+  // grades = the grade ids it is used for; empty = all grades.
+  if(!Array.isArray(s.stamps)) s.stamps = [];
+  if(typeof s.stamp === 'string' && s.stamp){   // older single-stamp copy -> first stamp in the list
+    s.stamps.push({id:uid('stp_'), name:'School stamp', img:s.stamp, size:['S','M','L'].includes(s.stampSize)?s.stampSize:'M', report:s.stampReport!==false, invoice:s.stampInvoice!==false, tt:s.stampTT!==false, grades:[]});
+  }
+  s.stamp = '';
   if(typeof s.motto !== 'string') s.motto = '';
   if(typeof s.regNo !== 'string') s.regNo = '';
   // Every reader of school.teachers assumes t.assignments is an array (Teachers &
@@ -1284,7 +1295,7 @@ function buildParentSafeSchool(fullSchool, student){
   // Classmates' marks are needed (unnamed, via id) to compute this learner's position — but nothing
   // beyond id/name/adm/classId about them leaves the school.
   const students = fullSchool.students.filter(s=>s.id===student.id || s.classId===student.classId || [...examIds].some(id=>(fullSchool.marks[id]||{})[s.id]))
-    .map(s=>({id:s.id, name:s.name, adm:s.adm, classId:s.classId, gender:s.gender||'', assessNo: s.id===student.id ? (s.assessNo||'') : '', parentName: s.id===student.id ? (s.parentName||'') : ''}));
+    .map(s=>({id:s.id, name:s.name, adm:s.adm, classId:s.classId, gender:s.gender||'', assessNo: s.id===student.id ? (s.assessNo||'') : '', parentName: s.id===student.id ? (s.parentName||'') : '', photo: s.id===student.id ? (s.photo||'') : ''}));
   const teachers = fullSchool.teachers
     .filter(t=>t.assignments.some(a=>gradeIds.has(a.classId)))
     .map(t=>({id:t.id, name:t.name, assignments:t.assignments.filter(a=>gradeIds.has(a.classId))}));
@@ -1320,7 +1331,7 @@ function buildParentSafeSchool(fullSchool, student){
   return ensureSchoolShape({
     name: fullSchool.name, code: fullSchool.code, address: fullSchool.address,
     phone: fullSchool.phone, email: fullSchool.email, hoiName: fullSchool.hoiName, hoiSignature: fullSchool.hoiSignature,
-    logo: fullSchool.logo, motto: fullSchool.motto, regNo: fullSchool.regNo,
+    logo: fullSchool.logo, stamps: (fullSchool.stamps||[]).filter(t=>t.img && (!(t.grades||[]).length || [...gradeIds].some(g=>t.grades.includes(g)))), motto: fullSchool.motto, regNo: fullSchool.regNo,
     status: fullSchool.status, trialEndsAt: fullSchool.trialEndsAt,
     gradingSystem: fullSchool.gradingSystem, learningAreas: fullSchool.learningAreas,
     classes: fullSchool.classes.filter(c=>gradeIds.has(c.id)),
@@ -1328,7 +1339,7 @@ function buildParentSafeSchool(fullSchool, student){
     exams, marks, students, teachers, dos: [], attendance, assignments, remarks,
     // Fees: ONLY this learner's own record, payments and the fee structure of the exams in scope --
     // never a classmate's balance.
-    fees, payments, feeStructure, feeTerms: feeTermsOut.filter(t=>fees[t.id]), payInstructions: fullSchool.payInstructions||'', invoiceNote: fullSchool.invoiceNote||'', feeOnReport: fullSchool.feeOnReport!==false, feeOnReportRules: fullSchool.feeOnReportRules||[], notTaking: fullSchool.notTaking||{}, parentDetails: fullSchool.parentDetails!==false, pathwayShow: fullSchool.pathwayShow||'junior', pathwayMap: fullSchool.pathwayMap||{}, qrOnReport: fullSchool.qrOnReport!==false, areaComments: fullSchool.areaComments!==false
+    fees, payments, feeStructure, feeTerms: feeTermsOut.filter(t=>fees[t.id]), payInstructions: fullSchool.payInstructions||'', invoiceNote: fullSchool.invoiceNote||'', feeOnReport: fullSchool.feeOnReport!==false, feeOnReportRules: fullSchool.feeOnReportRules||[], notTaking: fullSchool.notTaking||{}, parentDetails: fullSchool.parentDetails!==false, photoOnReport: fullSchool.photoOnReport!==false, pathwayShow: fullSchool.pathwayShow||'junior', pathwayMap: fullSchool.pathwayMap||{}, qrOnReport: fullSchool.qrOnReport!==false, areaComments: fullSchool.areaComments!==false
   });
 }
 
@@ -4228,7 +4239,7 @@ function ttAutoFit(a){const prev=a.getAttribute('style')||'';a.style.cssText=pre
   });}catch(e){}
   a.setAttribute('style',prev);}
 function ttPrintHTML(html){flushPrintJobs();let a=qs('#ttPrintArea');if(!a){a=document.createElement('div');a.id='ttPrintArea';document.body.appendChild(a);}
-  try{const sc=currentSchool()||{};html=rcDedupeImages(html,[sc.logo,sc.hoiSignature]);}catch(e){}
+  try{const sc=currentSchool()||{};html=rcDedupeImages(html,[sc.logo,...(sc.stamps||[]).map(t=>t.img),sc.hoiSignature]);}catch(e){}
   const pt=ttUI.orient==='portrait';a.style.setProperty('--ttw',pt?'190mm':'277mm');a.style.setProperty('--tth',pt?'273mm':'187mm');a.classList.toggle('bw',ttInk()==='bw');a.innerHTML=html;ttAutoFit(a);
   const old=document.getElementById('ttPg');if(old)old.remove();const pg=document.createElement('style');pg.id='ttPg';pg.textContent=`@page{size:A4 ${pt?'portrait':'landscape'};margin:10mm}`;document.head.appendChild(pg);document.body.classList.add('ttprinting');
   onPrintDone(()=>{document.body.classList.remove('ttprinting');pg.remove();a.innerHTML='';},'tt');
@@ -4237,7 +4248,7 @@ const ttSub=p=>[p.name,p.label,p.from?'From '+p.from+(p.to?' to '+p.to:''):''].f
 function ttPage(s,title,sub,body,foot){const d=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
   return `<div class="ttpage"><div class="tthd">${s.logo?`<img class="ttlogo" src="${s.logo}" alt="">`:''}<div class="tthn"><div class="tts">${escapeHtml(s.name)}</div>${s.motto?`<div class="ttm ttmo"><i>${escapeHtml(s.motto)}</i></div>`:''}<div class="ttm ttc">${[s.address,s.phone&&'Tel: '+s.phone,s.email&&'Email: '+s.email].filter(Boolean).map(x=>'<span>'+escapeHtml(x)+'</span>').join('')}</div></div><div class="tttt"><div class="ttt">${title}</div><div class="ttm">${sub||''}</div></div></div>
   <div class="ttbd">${body}${foot?`<div class="ttkey">${foot}</div>`:''}</div>
-  <div class="ttft"><span>Printed: ${d}</span><span>Prepared by (DOS): ______________________</span><span>${escapeHtml(s.hoiName||'Head of Institution')}${s.hoiSignature?` <img src="${s.hoiSignature}" style="height:20px;vertical-align:middle">`:' Sign: ______________'}</span></div></div>`;}
+  <div class="ttft"><span>Printed: ${d}</span><span>Prepared by (DOS): ______________________</span><span>${escapeHtml(s.hoiName||'Head of Institution')}${s.hoiSignature?` <img src="${s.hoiSignature}" style="height:20px;vertical-align:middle">`:' Sign: ______________'}${(()=>{const t=stampFor(s,'tt','');return t?` <img src="${t.img}" style="height:${Math.round(stampPx(t)*.7)}px;vertical-align:middle;mix-blend-mode:multiply;transform:rotate(-6deg)">`:'';})()}</span></div></div>`;}
 function ttKey(s,p,c){const m={};Object.keys(p.cells[c]||{}).forEach(dk=>Object.values(p.cells[c][dk]||{}).forEach(v=>{if(!v||!v.a)return;const k=v.a+'|'+(v.t||'');m[k]=(m[k]||0)+1;}));
   const it=Object.keys(m).map(k=>{const [a,t]=k.split('|');return {a,t,n:m[k]};}).sort((x,y)=>ttAn(s,x.a).localeCompare(ttAn(s,y.a)));
   return it.length?'<b>Key:</b> '+it.map(x=>`${escapeHtml(ttAn(s,x.a))} — ${x.t?escapeHtml(ttTn(s,x.t)):'—'} (${x.n}/wk)`).join(' &nbsp;•&nbsp; '):'';}
@@ -5200,7 +5211,7 @@ function parentPrintStatement(pid){
     ${paid?`<tr><td>Payments received</td><td class="r">-${fm(paid)}</td></tr>`:''}
     <tr class="tot"><th>${bal<0?'CREDIT':'BALANCE DUE'}</th><th class="r">KES ${fm(Math.abs(bal))}</th></tr></table>
     ${pays.length?`<p class="lbl">Payments received</p><table class="it sm"><tr><th>Date</th><th>Receipt</th><th>Method</th><th class="r">Amount (KES)</th></tr>${pays.map(x=>`<tr><td>${escapeHtml(x.date||'')}</td><td>${escapeHtml(x.receiptNo||'')}</td><td>${escapeHtml(x.method||'')}</td><td class="r">${fm(x.amount)}</td></tr>`).join('')}</table>`:''}
-    ${sc.payInstructions?`<p class="lbl">How to pay</p><p class="box">${escapeHtml(sc.payInstructions).replace(/\n/g,'<br>')}</p>`:''}</div>`;
+    ${sc.payInstructions?`<p class="lbl">How to pay</p><p class="box">${escapeHtml(sc.payInstructions).replace(/\n/g,'<br>')}</p>`:''}${(()=>{const t=stampFor(sc,'invoice',stu.classId);return t?`<div style="text-align:right;margin-top:10px"><img src="${t.img}" alt="School stamp" style="max-height:${stampPx(t)}px;mix-blend-mode:multiply;transform:rotate(-6deg)"></div>`:'';})()}</div>`;
   parentOpenDoc(page, 'Fee Statement');
 }
 function parentHomeworkHTML(list){
@@ -5700,6 +5711,7 @@ function tplSchoolProfile(school){
     ${school.logo ? `<div style="margin-top:10px"><p class="small" style="margin:0 0 4px">Currently saved logo (as it appears on reports):</p><img src="${school.logo}" alt="School logo" style="max-width:120px;max-height:120px;border:1px solid var(--border);border-radius:6px;background:#fff;padding:4px"><div class="flexbtns" style="margin-top:8px"><button class="danger ghost" onclick="removeSchoolLogo()">✕ Remove Logo</button></div></div>` : '<p class="small">No logo uploaded yet.</p>'}
     <div id="profLogoMsg"></div>
   </div>
+  ${tplStampCard(school)}
   <div class="card">
     <h2>✍️ HOI Signature</h2>
     <p class="small">Sign in the box below (finger or mouse). It is cropped automatically and stamped on the signature line of every report card, assessment sheet and results analysis. Leave blank for a plain line to sign by hand.</p>
@@ -5733,6 +5745,109 @@ function shrinkImage(file, maxDim, mime, quality, ok, fail){
   img.onerror = ()=>{ URL.revokeObjectURL(url); fail(); };
   img.src = url;
 }
+const STAMP_INKS = {blue:[24,52,140], black:[25,25,30], purple:[88,40,130], red:[175,30,40]};
+// Turns a photographed/scanned stamp into clean ink: evens out shadows and paper colour, keeps only the
+// printed lines, recolours them to one ink colour with soft edges and a light inked texture.
+function stampInkPixels(a,w,h,mode){
+  const n=w*h, L=new Float32Array(n), hist=new Uint32Array(256);
+  for(let i=0;i<n;i++){ const v=0.299*a[i*4]+0.587*a[i*4+1]+0.114*a[i*4+2]; L[i]=v; hist[v|0]++; }
+  let acc=0,P=255; for(let k=0;k<256;k++){ acc+=hist[k]; if(acc>=n*0.9){ P=Math.max(k,1); break; } }
+  const bs=Math.max(16,Math.round(Math.max(w,h)/10)), gw=Math.ceil(w/bs), gh=Math.ceil(h/bs), G=new Float32Array(gw*gh);
+  for(let by=0;by<gh;by++) for(let bx=0;bx<gw;bx++){ let m=0; const y1=Math.min(h,(by+1)*bs), x1=Math.min(w,(bx+1)*bs);
+    for(let y=by*bs;y<y1;y++) for(let x=bx*bs;x<x1;x++){ const v=L[y*w+x]; if(v>m) m=v; }
+    G[by*gw+bx]= m<0.7*P ? P : m; }
+  const S=new Float32Array(n); let sr=0,sg=0,sb=0,sc=0;
+  for(let y=0;y<h;y++){ const gy=Math.min(gh-1,Math.max(0,(y+0.5)/bs-0.5)), y0=Math.floor(gy), y1=Math.min(gh-1,y0+1), fy=gy-y0;
+    for(let x=0;x<w;x++){ const gx=Math.min(gw-1,Math.max(0,(x+0.5)/bs-0.5)), x0=Math.floor(gx), x1=Math.min(gw-1,x0+1), fx=gx-x0;
+      const bg=(G[y0*gw+x0]*(1-fx)+G[y0*gw+x1]*fx)*(1-fy)+(G[y1*gw+x0]*(1-fx)+G[y1*gw+x1]*fx)*fy, i=y*w+x;
+      let s=(0.88-L[i]/Math.max(bg,1))/0.38; s=s<0?0:s>1?1:s; s=s*s*(3-2*s); S[i]=s;
+      if(s>0.6){ sr+=a[i*4]; sg+=a[i*4+1]; sb+=a[i*4+2]; sc++; } } }
+  if(sc<20) return null;
+  let ink=STAMP_INKS[mode];
+  if(!ink){ const r=sr/sc,g=sg/sc,b=sb/sc; ink=(Math.max(r,g,b)-Math.min(r,g,b))<30?[28,28,36]:[Math.round(r*0.8),Math.round(g*0.8),Math.round(b*0.8)]; }
+  let x0=w,y0=h,x1=0,y1=0;
+  for(let i=0;i<n;i++){ let al=S[i]<0.08?0:Math.round(255*S[i]*(0.9+0.1*Math.random()));
+    a[i*4]=ink[0]; a[i*4+1]=ink[1]; a[i*4+2]=ink[2]; a[i*4+3]=al;
+    if(al>40){ const px=i%w, py=(i/w)|0; if(px<x0)x0=px; if(px>x1)x1=px; if(py<y0)y0=py; if(py>y1)y1=py; } }
+  return x1>x0&&y1>y0?{x0,y0,x1,y1}:null;
+}
+
+function stampToInk(dataUrl, mode, done){
+  const im = new Image(); im.onerror = ()=>done(dataUrl);
+  im.onload = ()=>{ try{
+    const c=document.createElement('canvas'); c.width=im.width; c.height=im.height; const x=c.getContext('2d'); x.drawImage(im,0,0);
+    const d=x.getImageData(0,0,c.width,c.height), bb=stampInkPixels(d.data,c.width,c.height,mode);
+    if(!bb){ done(dataUrl); return; }
+    x.putImageData(d,0,0); const pad=6, sx=Math.max(0,bb.x0-pad), sy=Math.max(0,bb.y0-pad), w=Math.min(c.width-sx,bb.x1-bb.x0+1+pad*2), h=Math.min(c.height-sy,bb.y1-bb.y0+1+pad*2), o=document.createElement('canvas'); o.width=w; o.height=h;
+    o.getContext('2d').drawImage(c,sx,sy,w,h,0,0,w,h); done(o.toDataURL('image/png'));
+  }catch(e){ done(dataUrl); } };
+  im.src = dataUrl;
+}
+// Changes the ink colour of an already-saved stamp (keeps its shape and soft edges).
+function stampRecolor(dataUrl, mode, done){
+  const col = STAMP_INKS[mode]; if(!col){ done(dataUrl); return; }
+  const im = new Image(); im.onerror = ()=>done(dataUrl);
+  im.onload = ()=>{ try{ const c=document.createElement('canvas'); c.width=im.width; c.height=im.height; const x=c.getContext('2d'); x.drawImage(im,0,0);
+    const d=x.getImageData(0,0,c.width,c.height), a=d.data; for(let i=0;i<a.length;i+=4){ if(a[i+3]>0){ a[i]=col[0]; a[i+1]=col[1]; a[i+2]=col[2]; } }
+    x.putImageData(d,0,0); done(c.toDataURL('image/png')); }catch(e){ done(dataUrl); } };
+  im.src = dataUrl;
+}
+function stampScale(t){ return t.size==='S'?0.95:t.size==='L'?1.7:1.3; }
+function stampPx(t){ return t.size==='S'?60:t.size==='L'?110:84; }
+// Picks the stamp for a document: kind = 'report' | 'invoice' | 'tt'. A stamp ticked for the learner's grade wins;
+// otherwise a stamp with no grades ticked (= all grades) is used; otherwise none (the empty stamp box stays).
+function stampFor(sc, kind, classId){
+  const L=(sc.stamps||[]).filter(t=>t.img && t[kind]!==false); if(!L.length) return null;
+  if(classId){ return L.find(t=>(t.grades||[]).includes(classId)) || L.find(t=>!(t.grades||[]).length) || null; }
+  return L.find(t=>!(t.grades||[]).length) || L[0];
+}
+function tplStampCard(school){
+  const L=school.stamps||[], cls=school.classes||[], sel='style="width:auto"';
+  const warn=[]; cls.forEach(c=>{ ['report','invoice'].forEach(k=>{ const m=L.filter(t=>t[k]!==false&&(t.grades||[]).includes(c.id)); if(m.length>1) warn.push(escapeHtml(c.name)+' ('+(k==='report'?'reports':'invoices')+')'); }); });
+  const gen=k=>L.filter(t=>t[k]!==false&&!(t.grades||[]).length).length; if(gen('report')>1) warn.push('more than one stamp is set for all grades on reports');
+  const card=t=>`<div style="border:1px solid var(--border);border-radius:10px;padding:10px;margin:10px 0;background:#fbfcfe">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start">
+      <img src="${t.img}" alt="" style="width:96px;height:96px;object-fit:contain;border:1px dashed var(--border);border-radius:6px;background:repeating-conic-gradient(#f3f6fa 0% 25%,#fff 0% 50%) 50%/14px 14px;padding:4px">
+      <div style="flex:1;min-width:220px"><div class="row"><div><label>Name of this stamp</label><input value="${escapeHtml(t.name||'')}" onchange="stampSet('${t.id}','name',this.value)"></div>
+        <div><label>Size on reports</label><select onchange="stampSet('${t.id}','size',this.value)"><option value="S" ${t.size==='S'?'selected':''}>Small</option><option value="M" ${t.size!=='S'&&t.size!=='L'?'selected':''}>Medium</option><option value="L" ${t.size==='L'?'selected':''}>Large</option></select></div></div>
+        <div class="flexbtns" style="margin-top:4px"><b class="small">Use on:</b>
+          ${[['report','Report forms'],['invoice','Fee invoices'],['tt','Timetables']].map(([k,l])=>`<label class="small" style="display:flex;gap:5px;align-items:center"><input type="checkbox" style="width:auto;margin:0" ${t[k]!==false?'checked':''} onchange="stampSet('${t.id}','${k}',this.checked)"> ${l}</label>`).join('')}
+          <select ${sel} onchange="if(this.value)stampRecolorId('${t.id}',this.value)"><option value="">Change ink colour…</option><option value="blue">Blue</option><option value="black">Black</option><option value="purple">Purple</option><option value="red">Red</option></select>
+          <button class="danger ghost" onclick="stampRemove('${t.id}')">✕ Remove</button></div></div></div>
+    <p class="small" style="margin:8px 0 4px"><b>Use this stamp for these grades</b> (tick none = all grades):</p>
+    <div class="flexbtns" style="margin-bottom:4px"><button class="ghost" onclick="stampPreset('${t.id}','all')">All grades</button><button class="ghost" onclick="stampPreset('${t.id}','1-6')">Grades 1–6 (Primary)</button><button class="ghost" onclick="stampPreset('${t.id}','7-9')">Grades 7–9 (Junior)</button></div>
+    <div class="flexbtns">${cls.map(c=>`<label class="chip" style="cursor:pointer"><input type="checkbox" style="width:auto;display:inline-block;margin-right:4px" ${(t.grades||[]).includes(c.id)?'checked':''} onchange="stampGrade('${t.id}','${c.id}',this.checked)">${escapeHtml(c.name)}</label>`).join('')||'<span class="small">Add grades first.</span>'}</div>
+  </div>`;
+  return `<div class="card"><h2>🔏 School Rubber Stamps</h2>
+    <p class="small">Add one stamp or several (for example a <b>Primary</b> stamp and a <b>Junior</b> stamp), then choose which grades and which documents each one is used for. Each learner's report and fee invoice automatically gets the stamp that belongs to their grade.</p>
+    <div class="row"><div><label>Name for the new stamp</label><input id="stNewName" placeholder="e.g. Primary stamp"></div>
+      <div><label>Upload stamp picture (PNG/JPG, under 2MB)</label><input type="file" id="profStampFile" accept="image/*" onchange="addSchoolStamp(this)"></div>
+      <div><label>Make it look like real ink</label><select id="profStampInk"><option value="auto">Real ink — same colour as my stamp</option><option value="blue">Real ink — blue</option><option value="black">Real ink — black</option><option value="purple">Real ink — purple</option><option value="red">Real ink — red</option><option value="photo">Keep the picture as it is</option></select></div></div>
+    <p class="small">Shadows and the paper background are removed and only the stamp lines stay, like ink pressed on the page. Photograph straight on, in good light, on plain paper.</p>
+    <div id="profStampMsg"></div>
+    ${warn.length?`<div class="msg err">⚠ More than one stamp covers: ${warn.join('; ')}. The first stamp in the list is used. Adjust the grades ticked.</div>`:''}
+    ${L.length?L.map(card).join(''):'<p class="small">No stamps yet. Reports show an empty “School stamp” box for a manual stamp.</p>'}
+  </div>`;
+}
+function addSchoolStamp(input){
+  const file = input.files && input.files[0]; if(!file) return; const msg = qs('#profStampMsg');
+  if(!file.type.startsWith('image/')){ msg.innerHTML = '<div class="msg err">Please choose an image file.</div>'; return; }
+  if(file.size > 2*1024*1024){ msg.innerHTML = '<div class="msg err">Image is too large — please use one under 2MB.</div>'; return; }
+  const mode = qs('#profStampInk') ? qs('#profStampInk').value : 'auto', nm = (qs('#stNewName')&&qs('#stNewName').value.trim()) || '';
+  shrinkImage(file, 420, 'image/png', undefined, du=>{
+    const fin = out=>{ const sc=currentSchool(); sc.stamps=sc.stamps||[]; sc.stamps.push({id:uid('stp_'), name:nm||('Stamp '+(sc.stamps.length+1)), img:out, size:'M', report:true, invoice:true, tt:true, grades:[]}); saveDB(DB); toast('Stamp added — now choose its grades below'); renderDOS(); };
+    if(mode==='photo') fin(du); else stampToInk(du, mode, fin);
+  }, ()=>{ msg.innerHTML = '<div class="msg err">Could not read that image — please try another file.</div>'; });
+}
+function stampById(id){ return (currentSchool().stamps||[]).find(t=>t.id===id); }
+function stampSet(id,k,v){ const t=stampById(id); if(!t) return; t[k]=v; saveDB(DB); toast('Stamp setting saved'); if(k==='report'||k==='invoice') renderDOS(); }
+function stampGrade(id,cid,on){ const t=stampById(id); if(!t) return; const g=new Set(t.grades||[]); on?g.add(cid):g.delete(cid); t.grades=[...g]; saveDB(DB); renderDOS(); }
+function stampPreset(id,which){ const sc=currentSchool(), t=stampById(id); if(!t) return;
+  if(which==='all'){ t.grades=[]; }
+  else { const [lo,hi]=which.split('-').map(Number); t.grades=sc.classes.filter(c=>{ const m=String(c.name).match(/\d+/); return m && +m[0]>=lo && +m[0]<=hi; }).map(c=>c.id); if(!t.grades.length){ toast('No grades with numbers '+lo+'–'+hi+' found — tick them manually','err'); return; } }
+  saveDB(DB); renderDOS(); }
+function stampRemove(id){ const sc=currentSchool(), t=stampById(id); if(!t||!confirm('Remove the stamp "'+(t.name||'')+'"?')) return; sc.stamps=sc.stamps.filter(x=>x.id!==id); saveDB(DB); renderDOS(); }
+function stampRecolorId(id,mode){ const t=stampById(id); if(!t) return; stampRecolor(t.img, mode, out=>{ t.img=out; saveDB(DB); toast('Stamp ink colour changed'); renderDOS(); }); }
 function uploadSchoolLogo(input){
   const file = input.files && input.files[0];
   if(!file) return;
@@ -6450,7 +6565,7 @@ let stuFilterGrade = '', stuSearch = '', stuFilterGender = '', stuMissing = '', 
 function filteredStudents(school){
   const q = stuSearch.trim().toLowerCase();
   const g = school.classes.some(c=>c.id===stuFilterGrade) ? stuFilterGrade : '';
-  const miss = {adm:s=>!s.adm, pin:s=>!s.parentPin, phone:s=>!s.parentPhone, gender:s=>s.gender!=='M'&&s.gender!=='F'};
+  const miss = {adm:s=>!s.adm, pin:s=>!s.parentPin, phone:s=>!s.parentPhone, gender:s=>s.gender!=='M'&&s.gender!=='F', photo:s=>!s.photo};
   return [...school.students].filter(s=>{
     if(g && s.classId!==g) return false;
     if(stuFilterGender){ if(stuFilterGender==='none'){ if(s.gender==='M'||s.gender==='F') return false; } else if(s.gender!==stuFilterGender) return false; }
@@ -6482,13 +6597,14 @@ function studentRowsHTML(school){
     n++;
     out += `<tr class="stu-row"><td class="stu-n">${n}</td>
     <td><input class="${mc(s.adm).trim()}" value="${escapeHtml(s.adm||'')}" placeholder="Adm no." style="min-width:80px" onchange="updStudentAdm('${s.id}', this.value, this)"></td>
-    <td class="stu-name"><input value="${escapeHtml(s.name)}" style="min-width:170px;font-weight:600" onchange="updStudentName('${s.id}', this.value, this)"></td>
+    <td class="stu-name"><div style="display:flex;gap:6px;align-items:center"><label class="stu-av ${s.photo?'':'stu-miss'}" title="Tap to add or change photo">${s.photo?`<img src="${s.photo}" alt="">`:'📷'}<input type="file" accept="image/*" style="display:none" onchange="stuPhotoPick('${s.id}',this)"></label><input value="${escapeHtml(s.name)}" style="min-width:150px;font-weight:600" onchange="updStudentName('${s.id}', this.value, this)"></div></td>
     <td><select class="${mc(s.gender==='M'||s.gender==='F').trim()}" onchange="updStudentGender('${s.id}', this.value)"><option value="" ${!s.gender?'selected':''}>—</option><option value="M" ${s.gender==='M'?'selected':''}>Boy</option><option value="F" ${s.gender==='F'?'selected':''}>Girl</option></select></td>
     <td><select onchange="updStudentClass('${s.id}', this.value, this)">${cls?'':'<option value="" selected>— Unassigned —</option>'}${school.classes.map(c=>`<option value="${c.id}" ${c.id===s.classId?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></td>
     <td><input class="${mc(s.parentPhone).trim()}" value="${escapeHtml(s.parentPhone||'')}" placeholder="07…" style="min-width:110px" inputmode="tel" onchange="updStudentPhone('${s.id}', this.value, this)"></td>
     <td style="white-space:nowrap"><input class="${mc(s.parentPin).trim()}" value="${escapeHtml(s.parentPin||'')}" placeholder="PIN" style="width:76px" inputmode="numeric" onchange="updStudentPin('${s.id}', this.value, this)"> <button class="ghost" title="Generate a new PIN" onclick="regenStudentPin('${s.id}')">🔁</button></td>
     <td style="white-space:nowrap"><button class="ghost" title="More details" onclick="stuToggle(this)">▾ More</button> <button class="danger" title="Delete learner" onclick="delStudent('${s.id}')">✕</button></td></tr>
     <tr class="stu-more" style="display:none"><td></td><td colspan="7"><div class="stu-moregrid">
+      <label>Photo<span style="display:flex;gap:6px;margin-top:2px"><label class="small" style="cursor:pointer;background:#eef2f7;border:1px solid var(--border);border-radius:7px;padding:7px 10px;color:var(--navy);font-weight:700">📷 ${s.photo?'Change':'Upload / take'}<input type="file" accept="image/*" capture="user" style="display:none" onchange="stuPhotoPick('${s.id}',this)"></label>${s.photo?`<button class="danger" onclick="stuPhotoRemove('${s.id}')">Remove</button>`:''}</span></label>
       <label>KNEC Assessment No.<input value="${escapeHtml(s.assessNo||'')}" placeholder="— none —" onchange="updStudentAssessNo('${s.id}', this.value, this)"></label>
       ${pd?`<label>Parent / Guardian<input value="${escapeHtml(s.parentName||'')}" placeholder="Name" onchange="updStudentParent('${s.id}','parentName',this.value,this)"></label>
       <label>Relationship<select onchange="updStudentParent('${s.id}','parentRel',this.value,this)">${['','Mother','Father','Guardian','Other'].map(o=>`<option value="${o}" ${(s.parentRel||'')===o?'selected':''}>${o||'—'}</option>`).join('')}</select></label>
@@ -6498,6 +6614,44 @@ function studentRowsHTML(school){
   });
   return out;
 }
+let stuNewPhotoData = '';
+// Reads an image file, centre-crops it to a 4:5 passport shape and shrinks it to 240x300 JPEG (~10-20 KB)
+// so photos stay small enough to save, sync and print for a whole school.
+function stuPhotoFromFile(file){
+  return new Promise((ok,no)=>{
+    if(!file || !/^image\//.test(file.type)){ no(new Error('Not an image')); return; }
+    const fr = new FileReader();
+    fr.onerror = ()=>no(new Error('Could not read file'));
+    fr.onload = ()=>{ const im = new Image(); im.onerror = ()=>no(new Error('Unreadable image'));
+      im.onload = ()=>{ const W=240, H=300, r=W/H, iw=im.naturalWidth, ih=im.naturalHeight; let sw=iw, sh=ih;
+        if(iw/ih>r) sw=ih*r; else sh=iw/r; const sx=(iw-sw)/2, sy=Math.max(0,(ih-sh)/3);
+        const c=document.createElement('canvas'); c.width=W; c.height=H; const x=c.getContext('2d'); x.fillStyle='#fff'; x.fillRect(0,0,W,H);
+        x.drawImage(im,sx,Math.min(sy,ih-sh),sw,sh,0,0,W,H); ok(c.toDataURL('image/jpeg',0.8)); };
+      im.src = fr.result; };
+    fr.readAsDataURL(file);
+  });
+}
+function stuNewPhotoPick(inp){ const f=inp.files&&inp.files[0]; if(!f){ stuNewPhotoData=''; return; }
+  stuPhotoFromFile(f).then(d=>{ stuNewPhotoData=d; toast('Photo ready — it will be saved when you tap Add Learner'); }).catch(e=>{ stuNewPhotoData=''; inp.value=''; toast(e.message,'err'); }); }
+function stuPhotoPick(id, inp){
+  const f=inp.files&&inp.files[0]; if(!f) return; const school=currentSchool(), st=school.students.find(x=>x.id===id); if(!st) return;
+  stuPhotoFromFile(f).then(d=>{ st.photo=d; saveDB(DB); toast('Photo saved for '+st.name); renderStudentRows(); }).catch(e=>toast(e.message,'err'));
+}
+function stuPhotoRemove(id){ const school=currentSchool(), st=school.students.find(x=>x.id===id); if(!st||!confirm('Remove the photo of '+st.name+'?')) return; delete st.photo; saveDB(DB); toast('Photo removed'); renderStudentRows(); }
+async function stuPhotoBulk(inp){
+  const files=[...(inp.files||[])], school=currentSchool(), msg=qs('#stuPhotoMsg'); if(!files.length) return;
+  let ok=0; const bad=[];
+  for(const f of files){
+    const adm=f.name.replace(/\.[^.]+$/,'').trim().toLowerCase(), st=school.students.find(x=>String(x.adm||'').trim().toLowerCase()===adm);
+    if(!st){ bad.push(f.name); continue; }
+    try{ st.photo=await stuPhotoFromFile(f); ok++; }catch(e){ bad.push(f.name); }
+    if(msg) msg.textContent='Working… '+ok+' of '+files.length;
+  }
+  saveDB(DB); inp.value=''; renderStudentRows();
+  if(msg) msg.innerHTML='✅ <b>'+ok+'</b> photo(s) saved.'+(bad.length?' <b style="color:#d1473f">'+bad.length+' not matched:</b> '+bad.map(escapeHtml).join(', '):'');
+  toast(ok+' photo(s) saved'+(bad.length?', '+bad.length+' not matched':''), bad.length&&!ok?'err':undefined);
+}
+function setPhotoOnReport(on){ currentSchool().photoOnReport=!!on; saveDB(DB); toast(on?'Photos will print on report forms':'Photos hidden on report forms'); }
 function stuToggle(btn){ const r = btn.closest('tr').nextElementSibling; const open = r.style.display==='none'; r.style.display = open?'':'none'; btn.textContent = open?'▴ Less':'▾ More'; }
 function stuPick(k,v){ if(k==='grade') stuFilterGrade=v; else if(k==='gender') stuFilterGender=v; else if(k==='missing') stuMissing=v; else if(k==='sort') stuSort=v; renderStudentRows(); const sc=currentSchool(); if(sc&&qs('#stuChips')) qs('#stuChips').innerHTML=stuChipsHTML(sc); }
 function stuChipsHTML(school){
@@ -6507,7 +6661,7 @@ function stuChipsHTML(school){
 }
 function stuCountText(school){
   const l = filteredStudents(school), b = l.filter(s=>s.gender==='M').length, g = l.filter(s=>s.gender==='F').length, u = l.length-b-g;
-  return `Showing ${l.length} of ${school.students.length} learner(s) · Boys: ${b} · Girls: ${g}` + (u ? ` · Gender not set: ${u}` : '');
+  return `Showing ${l.length} of ${school.students.length} learner(s) · Boys: ${b} · Girls: ${g}` + (u ? ` · Gender not set: ${u}` : '') + ` · 📷 Photos: ${school.students.filter(x=>x.photo).length}/${school.students.length}`;
 }
 let _stuRowsT=0; function debStuRows(){ clearTimeout(_stuRowsT); _stuRowsT=setTimeout(renderStudentRows,200); }
 function renderStudentRows(){
@@ -6530,6 +6684,7 @@ function tplStudents(school){
   .stu-n{color:#7a8a9a;width:34px;text-align:center!important;font-size:12px}
   .stu-grp td{background:var(--navy)!important;color:#fff;font-weight:700;position:sticky;top:33px;z-index:2;padding:7px 10px}
   .stu-grp td span{font-weight:400;opacity:.85;font-size:12px}
+  .stu-av{width:38px;height:38px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:#eef2f7;border:1px solid var(--border);cursor:pointer;overflow:hidden;font-size:16px}.stu-av img{width:100%;height:100%;object-fit:cover}
   .stu-miss{background:#fff6e5!important;border-color:var(--gold)!important}
   .stu-moregrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;font-size:12px;color:#5a6b7c;background:#f6f9fc;padding:8px;border-radius:8px}
   details.stu-box{border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:8px 0;background:#fbfcfe}
@@ -6550,8 +6705,13 @@ function tplStudents(school){
     <div><label>Relationship</label><select id="stuRel"><option value="">- Select -</option><option>Mother</option><option>Father</option><option>Guardian</option><option>Other</option></select></div>
     <div><label>Parent ID / Passport No.</label><input id="stuParentId" placeholder="Leave blank if not needed"></div>
     <div><label>Other Phone</label><input id="stuPhone2" placeholder="Second contact"></div>`:''}
+    <div><label>Photo <span class="small">(optional)</span></label><input type="file" accept="image/*" id="stuNewPhoto" onchange="stuNewPhotoPick(this)"></div>
     <div style="align-self:flex-end"><button onclick="addStudent()">Add Learner</button></div>
   </div></details>
+
+  <details class="stu-box"><summary>📸 Upload many photos at once</summary>
+  <p class="small">Name each photo file with the learner's <b>admission number</b> (e.g. <b>1001.jpg</b>, <b>1002.png</b>) and select them all together. Each photo is matched to its learner, trimmed to a passport shape and shrunk automatically. Files that match no learner are listed so you can fix them.</p>
+  <input type="file" accept="image/*" multiple onchange="stuPhotoBulk(this)"><p class="small" id="stuPhotoMsg"></p></details>
 
   <details class="stu-box"><summary>📋 Add many learners at once (bulk paste)</summary>
   <p class="small">One learner per line, “Admission,Name,Gender,ParentPhone”. Gender is <b>Boy/Girl</b> (or M/F) and may be left out. Blank admission or phone is OK. They go into the grade chosen in “Add a learner” above.</p>
@@ -6564,6 +6724,7 @@ Amina Hassan"></textarea>
 
   <details class="stu-box"><summary>⚙️ Settings &amp; Parent PINs</summary>
   <label class="small" style="display:flex;gap:6px;align-items:center;margin:8px 0"><input type="checkbox" style="width:auto;margin:0" ${pd?'checked':''} onchange="setParentDetails(this.checked)"> <b>Record parent / guardian details</b> (name, relationship, ID number, second phone), all optional. Untick to hide them; nothing is deleted.</label>
+  <label class="small" style="display:flex;gap:6px;align-items:center;margin:8px 0"><input type="checkbox" style="width:auto;margin:0" ${school.photoOnReport!==false?'checked':''} onchange="setPhotoOnReport(this.checked)"> <b>Print learner photos on report forms</b> (learners without a photo simply show no picture).</label>
   <p class="small">Each learner's <b>Parent PIN</b> is the fourth Parent Portal login factor. Hand it to that parent directly, not on a public notice. Moving a learner to another grade keeps their past results filed under the old one.</p>
   <div class="flexbtns"><button class="ghost" onclick="fillMissingParentPins()">🔑 Generate PINs for learners without one</button></div></details>
 
@@ -6571,7 +6732,7 @@ Amina Hassan"></textarea>
     <div style="flex:2 1 220px"><label>🔍 Search name / admission / phone / parent</label><input id="stuSearch" value="${escapeHtml(stuSearch)}" oninput="stuSearch=this.value;debStuRows()" placeholder="Type to find a learner…"></div>
     <div><label>Grade</label><select id="stuFilter" onchange="stuPick('grade',this.value)"><option value="">All grades</option>${school.classes.map(c=>`<option value="${c.id}" ${c.id===stuFilterGrade?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
     <div><label>Gender</label><select id="stuFilterG" onchange="stuPick('gender',this.value)"><option value="">All</option><option value="M" ${stuFilterGender==='M'?'selected':''}>Boys</option><option value="F" ${stuFilterGender==='F'?'selected':''}>Girls</option><option value="none" ${stuFilterGender==='none'?'selected':''}>Gender not set</option></select></div>
-    <div><label>Show</label><select onchange="stuPick('missing',this.value)"><option value="">Everyone</option><option value="adm" ${stuMissing==='adm'?'selected':''}>Missing admission no.</option><option value="phone" ${stuMissing==='phone'?'selected':''}>Missing parent phone</option><option value="pin" ${stuMissing==='pin'?'selected':''}>Missing parent PIN</option><option value="gender" ${stuMissing==='gender'?'selected':''}>Missing gender</option></select></div>
+    <div><label>Show</label><select onchange="stuPick('missing',this.value)"><option value="">Everyone</option><option value="adm" ${stuMissing==='adm'?'selected':''}>Missing admission no.</option><option value="phone" ${stuMissing==='phone'?'selected':''}>Missing parent phone</option><option value="pin" ${stuMissing==='pin'?'selected':''}>Missing parent PIN</option><option value="gender" ${stuMissing==='gender'?'selected':''}>Missing gender</option><option value="photo" ${stuMissing==='photo'?'selected':''}>Missing photo</option></select></div>
     <div><label>Sort by</label><select onchange="stuPick('sort',this.value)"><option value="grade" ${stuSort==='grade'?'selected':''}>Grade, then Adm no.</option><option value="adm" ${stuSort==='adm'?'selected':''}>Admission no.</option><option value="name" ${stuSort==='name'?'selected':''}>Name A–Z</option></select></div>
   </div>
   <p class="small" id="stuCount">${stuCountText(school)}</p>
@@ -6642,7 +6803,7 @@ function addStudent(){
   // learners are allowed to have no admission number at the same time.
   if(adm && school.students.some(s=>s.adm===adm)){ toast('Admission number already exists','err'); return; }
   if(assessNo && school.students.some(s=>s.assessNo===assessNo)){ toast('Assessment number already exists','err'); return; }
-  const _rid = takeRetainedId(school, adm); school.students.push({id:_rid||uid('stu_'), adm, assessNo, name: name.replace(/\s+/g,' '), classId, gender, parentPhone, parentName, parentRel, parentId, parentPhone2, parentPin: genParentPin()}); saveDB(DB); renderDOS();
+  const _rid = takeRetainedId(school, adm); school.students.push({id:_rid||uid('stu_'), adm, assessNo, name: name.replace(/\s+/g,' '), classId, gender, parentPhone, parentName, parentRel, parentId, parentPhone2, photo: (typeof stuNewPhotoData==='string'?stuNewPhotoData:''), parentPin: genParentPin()}); stuNewPhotoData=''; saveDB(DB); renderDOS();
 }
 // Lets HOI/DOS correct a learner's admission number directly from the Learners table
 // (e.g. it was mistyped or a number gets assigned later) without removing and re-adding
@@ -10717,7 +10878,7 @@ function ntiPageHTML(school, exam, l, r){
     ${school.payInstructions?`<p class="lbl">How to pay</p><p class="box">${escapeHtml(school.payInstructions).replace(/\n/g,'<br>')}<br><i>Use the learner's Adm No (${escapeHtml(l.adm||'-')}) as the account/reference and keep your receipt or M-Pesa message.</i></p>`:''}
     ${school.invoiceNote?`<p class="box warn">${escapeHtml(school.invoiceNote).replace(/\n/g,'<br>')}</p>`:''}
     <p class="c" style="margin-top:8px">Optional services (e.g. transport, boarding, lunch) are charged only where listed above; tell the accounts office before the term opens if any should change. If any figure looks wrong, please contact the school office${school.phone?' on '+escapeHtml(school.phone):''} with your receipts.</p>
-    <div class="sg"><div>Parent / Guardian name: ____________________________</div><div>Signature: ______________ Date: ___________</div><div class="stamp">Accounts office stamp</div></div>
+    <div class="sg"><div>Parent / Guardian name: ____________________________</div><div>Signature: ______________ Date: ___________</div>${(()=>{const t=stampFor(school,'invoice',l.classId);return t?`<div class="stamp" style="border:0;padding:0;height:auto;text-align:center"><img src="${t.img}" alt="School stamp" style="max-height:${stampPx(t)}px;max-width:100%;mix-blend-mode:multiply;transform:rotate(-6deg)"></div>`:'<div class="stamp">Accounts office stamp</div>';})()}</div>
     </div>`;
 }
 const NTI_CSS = `${LH_CSS}@page{size:A4;margin:10mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial;font-size:12.5px;color:#111;margin:0}.pg{padding:18px 26px;page-break-after:always;max-width:700px;margin:auto}.pg:last-child{page-break-after:auto}
@@ -11387,6 +11548,7 @@ function buildReportHTML(school, sid, examId){
       <p class="rc-code">School Code: ${school.code}</p>
     </div>
     <div class="rc-info">
+      <div class="rc-info-left">${(school.photoOnReport!==false && student.photo)?`<img class="rc-photo" src="${student.photo}" alt="Learner photo">`:''}
       <div class="rc-info-grid">
         <div><b>Name:</b> ${escapeHtml(student.name)}</div>
         <div><b>Adm. No.:</b> ${student.adm ? escapeHtml(student.adm) : 'Not assigned'}</div>
@@ -11396,7 +11558,7 @@ function buildReportHTML(school, sid, examId){
         ${student.gender?`<div><b>Gender:</b> ${genderLabel(student.gender)}</div>`:''}
         <div><b>Position:</b> ${position} of ${learners.length}</div>
         ${gradePosLine}
-      </div>
+      </div></div>
       <div class="rc-overall-box">
         <div class="rc-grade">${overallGrade.level}</div>
         <div class="rc-sub">${meanPct.toFixed(1)}% Mean &nbsp;·&nbsp; ${totalPts}${maxPts?' / '+maxPts:''} Pts</div>
@@ -11424,7 +11586,7 @@ function buildReportHTML(school, sid, examId){
       ${sigBox('Grade Teacher: '+escapeHtml(classTeacher), ctSigImg(school, exam.classId))}
       ${sigBox('Head of Institution: '+escapeHtml(school.hoiName), hoiSigImg(school))}
       ${sigBox('Parent / Guardian Signature')}
-      <div class="rc-stamp">School<br>stamp</div>
+      ${(()=>{const t=stampFor(school,'report',exam.classId);return `<div class="rc-stamp${t?' has-img':''}" style="--ss:${t?stampScale(t):1.3}">${t?`<img src="${t.img}" alt="School stamp">`:'School<br>stamp'}</div>`;})()}
     </div>
     <div class="rc-qrrow">${qrHtml}<div class="rc-issued">Date issued: ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</div></div>
     ${gradingKey}
@@ -11432,7 +11594,7 @@ function buildReportHTML(school, sid, examId){
     </div>
     </div>
   </div>`;
-  html = rcDedupeImages(html, [school.logo, school.hoiSignature, (school.classTeacherSigs&&school.classTeacherSigs[exam.classId]||{}).img]);
+  html = rcDedupeImages(html, [school.logo, ...(school.stamps||[]).map(t=>t.img), school.hoiSignature, (school.classTeacherSigs&&school.classTeacherSigs[exam.classId]||{}).img]);
   // Returned alongside the HTML (instead of an inline <script> tag) because content
   // inserted via innerHTML never executes embedded <script> tags — the chart must be
   // drawn afterwards, once the canvas is actually in the DOM. See drawProgressChart().
