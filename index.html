@@ -2005,10 +2005,27 @@ function mergeDataFromCloud(code, remote){
   const lt = local._updatedAt||0, rt = remote._updatedAt||0;
   // No earlier cloud copy in memory (just logged in): if the cloud is newer, trust it as before;
   // otherwise merge without assuming anything was deleted.
+  const baseWasLocal = !syncBase[code] && rt>lt;
   const base = syncBase[code] || (rt>lt ? stripForMerge(local) : undefined);
   const next = Object.assign(mergeSchoolData(base, local, remote, rt>lt), {marks: local.marks||{}, syncConfig: local.syncConfig || remote.syncConfig, smsCredits: local.smsCredits||0});
   mergeExamStates(next, remote); mergeExamStates(next, local);   // approval / edit-request state, as before
   ensureSchoolShape(next);
+  /* SAFETY NET against disappearing learners / class-teacher signatures.
+     When this device has no earlier cloud copy in memory (just signed in) and the cloud looks newer, the merge above
+     treats anything missing from the cloud as "deleted on another device". That also wipes learners and signatures
+     added on THIS device that never reached the cloud (offline, or a push that failed). Keep those (they are pushed
+     up right after), and save a restore point first whenever the cloud update would still shrink the learner list,
+     so it can always be undone from Undo -> Restore points. */
+  if(baseWasLocal){
+    const rStu = new Set((remote.students||[]).map(x=>x&&x.id)), nStu = new Set((next.students||[]).map(x=>x&&x.id));
+    const keepStu = (local.students||[]).filter(x=>x && x.id!=null && !rStu.has(x.id) && !nStu.has(x.id));
+    if(keepStu.length){ next.students = (next.students||[]).concat(keepStu); console.warn('Kept '+keepStu.length+' learner(s) added on this device that the cloud did not have yet'); }
+    const rSig = remote.classTeacherSigs||{}, nSig = next.classTeacherSigs = Object.assign({}, next.classTeacherSigs||{});
+    Object.keys(local.classTeacherSigs||{}).forEach(k=>{ if(!(k in rSig) && !(k in nSig) && (local.classes||[]).some(c=>c.id===k)) nSig[k] = local.classTeacherSigs[k]; });
+  }
+  if((local.students||[]).length > (next.students||[]).length){
+    try{ takeSnapshot('Before cloud update removed learners', {code, force:true, kind:'cloudshrink'}); toast('Another device removed some learners. A restore point was saved first - use Undo > Restore points to bring them back.'); }catch(e){}
+  }
   const nx = stripForMerge(next), lo = stripForMerge(local);
   const changed = [...new Set([...Object.keys(nx), ...Object.keys(lo)])].filter(k=>!dataEqual(nx[k], lo[k]));
   const pushBack = !dataEqual(nx, stripForMerge(remote));        // this device holds changes the cloud lacks
