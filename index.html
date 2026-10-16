@@ -450,6 +450,12 @@ details.sch-more[open]{display:block;width:100%;margin-top:6px}details.sch-more[
 .rp-grp{font-weight:700;color:var(--navy);margin:10px 0 4px}
 .rp-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px;border:1px solid #e3e9f0;border-radius:8px;margin:4px 0;background:#fbfcfe}.rp-row .who{flex:1 1 150px;min-width:130px}.rp-row .pwf{flex:1 1 190px;min-width:160px}
 .rp-ok{background:#eefbf2;border:1px solid #bfe8cc;border-radius:8px;padding:8px 10px;margin-top:8px;font-size:13px}
+.lv-grp td{background:var(--navy)!important;color:#fff;font-weight:700;padding:7px 10px}.lv-grp td span{font-weight:400;opacity:.85;font-size:12px}
+.lv-sub td{background:#eef2f7;font-weight:700}.lv-b{display:inline-block;background:#eef2f7;color:var(--navy);border:1px solid var(--border);border-radius:10px;padding:0 8px;font-size:11px;margin:2px 4px 0 0;font-weight:600}
+.lv-tile{flex:1;min-width:150px;background:#f7f9fc;border:1px solid var(--border);border-left:4px solid var(--navy);border-radius:9px;padding:9px 11px;cursor:pointer;text-align:left}.lv-tile:hover{background:#eef4fb}
+body.print-bw .lv-grp td{background:#fff!important;color:#000!important;border-bottom:2px solid #000}
+.hr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-top:8px}.hr-grid label{font-size:12px;color:#5a6b7c}
+details.hr-card{border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:8px 0;background:#fbfcfe}details.hr-card>summary{cursor:pointer}
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px;}
 .stat-tile{background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;box-shadow:0 2px 10px rgba(18,58,99,.06);}
 .stat-tile b{display:block;font-size:24px;font-family:var(--font-brand);color:var(--navy);line-height:1.2;}
@@ -823,6 +829,9 @@ function ensureSchoolShape(s){
     s.stamps.push({id:uid('stp_'), name:'School stamp', img:s.stamp, size:['S','M','L'].includes(s.stampSize)?s.stampSize:'M', report:s.stampReport!==false, invoice:s.stampInvoice!==false, tt:s.stampTT!==false, grades:[]});
   }
   s.stamp = '';
+  if(!s.staffHR || typeof s.staffHR!=='object') s.staffHR = {};   // private staff records (TSC No. etc.) keyed by teacher id; only shown in the School Admin portal
+  if(!Array.isArray(s.notices)) s.notices = [];   // notice board: {id,title,body,aud:'all|teachers|parents',important,pinned,hidden,expires,created,by}
+  if(!s.staffAtt || typeof s.staffAtt!=='object') s.staffAtt = {};   // staff register: staffAtt[date][teacherId] = {s:'P|A|L|V', r:remark}
   if(typeof s.motto !== 'string') s.motto = '';
   if(typeof s.regNo !== 'string') s.regNo = '';
   // Every reader of school.teachers assumes t.assignments is an array (Teachers &
@@ -1351,7 +1360,7 @@ function buildParentSafeSchool(fullSchool, student){
   return ensureSchoolShape({
     name: fullSchool.name, code: fullSchool.code, address: fullSchool.address,
     phone: fullSchool.phone, email: fullSchool.email, hoiName: fullSchool.hoiName, hoiSignature: fullSchool.hoiSignature,
-    logo: fullSchool.logo, stamps: (fullSchool.stamps||[]).filter(t=>t.img && (!(t.grades||[]).length || [...gradeIds].some(g=>t.grades.includes(g)))), motto: fullSchool.motto, regNo: fullSchool.regNo,
+    logo: fullSchool.logo, notices: (fullSchool.notices||[]).filter(n=>sadNoticeActive(n)&&n.aud!=='teachers'), stamps: (fullSchool.stamps||[]).filter(t=>t.img && (!(t.grades||[]).length || [...gradeIds].some(g=>t.grades.includes(g)))), motto: fullSchool.motto, regNo: fullSchool.regNo,
     status: fullSchool.status, trialEndsAt: fullSchool.trialEndsAt,
     gradingSystem: fullSchool.gradingSystem, learningAreas: fullSchool.learningAreas,
     classes: fullSchool.classes.filter(c=>gradeIds.has(c.id)),
@@ -3699,6 +3708,8 @@ function renderAdmin(){
       <button class="gold" onclick="exportBackup()">⬇️ Export Backup File</button>
       <button class="ghost" onclick="document.getElementById('restoreFile').click()">⬆️ Import / Restore Backup</button>
       <input type="file" id="restoreFile" accept="application/json" class="hidden" onchange="importBackup(event)">
+      <button class="ghost" onclick="document.getElementById('mergeFile').click()">➕ Add School(s) from a Backup File (keeps all other schools)</button>
+      <input type="file" id="mergeFile" accept="application/json" class="hidden" onchange="importSchoolsMerge(event)">
     </div>
     <div id="backupMsg"></div>
   </div>`
@@ -5193,7 +5204,7 @@ function parentDashHTML(sc, stu, cls, exams, feeList, quick){
       <p style="font-size:22px;margin:6px 0;color:${bal>0?'#9c2c2c':'#1c7a3c'}"><b>${bal>0?'Balance: '+parentKES(bal):(bal<0?'Credit: '+parentKES(-bal):'Fully paid')}</b></p>
       <div class="flexbtns"><button class="ghost" onclick="gotoParentTab('fees')">Open Fees &amp; Invoices</button></div></div>`;
   }
-  return `<div class="card"><h2>👋 Welcome</h2>
+  return parentNoticeCards(sc) + `<div class="card"><h2>👋 Welcome</h2>
     <p style="margin:4px 0"><b>${escapeHtml(stu.name)}</b></p>
     <p class="small" style="margin:2px 0">Adm No: ${escapeHtml(stu.adm||'-')} · ${cls?escapeHtml(cls.name):''} · ${escapeHtml(sc.name)}</p></div>`
     + portalQuick('gotoParentTab', quick) + result + fee;
@@ -8150,7 +8161,7 @@ function renderSadmin(){
   const P = {
     dashboard: `<div class="card"><h2>🏫 ${escapeHtml(school.name)} — School Administration</h2>
   <p class="small">School code: <b>${school.code}</b>. Create the DOS and Finance accounts here, then share the matching link + login with each person.</p>
-  <div class="row">${stat(nStu,'Learners')}${stat(nTea,'Teachers')}${stat(school.dos.length,'DOS accounts')}${stat(school.finance.length,'Finance accounts')}${stat(school.smsCredits||0,'SMS credits')}</div></div>
+  <div class="row">${stat(nStu,'Learners')}${stat(nTea,'Teachers')}${stat(school.dos.length,'DOS accounts')}${stat(school.finance.length,'Finance accounts')}${stat(school.smsCredits||0,'SMS credits')}</div>${sadLevelSummaryHTML(school)}</div>${sadBackupCardHTML(school)}
   `,
     links: `<div class="card"><h2>🔗 Portal Links</h2>${links.map(l=>`<div style="margin-bottom:10px"><b>${l[0]}</b> <span class="small">— ${l[2]}</span><div class="linkbox" style="margin-top:4px">${l[1]}</div><button class="ghost" style="margin-top:4px" onclick="copyLinkBox(this)">📋 Copy link</button></div>`).join('')}</div>
   `,
@@ -8159,35 +8170,237 @@ function renderSadmin(){
   <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Actions</th></tr>${school.dos.map(d=>`<tr><td>${escapeHtml(d.name||'-')}</td><td>${escapeHtml(d.username)}</td><td><button class="ghost" onclick="resetDosAcct('${d.id}')">🔑 Reset Password</button> <button class="danger" onclick="delDosAcct('${d.id}')">✕</button></td></tr>`).join('')}</table></div>
   `,
     teachers: sadminTeachersHTML(school),
+    staffing: sadminStaffingHTML(school),
+    checks: sadminChecksHTML(school),
+    notices: sadNoticesHTML(school),
+    duty: sadDutyHTML(school),
+    staffatt: sadAttHTML(school),
+    staffrec: sadHrHTML(school),
     finance: `${tplFinanceAccounts(school)}
   `,
     admins: `<div class="card"><h2>🏫 School Admin Accounts</h2><div class="row"><div><label>Name</label><input id="saName"></div><div><label>Username</label><input id="saUser"></div><div><label>Password</label><input id="saPass" placeholder="blank = auto-generate"></div><div style="align-self:flex-end"><button onclick="addSadminAcct()">➕ Add</button></div></div>
   <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Actions</th></tr>${school.sadmins.map(a=>`<tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.username)}${a.id===me.id?' <span class="small">(you)</span>':''}</td><td><button class="ghost" onclick="resetSadminAcct('${a.id}')">🔑 Reset Password</button> ${a.id===me.id?'':`<button class="danger" onclick="delSadminAcct('${a.id}')">✕</button>`}</td></tr>`).join('')}</table></div>`};
-  const menu = [{group:'Overview', items:[['dashboard','🏠 Dashboard'],['teachers','👩‍🏫 Teachers'],['links','🔗 Portal Links']]},{group:'Accounts', items:[['dos','🎓 DOS Accounts'],['finance','💰 Finance Accounts'],['admins','🏫 School Admins']]}];
-  const quick = portalQuick('gotoSadminTab',[['teachers','👩‍🏫 Teachers'],['links','🔗 Portal Links'],['dos','🎓 DOS'],['finance','💰 Finance'],['admins','🏫 Admins']]);
+  const menu = [{group:'Overview', items:[['dashboard','🏠 Dashboard'],['teachers','👩‍🏫 Teachers'],['links','🔗 Portal Links']]},{group:'Notices & staff', items:[['notices','📢 Notice Board'],['duty','🗓 Duty Rota'],['staffatt','🧾 Staff Attendance'],['staffrec','🪪 Staff Records (TSC No.)']]},{group:'Reports & tools', items:[['staffing','📊 Enrolment & Staffing'],['checks','✅ Needs Attention']]},{group:'Accounts', items:[['dos','🎓 DOS Accounts'],['finance','💰 Finance Accounts'],['admins','🏫 School Admins']]}];
+  const quick = portalQuick('gotoSadminTab',[['teachers','👩‍🏫 Teachers'],['notices','📢 Notices'],['duty','🗓 Duty'],['staffatt','🧾 Attendance'],['staffrec','🪪 Staff Records'],['staffing','📊 Enrolment'],['checks','✅ Needs Attention'],['links','🔗 Portal Links'],['dos','🎓 DOS'],['finance','💰 Finance'],['admins','🏫 Admins']]);
   app.innerHTML = portalShell({menu, tab:sadminTab, goto:'gotoSadminTab', side:school.name, headName:me.name, headSub:'School Admin · '+school.name}) + (sadminTab==='dashboard' ? P.dashboard + quick : (P[sadminTab]||P.dashboard));
 }
 
 /* ---- School Admin: view the school's teachers (read-only — the DOS creates and edits teacher accounts) ---- */
 let sadminTeacherQ = '';
-function sadminTeacherRowsHTML(school){
-  const q = sadminTeacherQ.trim().toLowerCase();
+const SAD_LV={pre:'Pre-Primary',lower:'Lower Primary (Gr 1–3)',upper:'Upper Primary (Gr 4–6)',junior:'Junior School (Gr 7–9)',senior:'Senior School (Gr 10–12)',custom:'Other grades',none:'Not assigned to a grade yet'};
+const SAD_LV_SHORT={pre:'Pre-Primary',lower:'Lower Primary',upper:'Upper Primary',junior:'Junior',senior:'Senior',custom:'Other',none:'Unassigned'};
+const SAD_LV_ORDER=['pre','lower','upper','junior','senior','custom','none'];
+let sadminTLevel='all', sadminTGroup=true;
+function sadLv(school,cid){ const c=school.classes.find(x=>x.id===cid); return c?ttLevel(c.name):null; }
+// Everything the Teachers tab, CSV and level views need about each teacher (levels = school levels they teach or are class teacher in).
+function sadminTeacherInfos(school){
   const cname = id=>{ const c = school.classes.find(x=>x.id===id); return c ? c.name : ''; };
-  const rows = school.teachers.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).map(t=>{
+  return school.teachers.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).map(t=>{
     const classes = teacherClassIds(school, t);
     const teaching = classes.map(cid=>{ const ar = teacherAreaIds(school, t, cid).map(aid=>{ const a = school.learningAreas.find(x=>x.id===aid); return a ? a.name : ''; }).filter(Boolean); return `<div><b>${escapeHtml(cname(cid))}</b>: ${escapeHtml(ar.join(', '))}</div>`; }).join('');
     const ct = (t.classTeacherOf||[]).map(cname).filter(Boolean);
     const perms = [t.canPrint&&'Print reports', t.canPrintAssess&&'Print assessment sheets', t.canPostAssignments&&'Post assignments', t.canApproveResults&&'Approve results', t.canApproveEditRequests&&'Decide edit requests', t.canManageEntry&&'Open/close entry', t.canEditExamMax!==false&&'Edit exam totals'].filter(Boolean);
-    const hay = [t.name, t.username, t.phone, t.email, ct.join(' '), classes.map(cname).join(' ')].join(' ').toLowerCase();
-    return {t, classes, teaching, ct, perms, hay};
-  }).filter(r=>!q || r.hay.includes(q));
-  if(!rows.length) return `<tr><td colspan="6" class="small">${school.teachers.length?'No teacher matches your search.':'No teachers have been added yet — the DOS adds teachers from their portal.'}</td></tr>`;
-  return rows.map((r,i)=>`<tr><td>${i+1}</td><td><b>${escapeHtml(r.t.name||'-')}</b>${r.t.gender?` <span class="small">(${r.t.gender==='M'?'Male':'Female'})</span>`:''}<div class="small">${escapeHtml(r.t.username||'')}</div></td>
+    const lv=new Set(); classes.concat(t.classTeacherOf||[]).forEach(id=>{ const l=sadLv(school,id); if(l) lv.add(l); });
+    const levels=SAD_LV_ORDER.filter(x=>lv.has(x)); if(!levels.length) levels.push('none');
+    const hay = [t.name, t.username, t.phone, t.email, ct.join(' '), classes.map(cname).join(' '), levels.map(x=>SAD_LV[x]).join(' ')].join(' ').toLowerCase();
+    return {t, classes, cnames:classes.map(cname), teaching, ct, perms, levels, hay};
+  });
+}
+function sadminTeacherRowsHTML(school){
+  const q = sadminTeacherQ.trim().toLowerCase();
+  const L = sadminTeacherInfos(school).filter(r=>(!q || r.hay.includes(q)) && (sadminTLevel==='all' || r.levels.includes(sadminTLevel)));
+  if(!L.length) return `<tr><td colspan="6" class="small">${school.teachers.length?'No teacher matches your search or level filter.':'No teachers have been added yet — the DOS adds teachers from their portal.'}</td></tr>`;
+  const row = (r,i)=>`<tr><td>${i+1}</td><td><b>${escapeHtml(r.t.name||'-')}</b>${r.t.gender?` <span class="small">(${r.t.gender==='M'?'Male':'Female'})</span>`:''}<div class="small">${escapeHtml(r.t.username||'')}</div>${(school.staffHR[r.t.id]||{}).tsc?`<div class="small">TSC No.: <b>${escapeHtml(school.staffHR[r.t.id].tsc)}</b></div>`:''}<div>${r.levels.map(k=>`<span class="lv-b">${SAD_LV_SHORT[k]}</span>`).join('')}</div></td>
     <td>${r.t.phone?`<a href="tel:${escapeHtml(r.t.phone)}">${escapeHtml(r.t.phone)}</a>`:'<span class="small">—</span>'}${r.t.email?`<div class="small">${escapeHtml(r.t.email)}</div>`:''}</td>
     <td>${r.teaching || '<span class="small">Not assigned yet</span>'}</td>
     <td>${r.ct.length?escapeHtml(r.ct.join(', ')):'<span class="small">—</span>'}</td>
-    <td class="small">${r.perms.length?escapeHtml(r.perms.join(', ')):'Marks entry only'}</td></tr>`).join('');
+    <td class="small">${r.perms.length?escapeHtml(r.perms.join(', ')):'Marks entry only'}</td></tr>`;
+  if(!sadminTGroup) return L.map(row).join('');
+  return SAD_LV_ORDER.map(k=>{ const g=L.filter(r=>r.levels.includes(k)); return g.length?`<tr class="lv-grp"><td colspan="6">🏷 ${SAD_LV[k]} <span>· ${g.length} teacher(s)</span></td></tr>`+g.map(row).join(''):''; }).join('');
 }
+function sadminTChipsHTML(school){
+  const I=sadminTeacherInfos(school), chip=(k,l,n)=>`<button class="sch-chip ${sadminTLevel===k?'on':''}" onclick="sadminTSet('level','${k}')">${l} <b>${n}</b></button>`;
+  return chip('all','All teachers',I.length)+SAD_LV_ORDER.filter(k=>I.some(r=>r.levels.includes(k))).map(k=>chip(k,SAD_LV_SHORT[k],I.filter(r=>r.levels.includes(k)).length)).join('');
+}
+function sadminTSet(k,v){ if(k==='level') sadminTLevel=v; else sadminTGroup=(v==='1'); const sc=currentSchool(); if(qs('#sadTeachRows')) qs('#sadTeachRows').innerHTML=sadminTeacherRowsHTML(sc); if(qs('#sadTeachChips')) qs('#sadTeachChips').innerHTML=sadminTChipsHTML(sc); }
+function sadDownloadCSV(name, rows){ const csv=rows.map(r=>r.map(v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"').join(',')).join('\r\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv'})); a.download=name; document.body.appendChild(a); a.click(); a.remove(); toast('File downloaded'); }
+function sadminTeachersCSV(){ const sc=currentSchool(), rows=[['Level','Name','Username','Phone','Email','Teaches','Class teacher of']];
+  sadminTeacherInfos(sc).filter(r=>sadminTLevel==='all'||r.levels.includes(sadminTLevel)).forEach(r=>rows.push([r.levels.map(k=>SAD_LV_SHORT[k]).join('; '),r.t.name,r.t.username,r.t.phone,r.t.email,r.cnames.join('; '),r.ct.join('; ')])); sadDownloadCSV('teachers-by-level.csv',rows); }
+// Dashboard strip: learners and teachers per level; tapping one opens the Teachers tab on that level.
+function sadLevelSummaryHTML(school){
+  const I=sadminTeacherInfos(school), lvs=SAD_LV_ORDER.filter(k=>k!=='none'&&school.classes.some(c=>ttLevel(c.name)===k)); if(!lvs.length) return '';
+  return `<h3 style="margin:14px 0 6px">By school level <span class="small">— tap a level to see its teachers</span></h3><div class="row">`+lvs.map(k=>{ const cl=school.classes.filter(c=>ttLevel(c.name)===k).map(c=>c.id), n=school.students.filter(s=>cl.includes(s.classId)).length, t=I.filter(r=>r.levels.includes(k)).length;
+    return `<button class="lv-tile" onclick="sadminTLevel='${k}';gotoSadminTab('teachers')"><div class="small">${SAD_LV[k]}</div><div style="font-weight:800;font-size:16px;color:var(--navy)">${n} learners · ${t} teachers</div></button>`; }).join('')+`</div>`;
+}
+// Enrolment and staffing by level and grade (printable / CSV).
+function sadminStaffingHTML(school){
+  const stu=cid=>school.students.filter(s=>s.classId===cid), tch=cid=>school.teachers.filter(t=>teacherClassIds(school,t).includes(cid)), ctn=cid=>school.teachers.filter(t=>(t.classTeacherOf||[]).includes(cid)).map(t=>t.name);
+  let body='', gt={b:0,g:0,n:0}; const I=sadminTeacherInfos(school);
+  SAD_LV_ORDER.filter(k=>k!=='none').forEach(k=>{ const cl=school.classes.filter(c=>ttLevel(c.name)===k); if(!cl.length) return; let sb=0,sg=0,sn=0;
+    body+=`<tr class="lv-grp"><td colspan="6">🏷 ${SAD_LV[k]} <span>· ${I.filter(r=>r.levels.includes(k)).length} teacher(s)</span></td></tr>`;
+    cl.forEach(c=>{ const st=stu(c.id), b=st.filter(x=>x.gender==='M').length, g=st.filter(x=>x.gender==='F').length; sb+=b; sg+=g; sn+=st.length; const ct=ctn(c.id);
+      body+=`<tr><td>${escapeHtml(c.name)}</td><td>${b}</td><td>${g}</td><td><b>${st.length}</b></td><td>${ct.length?escapeHtml(ct.join(', ')):'<span style="color:#d1473f">⚠ none</span>'}</td><td>${tch(c.id).length}</td></tr>`; });
+    body+=`<tr class="lv-sub"><td>Total ${SAD_LV_SHORT[k]}</td><td>${sb}</td><td>${sg}</td><td>${sn}</td><td></td><td></td></tr>`; gt.b+=sb; gt.g+=sg; gt.n+=sn; });
+  return `<div class="card"><h2>📊 Enrolment &amp; Staffing — ${escapeHtml(school.name)}</h2><p class="small">Learners per grade, who the class teacher is and how many teachers serve each grade, grouped by school level.</p>
+  <div class="flexbtns no-print"><button class="ghost" onclick="sadminStaffingCSV()">⬇ Download CSV</button><button class="ghost" onclick="window.print()">🖨 Print</button></div>
+  <div class="print-only-block" style="margin-top:8px"><div style="overflow-x:auto"><table><tr><th>Grade</th><th>Boys</th><th>Girls</th><th>Total</th><th>Class teacher</th><th>Teachers</th></tr>${body||'<tr><td colspan="6" class="small">No grades yet.</td></tr>'}<tr class="lv-sub"><td>WHOLE SCHOOL</td><td>${gt.b}</td><td>${gt.g}</td><td>${gt.n}</td><td colspan="2">${school.students.length-gt.n>0?`${school.students.length-gt.n} learner(s) not in a listed grade`:''}</td></tr></table></div></div></div>`;
+}
+function sadminStaffingCSV(){ const sc=currentSchool(), rows=[['Level','Grade','Boys','Girls','Total','Class teacher','Teachers']];
+  sc.classes.forEach(c=>{ const st=sc.students.filter(s=>s.classId===c.id); rows.push([SAD_LV_SHORT[ttLevel(c.name)],c.name,st.filter(x=>x.gender==='M').length,st.filter(x=>x.gender==='F').length,st.length,sc.teachers.filter(t=>(t.classTeacherOf||[]).includes(c.id)).map(t=>t.name).join('; '),sc.teachers.filter(t=>teacherClassIds(sc,t).includes(c.id)).length]); }); sadDownloadCSV('enrolment-and-staffing.csv',rows); }
+// "Needs attention": quick checks an administrator should clear.
+function sadminChecksHTML(school){
+  const names=l=>l.slice(0,30).map(x=>escapeHtml(x)).join(', ')+(l.length>30?` … and ${l.length-30} more`:'');
+  const C=[
+    ['Grades without a class teacher', school.classes.filter(c=>!school.teachers.some(t=>(t.classTeacherOf||[]).includes(c.id))).map(c=>c.name)],
+    ['Grades with no learners yet', school.classes.filter(c=>!school.students.some(s=>s.classId===c.id)).map(c=>c.name)],
+    ['Teachers not assigned to any grade', school.teachers.filter(t=>!teacherClassIds(school,t).length).map(t=>t.name)],
+    ['Teachers with no phone number', school.teachers.filter(t=>!t.phone).map(t=>t.name)],
+    ['Learners without an admission number', school.students.filter(s=>!s.adm).map(s=>s.name)],
+    ['Learners without a gender', school.students.filter(s=>s.gender!=='M'&&s.gender!=='F').map(s=>s.name)],
+    ['Learners without a parent phone (no SMS)', school.students.filter(s=>!s.parentPhone).map(s=>s.name)],
+    ['Learners without a parent PIN (cannot use the Parent Portal)', school.students.filter(s=>!s.parentPin).map(s=>s.name)],
+    ['Learners without a photo', school.students.filter(s=>!s.photo).map(s=>s.name)],
+    ['School data backup is older than 14 days (or never done)', (Date.now()-(school.lastBackupAt||0))>14*864e5?['Open the Dashboard and tap Download school backup']:[]],
+    ['Teachers with no TSC No. recorded (TSC or employer not set)', school.teachers.filter(t=>{ const h=school.staffHR[t.id]||{}; return !h.tsc && (!h.employer||h.employer==='TSC'); }).map(t=>t.name)]];
+  const bad=C.filter(c=>c[1].length).length;
+  const sms=(school.smsCredits||0)<20?`<div class="rp-row"><div class="who"><b>⚠ Low SMS credit</b><div class="small">${school.smsCredits||0} credit(s) left — ask Finance to top up before sending results.</div></div></div>`:'';
+  return `<div class="card"><h2>✅ Needs Attention — ${escapeHtml(school.name)}</h2><p class="small">${bad?`${bad} of ${C.length} checks need your attention.`:'Everything looks complete. Well done!'} Fix these in the DOS portal (learners, teachers, grades) or ask the DOS to.</p>${sms}
+  ${C.map(([t,l])=>l.length?`<details class="stu-box" style="border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:8px 0;background:#fffaf0"><summary style="cursor:pointer;font-weight:700;color:var(--navy)">⚠ ${t} <span class="lv-b">${l.length}</span></summary><p class="small" style="margin:6px 0 0">${names(l)}</p></details>`:`<div style="padding:6px 12px;margin:6px 0;border:1px solid #bfe8cc;border-radius:10px;background:#eefbf2;font-size:13.5px">✅ ${t}: none</div>`).join('')}</div>`;
+}
+/* ===================== School Admin: Notice Board, Duty Roster, Staff Attendance, school backup ===================== */
+const sadISO=d=>{ const z=new Date(d.getTime()-d.getTimezoneOffset()*6e4); return z.toISOString().slice(0,10); };
+const sadParse=str=>{ const [y,m,d]=String(str).split('-').map(Number); return new Date(y,(m||1)-1,d||1); };
+const sadAdd=(str,n)=>{ const d=sadParse(str); d.setDate(d.getDate()+n); return sadISO(d); };
+const sadWeekStart=str=>{ const d=sadParse(str||sadISO(new Date())); d.setDate(d.getDate()-((d.getDay()+6)%7)); return sadISO(d); };
+const sadFmt=(str,y)=>sadParse(str).toLocaleDateString('en-GB',{day:'numeric',month:'short',...(y?{year:'numeric'}:{})});
+const sadWeekLabel=w=>sadFmt(w)+' – '+sadFmt(sadAdd(w,4),true);
+// ---- Notices ----
+let sadNoticeEditId=null;
+function sadNoticeActive(n){ return !n.hidden && (!n.expires || n.expires>=sadISO(new Date())); }
+function sadNoticesFor(school,aud){ return (school.notices||[]).filter(n=>sadNoticeActive(n)&&(n.aud==='all'||n.aud===aud)).sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0)||(b.important?1:0)-(a.important?1:0)||(b.created||0)-(a.created||0)); }
+function noticeCardsHTML(list,title){
+  if(!list.length) return '';
+  return `<div class="card no-print"><h2>📢 ${title}</h2>`+list.map(n=>`<div style="border-left:4px solid ${n.important?'#d1473f':'var(--navy)'};background:${n.important?'#fff5f4':'#f7f9fc'};padding:8px 12px;border-radius:8px;margin:8px 0"><b>${n.pinned?'📌 ':''}${n.important?'❗ ':''}${escapeHtml(n.title)}</b><div style="white-space:pre-wrap;margin-top:3px">${escapeHtml(n.body||'')}</div><div class="small" style="margin-top:3px">${sadFmt(sadISO(new Date(n.created||Date.now())),true)}${n.by?' · '+escapeHtml(n.by):''}${n.expires?' · until '+sadFmt(n.expires,true):''}</div></div>`).join('')+`</div>`;
+}
+function parentNoticeCards(sc){ return noticeCardsHTML(sadNoticesFor(sc,'parents'),'School Notices'); }
+function teacherNoticeCards(school,t){ return noticeCardsHTML(sadNoticesFor(school,'teachers'),'School Notices'); }
+function sadNoticesHTML(school){
+  const ed=(school.notices||[]).find(n=>n.id===sadNoticeEditId)||{}, o=(v,l)=>`<option value="${v}" ${(ed.aud||'all')===v?'selected':''}>${l}</option>`, today=sadISO(new Date());
+  const list=(school.notices||[]).slice().sort((a,b)=>(b.created||0)-(a.created||0)).map(n=>{ const st=n.hidden?'Hidden':(n.expires&&n.expires<today?'Expired':'Showing');
+    return `<div class="rp-row"><div class="who" style="flex:3 1 260px"><b>${n.pinned?'📌 ':''}${n.important?'❗ ':''}${escapeHtml(n.title)}</b> <span class="lv-b">${st}</span> <span class="lv-b">${n.aud==='all'?'Teachers & parents':n.aud==='teachers'?'Teachers':'Parents'}</span><div class="small" style="white-space:pre-wrap">${escapeHtml(n.body||'')}</div><div class="small">${sadFmt(sadISO(new Date(n.created||Date.now())),true)}${n.expires?' · until '+sadFmt(n.expires,true):''}</div></div>
+      <div class="sch-btns"><button class="ghost" onclick="sadNoticeEditId='${n.id}';renderSadmin()">✏️ Edit</button><button class="ghost" onclick="sadNoticeFlag('${n.id}','pinned')">${n.pinned?'Unpin':'📌 Pin'}</button><button class="ghost" onclick="sadNoticeFlag('${n.id}','hidden')">${n.hidden?'Show':'Hide'}</button><button class="danger" onclick="sadNoticeDel('${n.id}')">Delete</button></div></div>`; }).join('');
+  return `<div class="card"><h2>📢 Notice Board</h2><p class="small">Notices appear at the top of the teachers' and/or parents' home page until the date you set (or until you hide them). Use <b>Important</b> for urgent ones and <b>Pin</b> to keep one on top.</p>
+  <div class="row"><div style="flex:2 1 240px"><label>Title</label><input id="nTitle" value="${escapeHtml(ed.title||'')}" placeholder="e.g. Opening day, Parents' meeting"></div>
+    <div><label>Show to</label><select id="nAud">${o('all','Teachers &amp; parents')}${o('teachers','Teachers only')}${o('parents','Parents only')}</select></div>
+    <div><label>Show until <span class="small">(optional)</span></label><input type="date" id="nExp" value="${escapeHtml(ed.expires||'')}"></div></div>
+  <label>Message</label><textarea id="nBody" rows="3">${escapeHtml(ed.body||'')}</textarea>
+  <div class="flexbtns"><label class="small" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="nImp" style="width:auto;margin:0" ${ed.important?'checked':''}> ❗ Important</label><label class="small" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="nPin" style="width:auto;margin:0" ${ed.pinned?'checked':''}> 📌 Pin on top</label>
+    <button onclick="sadNoticeSave()">${ed.id?'Save changes':'Post notice'}</button>${ed.id?`<button class="ghost" onclick="sadNoticeEditId=null;renderSadmin()">Cancel</button>`:''}</div></div>
+  <div class="card"><h2>All notices (${(school.notices||[]).length})</h2>${list||'<p class="small">No notices yet.</p>'}</div>`;
+}
+function sadNoticeSave(){
+  const sc=currentSchool(), me=sc.sadmins.find(x=>x.id===session.userId)||{}, title=qs('#nTitle').value.trim(); if(!title){ toast('Enter a title','err'); return; }
+  const f={title,body:qs('#nBody').value.trim(),aud:qs('#nAud').value,important:qs('#nImp').checked,pinned:qs('#nPin').checked,expires:qs('#nExp').value||''};
+  const ed=sc.notices.find(n=>n.id===sadNoticeEditId); if(ed) Object.assign(ed,f); else sc.notices.push({id:uid('nt_'),created:Date.now(),by:me.name||'',...f});
+  sadNoticeEditId=null; saveDB(DB); toast(ed?'Notice updated':'Notice posted'); renderSadmin();
+}
+function sadNoticeFlag(id,k){ const n=currentSchool().notices.find(x=>x.id===id); if(!n) return; n[k]=!n[k]; saveDB(DB); renderSadmin(); }
+function sadNoticeDel(id){ if(!confirm('Delete this notice?')) return; const sc=currentSchool(); sc.notices=sc.notices.filter(x=>x.id!==id); saveDB(DB); renderSadmin(); }
+// ---- Duty rota: read-only view of the rota(s) the DOS already manages in the DOS portal ----
+function sadDutyHTML(school){
+  const L=(school.dutyRotas||[]).map(r=>drPrune(school,drNorm(r))).filter(x=>Object.keys(x.cells).length), cur=drMon(exIso(new Date()));
+  if(!L.length) return `<div class="card"><h2>🗓 Duty Rota</h2><p class="small">No duty rota has been generated yet. The DOS creates and edits it under <b>Duty Rota</b> in the DOS portal, and it appears here automatically.</p></div>`;
+  return L.map(x=>{ const rows=drWeeks(x).map(w=>{ const c=x.cells[w.k]||{ids:[]}; return `<tr ${w.k===cur?'style="background:#eefbf2"':''}><td style="text-align:left">${drWeekLabel(w)}${w.k===cur?' <span class="lv-b">This week</span>':''}</td><td style="text-align:left">${c.ids.length?c.ids.map(id=>escapeHtml(drTn(school,id))).join(', '):'<span class="small">—</span>'}</td></tr>`; }).join('');
+    return `<div class="card"><h2>🗓 ${escapeHtml(x.name)} <span class="lv-b">${x.published?'Published to teachers':'Draft — not yet shown to teachers'}</span></h2><p class="small">${escapeHtml(x.start||'')} to ${escapeHtml(x.end||'')} · ${x.perDuty} teacher(s) on duty each week · managed by the DOS (view only here).</p>
+    <div class="flexbtns no-print"><button class="ghost" onclick="window.print()">🖨 Print</button></div>
+    <div class="print-only-block"><div class="ttw"><table class="ttg"><tr><th>Week</th><th>On duty</th></tr>${rows}</table></div>${x.notes?`<p class="small">${escapeHtml(x.notes)}</p>`:''}</div></div>`; }).join('');
+}
+// ---- Staff attendance ----
+let sadAttDate=null, sadAttMonth=null; const SAD_ST={P:'Present',A:'Absent',L:'Late',V:'On leave'};
+function sadAttHTML(school){
+  const date=sadAttDate||sadISO(new Date()), mon=sadAttMonth||date.slice(0,7), day=school.staffAtt[date]||{}, T=school.teachers.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+  const rows=T.map(t=>{ const r=day[t.id]||{}; return `<tr><td><b>${escapeHtml(t.name)}</b></td><td><select onchange="sadAttSet('${t.id}',this.value)"><option value="">— not marked —</option>${Object.entries(SAD_ST).map(([k,l])=>`<option value="${k}" ${r.s===k?'selected':''}>${l}</option>`).join('')}</select></td><td><input value="${escapeHtml(r.r||'')}" placeholder="Remark (optional)" onchange="sadAttRemark('${t.id}',this.value)"></td></tr>`; }).join('');
+  const tot={}; T.forEach(t=>tot[t.id]={P:0,A:0,L:0,V:0}); Object.keys(school.staffAtt).filter(d=>d.startsWith(mon)).forEach(d=>T.forEach(t=>{ const r=school.staffAtt[d][t.id]; if(r&&r.s&&tot[t.id]) tot[t.id][r.s]++; }));
+  const sum=T.map(t=>{ const x=tot[t.id], n=x.P+x.A+x.L+x.V; return `<tr><td>${escapeHtml(t.name)}</td><td>${x.P}</td><td>${x.A}</td><td>${x.L}</td><td>${x.V}</td><td>${n?Math.round((x.P+x.L)*100/n)+'%':'—'}</td></tr>`; }).join('');
+  return `<div class="card"><h2>🧾 Staff Attendance</h2><p class="small">Mark which teachers came to school each day. Changes save straight away.</p>
+  <div class="flexbtns no-print" style="align-items:flex-end"><div><label>Date</label><input type="date" id="saDate" value="${date}" onchange="sadAttDate=this.value;sadAttMonth=this.value.slice(0,7);renderSadmin()"></div><button class="ghost" onclick="sadAttAll()">✔ Mark everyone present</button></div>
+  <div style="overflow-x:auto;margin-top:8px"><table><tr><th>Teacher</th><th>Status</th><th>Remark</th></tr>${rows||'<tr><td colspan="3" class="small">No teachers yet.</td></tr>'}</table></div></div>
+  <div class="card"><h2>📅 Monthly summary</h2><div class="flexbtns no-print" style="align-items:flex-end"><div><label>Month</label><input type="month" value="${mon}" onchange="sadAttMonth=this.value;renderSadmin()"></div><button class="ghost" onclick="sadAttCSV('${mon}')">⬇ CSV</button><button class="ghost" onclick="window.print()">🖨 Print</button></div>
+  <div class="print-only-block" style="margin-top:8px"><div style="overflow-x:auto"><table><tr><th>Teacher</th><th>Present</th><th>Absent</th><th>Late</th><th>On leave</th><th>Attendance</th></tr>${sum||'<tr><td colspan="6" class="small">No teachers yet.</td></tr>'}</table></div></div></div>`;
+}
+function sadAttRec(tid){ const sc=currentSchool(), d=sadAttDate||sadISO(new Date()); sc.staffAtt[d]=sc.staffAtt[d]||{}; return sc.staffAtt[d][tid]=sc.staffAtt[d][tid]||{s:'',r:''}; }
+function sadAttSet(tid,v){ const r=sadAttRec(tid); r.s=v; saveDB(DB); renderSadmin(); }
+function sadAttRemark(tid,v){ sadAttRec(tid).r=v; saveDB(DB); }
+function sadAttAll(){ const sc=currentSchool(); sc.teachers.forEach(t=>{ const r=sadAttRec(t.id); if(!r.s) r.s='P'; }); saveDB(DB); toast('Everyone unmarked is now present'); renderSadmin(); }
+function sadAttCSV(mon){ const sc=currentSchool(), rows=[['Teacher','Present','Absent','Late','On leave']]; sc.teachers.forEach(t=>{ const x={P:0,A:0,L:0,V:0}; Object.keys(sc.staffAtt).filter(d=>d.startsWith(mon)).forEach(d=>{ const r=sc.staffAtt[d][t.id]; if(r&&r.s) x[r.s]++; }); rows.push([t.name,x.P,x.A,x.L,x.V]); }); sadDownloadCSV('staff-attendance-'+mon+'.csv',rows); }
+// ---- School backup (Dashboard) ----
+function sadBackupCardHTML(school){
+  const last=school.lastBackupAt, days=last?Math.floor((Date.now()-last)/864e5):null, old=days===null||days>14;
+  return `<div class="card no-print" style="border-left:4px solid ${old?'#d1473f':'#1c7a3c'}"><h2>💾 Back up this school</h2><p class="small">${last?`Last backup: <b>${sadFmt(sadISO(new Date(last)),true)}</b> (${days} day${days===1?'':'s'} ago).`:'<b style="color:#d1473f">No backup downloaded yet.</b>'} Download one regularly and keep it safe (email it to yourself or save it in the cloud). If data is ever lost, the web owner can add this school back from the file without touching other schools.</p><div class="flexbtns"><button class="gold" onclick="sadSchoolBackup()">⬇️ Download school backup</button></div></div>`;
+}
+function sadSchoolBackup(){ const sc=currentSchool(); sc.lastBackupAt=Date.now(); saveDB(DB);
+  const data={adminPassword:null,adminSync:null,settings:DB.settings,schools:{[sc.code]:sc}}, a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})); a.download='edutrack-school-'+sc.code+'-backup-'+sadISO(new Date())+'.json'; document.body.appendChild(a); a.click(); a.remove(); toast('School backup downloaded'); renderSadmin(); }
+// ---- Web owner: add/restore one or more schools from a backup file without replacing the rest ----
+function importSchoolsMerge(evt){
+  const file=evt.target.files[0]; if(!file) return; const rd=new FileReader();
+  rd.onload=function(e){ try{
+    const inc=JSON.parse(e.target.result); if(!inc||typeof inc!=='object'||!inc.schools||typeof inc.schools!=='object') throw new Error('bad'); const codes=Object.keys(inc.schools); if(!codes.length) throw new Error('empty');
+    const clash=codes.filter(c=>DB.schools[c]);
+    if(!confirm('Add/restore: '+codes.map(c=>(inc.schools[c].name||'?')+' ('+c+')').join(', ')+'.\n'+(clash.length?'These already exist here and will be REPLACED by the file: '+clash.join(', ')+'.\n':'')+'All other schools stay as they are. Continue?')) return;
+    const tmp=migrateDB({adminPassword:null,adminSync:null,settings:{trialDays:14},schools:inc.schools}); codes.forEach(c=>{ DB.schools[c]=tmp.schools[c]||inc.schools[c]; }); saveDB(DB);
+    qs('#backupMsg').innerHTML='<div class="msg ok">Restored '+codes.length+' school(s). Other schools were not touched.</div>'; renderAdmin();
+  }catch(err){ qs('#backupMsg').innerHTML='<div class="msg err">Could not read that file — use a backup downloaded from this app.</div>'; } };
+  rd.readAsText(file); evt.target.value='';
+}
+/* ===================== School Admin: private Staff Records (TSC No. and other teacher data) =====================
+   Kept in school.staffHR[teacherId], separate from the teacher account, and only ever displayed in the School Admin portal. */
+const SAD_EMPLOYERS=['TSC','BOM','PTA','Contract','Intern','Volunteer','Other'];
+const SAD_QUALS=['Certificate (P1)','Diploma','Bachelor’s degree','Master’s degree','PhD','Other'];
+let sadHrQ='', sadHrFilter='all';
+const sadHrNeed=h=>['idNo','kra','dob','nokName','nokPhone'].concat((!h.employer||h.employer==='TSC')?['tsc']:[]);
+function sadHrDone(h){ const n=sadHrNeed(h); return [n.filter(k=>h[k]).length,n.length]; }
+function sadHrRetire(h){ if(!h.dob||(h.employer&&h.employer!=='TSC')) return ''; const d=sadParse(h.dob); if(isNaN(d)) return ''; d.setFullYear(d.getFullYear()+60); return 'Turns 60 on '+sadFmt(sadISO(d),true)+' (TSC retirement age — estimate)'; }
+function sadHrSummary(school,t){ const h=school.staffHR[t.id]||{}, [a,b]=sadHrDone(h), dup=h.tsc&&school.teachers.some(o=>o.id!==t.id&&(school.staffHR[o.id]||{}).tsc===h.tsc);
+  return `<b>${escapeHtml(t.name)}</b> · TSC No.: ${h.tsc?`<b>${escapeHtml(h.tsc)}</b>${dup?' <span style="color:#d1473f">⚠ duplicate</span>':''}`:'<span style="color:#d1473f">not recorded</span>'}${h.employer?' · '+escapeHtml(h.employer):''}${h.designation?' · '+escapeHtml(h.designation):''} <span class="lv-b" style="${a===b?'background:#eefbf2':'background:#fff6e5'}">${a}/${b} complete</span>`; }
+function sadHrCard(school,t){
+  const h=school.staffHR[t.id]||{}, inp=(k,l,type,ph)=>`<label>${l}<input ${type?`type="${type}"`:''} value="${escapeHtml(h[k]||'')}" ${ph?`placeholder="${ph}"`:''} onchange="sadHrSet('${t.id}','${k}',this.value)"></label>`,
+    sel=(k,l,opts)=>`<label>${l}<select onchange="sadHrSet('${t.id}','${k}',this.value)"><option value="">— select —</option>${opts.map(o=>`<option ${h[k]===o?'selected':''}>${escapeHtml(o)}</option>`).join('')}</select></label>`;
+  return `<details class="hr-card"><summary id="hrs_${t.id}">${sadHrSummary(school,t)}</summary>
+    <p class="small" style="margin:6px 0 0">Phone: ${escapeHtml(t.phone||'—')} · Email: ${escapeHtml(t.email||'—')} <span>(edit these in the DOS portal)</span></p>
+    <div class="hr-grid">${inp('tsc','TSC No.','','e.g. 123456')}${sel('employer','Employer / terms',SAD_EMPLOYERS)}${inp('idNo','National ID / Passport No.')}${inp('kra','KRA PIN','','e.g. A001234567Z')}${inp('nssf','NSSF No.')}${inp('sha','SHA (formerly NHIF) No.')}
+      ${inp('dob','Date of birth','date')}${inp('firstAppt','Date first employed','date')}${inp('postedOn','Date joined this school','date')}${inp('jobGroup','Job group','','e.g. C3')}${inp('designation','Designation','','e.g. Senior Teacher')}${sel('qualification','Highest qualification',SAD_QUALS)}
+      ${inp('subjects','Teaching subjects / combination','','e.g. English / Kiswahili')}${inp('residence','Residence / address')}${inp('nokName','Next of kin — name')}${inp('nokRel','Next of kin — relationship')}${inp('nokPhone','Next of kin — phone')}</div>
+    <label style="font-size:12px;color:#5a6b7c;display:block;margin-top:8px">Remarks<textarea rows="2" onchange="sadHrSet('${t.id}','remarks',this.value)">${escapeHtml(h.remarks||'')}</textarea></label>
+    <p class="small" id="hrr_${t.id}" style="margin:4px 0 0">${escapeHtml(sadHrRetire(h))}</p></details>`;
+}
+function sadHrList(school){
+  const q=sadHrQ.trim().toLowerCase(), H=t=>school.staffHR[t.id]||{};
+  let L=school.teachers.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+  L=L.filter(t=>{ const h=H(t); if(sadHrFilter==='notsc'&&!(!h.tsc&&(!h.employer||h.employer==='TSC'))) return false; if(sadHrFilter==='incomplete'){ const [a,b]=sadHrDone(h); if(a===b) return false; } if(sadHrFilter==='tsc'&&!(!h.employer||h.employer==='TSC')) return false; if(sadHrFilter==='other'&&!(h.employer&&h.employer!=='TSC')) return false;
+    return !q||[t.name,t.username,h.tsc,h.idNo,h.kra,h.designation,h.employer].join(' ').toLowerCase().includes(q); });
+  return L.length?L.map(t=>sadHrCard(school,t)).join(''):`<p class="small">${school.teachers.length?'No teacher matches.':'No teachers yet — the DOS adds teachers from their portal.'}</p>`;
+}
+function sadHrChips(school){ const H=t=>school.staffHR[t.id]||{}, T=school.teachers, c=(k,l,n)=>`<button class="sch-chip ${sadHrFilter===k?'on':''}" onclick="sadHrFilter='${k}';sadHrRefresh()">${l} <b>${n}</b></button>`;
+  return c('all','All',T.length)+c('notsc','No TSC No.',T.filter(t=>!H(t).tsc&&(!H(t).employer||H(t).employer==='TSC')).length)+c('incomplete','Incomplete records',T.filter(t=>{const [a,b]=sadHrDone(H(t));return a<b;}).length)+c('tsc','TSC / not set',T.filter(t=>!H(t).employer||H(t).employer==='TSC').length)+c('other','BOM / other',T.filter(t=>H(t).employer&&H(t).employer!=='TSC').length); }
+function sadHrRefresh(){ const sc=currentSchool(); if(qs('#sadHrList')) qs('#sadHrList').innerHTML=sadHrList(sc); if(qs('#sadHrChips')) qs('#sadHrChips').innerHTML=sadHrChips(sc); }
+function sadHrHTML(school){
+  return `<div class="card"><h2>🪪 Staff Records</h2><p class="small">TSC numbers and other teacher details. This page is <b>only available in the School Admin portal</b>: it is not shown in the DOS, teacher or parent portals. Tap a teacher to open and fill their record; everything saves as you type.</p>
+  <div class="flexbtns no-print" style="align-items:flex-end"><div style="flex:1;min-width:200px"><label>🔍 Search name, TSC No., ID, KRA PIN…</label><input value="${escapeHtml(sadHrQ)}" oninput="sadHrQ=this.value;clearTimeout(window._hrT);window._hrT=setTimeout(sadHrRefresh,180)"></div><button class="ghost" onclick="sadHrCSV()">⬇ CSV</button><button class="ghost" onclick="sadHrPrint()">🖨 Print staff list</button></div>
+  <div class="sch-chips" id="sadHrChips" style="margin-top:8px">${sadHrChips(school)}</div>
+  <div id="sadHrList">${sadHrList(school)}</div>
+  <p class="small">Privacy: these details are hidden from the other portals' screens, but they are saved with the school's data, so they are included in backups and cloud sync. Share backup files and sync codes only with trusted people.</p></div>`;
+}
+function sadHrSet(tid,k,v){ const sc=currentSchool(), r=sc.staffHR[tid]=sc.staffHR[tid]||{}; r[k]=String(v).trim();
+  if(k==='tsc'&&r.tsc){ const d=sc.teachers.find(t=>t.id!==tid&&(sc.staffHR[t.id]||{}).tsc===r.tsc); if(d) toast('⚠ That TSC No. is already recorded for '+d.name,'err'); }
+  saveDB(DB); const t=sc.teachers.find(x=>x.id===tid); if(t&&qs('#hrs_'+tid)) qs('#hrs_'+tid).innerHTML=sadHrSummary(sc,t); if(qs('#hrr_'+tid)) qs('#hrr_'+tid).textContent=sadHrRetire(r); if(qs('#sadHrChips')) qs('#sadHrChips').innerHTML=sadHrChips(sc); }
+const SAD_HR_COLS=[['tsc','TSC No.'],['employer','Employer'],['idNo','ID / Passport No.'],['kra','KRA PIN'],['nssf','NSSF No.'],['sha','SHA No.'],['dob','Date of birth'],['firstAppt','Date first employed'],['postedOn','Joined this school'],['jobGroup','Job group'],['designation','Designation'],['qualification','Qualification'],['subjects','Subjects'],['residence','Residence'],['nokName','Next of kin'],['nokRel','Relationship'],['nokPhone','Next of kin phone'],['remarks','Remarks']];
+function sadHrRows(sc){ return sc.teachers.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).map(t=>[t.name,t.phone||'',t.email||''].concat(SAD_HR_COLS.map(c=>(sc.staffHR[t.id]||{})[c[0]]||''))); }
+function sadHrCSV(){ const sc=currentSchool(); sadDownloadCSV('staff-records.csv',[['Name','Phone','Email'].concat(SAD_HR_COLS.map(c=>c[1]))].concat(sadHrRows(sc))); }
+function sadHrPrint(){ const sc=currentSchool(), cols=['tsc','idNo','kra','nssf','sha','dob','employer','jobGroup','designation','firstAppt'].map(k=>SAD_HR_COLS.find(c=>c[0]===k));
+  const rows=sc.teachers.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).map((t,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(t.name)}</td>${cols.map(c=>`<td>${escapeHtml((sc.staffHR[t.id]||{})[c[0]]||'')}</td>`).join('')}</tr>`).join('');
+  const w=window.open('','_blank'); if(!w){ toast('Allow pop-ups to print, or use the CSV download','err'); return; }
+  w.document.write(`<html><head><title>Staff records</title><style>body{font-family:Arial,sans-serif;padding:16px}table{border-collapse:collapse;width:100%;font-size:12px}td,th{border:1px solid #888;padding:4px 6px;text-align:left}th{background:#e7edf5}</style></head><body><h2>${escapeHtml(sc.name)} — Staff Records</h2><p style="font-size:12px">Confidential · printed ${sadFmt(sadISO(new Date()),true)}</p><table><tr><th>#</th><th>Name</th>${cols.map(c=>`<th>${c[1]}</th>`).join('')}</tr>${rows}</table></body></html>`); w.document.close(); w.focus(); setTimeout(()=>w.print(),400); }
 function sadminTeacherSearch(v){ sadminTeacherQ = v; clearTimeout(window._sadTT); window._sadTT = setTimeout(()=>{ const b = qs('#sadTeachRows'); if(b) b.innerHTML = sadminTeacherRowsHTML(currentSchool()); }, 180); }
 function sadminTeachersHTML(school){
   const n = school.teachers.length, nCt = school.teachers.filter(t=>(t.classTeacherOf||[]).length).length, nUn = school.teachers.filter(t=>!teacherClassIds(school,t).length).length;
@@ -8195,7 +8408,8 @@ function sadminTeachersHTML(school){
   return `<div class="card"><h2>👩‍🏫 Teachers — ${escapeHtml(school.name)}</h2>
   <p class="small">Everyone who teaches at the school, what they teach and which grade they are class teacher of. Add teachers, assign their grades and learning areas, set what they can do and reset passwords further down — the DOS sees every change straight away.</p>
   <div class="row">${stat(n,'Teachers')}${stat(nCt,'Class teachers')}${stat(nUn,'Not assigned to a grade yet')}</div>
-  <div class="flexbtns no-print" style="margin-top:8px;align-items:flex-end"><div style="flex:1;min-width:200px"><label>Search</label><input value="${escapeHtml(sadminTeacherQ)}" placeholder="Name, username, phone, grade…" oninput="sadminTeacherSearch(this.value)"></div><button class="ghost" onclick="window.print()">🖨 Print list</button></div>
+  <div class="flexbtns no-print" style="margin-top:8px;align-items:flex-end"><div style="flex:1;min-width:200px"><label>Search</label><input value="${escapeHtml(sadminTeacherQ)}" placeholder="Name, username, phone, grade…" oninput="sadminTeacherSearch(this.value)"></div><div><label>View</label><select onchange="sadminTSet('group',this.value)"><option value="1" ${sadminTGroup?'selected':''}>Grouped by level</option><option value="0" ${sadminTGroup?'':'selected'}>One list</option></select></div><button class="ghost" onclick="sadminTeachersCSV()">⬇ CSV</button><button class="ghost" onclick="window.print()">🖨 Print list</button></div>
+  <div class="sch-chips no-print" id="sadTeachChips" style="margin-top:8px">${sadminTChipsHTML(school)}</div>
   <div class="print-only-block" style="margin-top:8px"><div style="overflow-x:auto"><table><tr><th>#</th><th>Teacher</th><th>Contact</th><th>Teaches (grade: learning areas)</th><th>Class teacher of</th><th>Can do</th></tr><tbody id="sadTeachRows">${sadminTeacherRowsHTML(school)}</tbody></table></div></div></div>
   ${sadminTeacherLinkHTML(school)}
   ${sadminBulkTeachersHTML()}
@@ -8519,7 +8733,7 @@ function renderTeacher(){
     }).join(' ');
   }).join(' ');
   const classTeacherNames = (t.classTeacherOf||[]).map(cid=>{const c=school.classes.find(x=>x.id===cid);return c?c.name:'';}).filter(Boolean);
-  const welcome = `<div class="card no-print"><h2>👩‍🏫 Welcome, ${escapeHtml(t.name)}</h2>
+  const welcome = teacherNoticeCards(school, t) + `<div class="card no-print"><h2>👩‍🏫 Welcome, ${escapeHtml(t.name)}</h2>
   <p class="small">Your assigned Grade / Learning Area combinations:</p>
   ${chips || '<span class="small">No assignments yet — contact your DOS.</span>'}
   <p class="small" style="margin-top:8px">Access: ✏️ Enter marks${t.canPrint?' · 📄 Reports':''}${t.canPrintAssess?' · 🖨 Assessment sheets':''}${t.canPostAssignments?' · 📎 Assignments':''}${classTeacherNames.length?` · 📋 Class Teacher — ${classTeacherNames.map(escapeHtml).join(', ')}`:''}</p>
