@@ -2945,6 +2945,11 @@ function route(){
       return;
     }
   }
+  if(session.role==='dos' || session.role==='finance'){
+    const _sc = DB.schools[session.schoolCode];
+    const _me = _sc && (session.role==='dos' ? _sc.dos : _sc.finance).find(x=>x.id===session.userId);
+    if(_me && _me.disabled){ logout(); setTimeout(()=>toast('This account has been disabled. Contact your school administrator.','err'),50); return; }
+  }
   whoBar.innerHTML = `${escapeHtml(session.label)}<span id="syncBadge"></span> &nbsp;|&nbsp; ${session.role==='dos'?'<button class="ghost" onclick="openRestorePoints()" title="Undo a mistake or recover lost marks">🕘 Undo</button> ':''}<button class="ghost" onclick="logout()">Logout</button>`;
   if(session.role==='admin') renderAdmin();
   else if(session.role==='dos'){ renderDOS(); maybeShowWaGroupPrompt(); try{ takeSnapshot('Signed in', {kind:'login', minGapMs:30*60000}); }catch(e){} }
@@ -3424,7 +3429,7 @@ async function doDosLogin(){
   // on a device that's been used before. A fresh cloud copy is still pulled in right
   // after, in the background, so the session catches up with anything changed elsewhere.
   const cached = DB.schools[code];
-  const cachedRec = cached && cached.dos.find(d=>d.username===u && d.password===p);
+  const cachedRec = cached && cached.dos.find(d=>d.username===u && d.password===p && !d.disabled);
   if(cachedRec){
     const access = (await accessWithFreshCheck(code, cached)).access;
     if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
@@ -3444,6 +3449,7 @@ async function doDosLogin(){
   if(!school){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
   const rec = school.dos.find(d=>d.username===u && d.password===p);
   if(!rec){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">Invalid credentials.</div>'; return; }
+  if(rec.disabled){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">This account has been disabled. Please contact your school administrator.</div>'; return; }
   const access = (await accessWithFreshCheck(code, school)).access;
   if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
   setSession({role:'dos', schoolCode:code, userId:rec.id, label:`${rec.name} · ${school.name}`});
@@ -3486,7 +3492,7 @@ async function doFinanceLogin(){
   const p = qs('#fpass').value;
   setLoginBusy(true, 'Logging in…');
   const cached = DB.schools[code];
-  const cachedRec = cached && cached.finance.find(f=>f.username===u && f.password===p);
+  const cachedRec = cached && cached.finance.find(f=>f.username===u && f.password===p && !f.disabled);
   if(cachedRec){
     const access = (await accessWithFreshCheck(code, cached)).access;
     if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
@@ -3506,6 +3512,7 @@ async function doFinanceLogin(){
   if(!school){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">School code not found.</div>'; return; }
   const rec = school.finance.find(f=>f.username===u && f.password===p);
   if(!rec){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">Invalid credentials.</div>'; return; }
+  if(rec.disabled){ setLoginBusy(false); qs('#loginMsg').innerHTML='<div class="msg err">This account has been disabled. Please contact your school administrator.</div>'; return; }
   const access = (await accessWithFreshCheck(code, school)).access;
   if(!access.ok){ setLoginBusy(false); qs('#loginMsg').innerHTML=`<div class="msg err">${escapeHtml(access.msg)}</div>`; return; }
   setSession({role:'finance', schoolCode:code, userId:rec.id, label:`${rec.name} (Finance) · ${school.name}`});
@@ -5719,7 +5726,7 @@ const HELP_SECTIONS = [
       <li>If you re-add a deleted learner with the <b>same admission number</b>, their old fee records reattach automatically.</li>
     </ul>
     <p><b>Moving a school over from another app:</b> Finance has a <b>Data Migration</b> tool that imports learners, balances, fee structure, payment history and expenses from Excel/CSV. Learners it creates also appear in your DOS lists, in the grade from the file. Finance can undo the most recent import.</p>
-    <p><b>Finance access levels:</b> Full accounts can change fee records; View-only accounts can only view, print and export.
+    <p><b>Finance access levels:</b> Full accounts can change fee records; View-only accounts can only view, print and export. The School Admin can edit any DOS or Finance account (name, username, email, phone, access level, password) or disable it, from the School Admin portal → Accounts.
     Finance can also view learner report cards but cannot enter or change marks.</p>` },
 
   { title: '🧠 Exam Paper Generator', body: `
@@ -8147,7 +8154,7 @@ function tplFinanceCredits(school){
    Top-level school account: creates the DOS and Finance accounts and hands out the
    portal links. DOS creates teachers; Finance handles fees + SMS credit. */
 let sadminTab = 'dashboard';
-function gotoSadminTab(k){ sadminTab = k; document.body.classList.remove('dos-menu-open'); renderSadmin(); window.scrollTo(0,0); }
+function gotoSadminTab(k){ acctEdit = null; sadminTab = k; document.body.classList.remove('dos-menu-open'); renderSadmin(); window.scrollTo(0,0); }
 function rerenderRole(){ if(session && session.role==='sadmin') renderSadmin(); else if(session && session.role==='finance') renderFinance(); else renderDOS(); }
 function portalUrl(code, key, extra){ return location.origin + location.pathname + `?school=${code}` + (key?`&p=${key}`:'') + (extra||''); }
 function renderSadmin(){
@@ -8166,8 +8173,9 @@ function renderSadmin(){
     links: `<div class="card"><h2>🔗 Portal Links</h2>${links.map(l=>`<div style="margin-bottom:10px"><b>${l[0]}</b> <span class="small">— ${l[2]}</span><div class="linkbox" style="margin-top:4px">${l[1]}</div><button class="ghost" style="margin-top:4px" onclick="copyLinkBox(this)">📋 Copy link</button></div>`).join('')}</div>
   `,
     dos: `<div class="card"><h2>🎓 DOS Accounts</h2>
-  <div class="row"><div><label>Name</label><input id="dsName"></div><div><label>Username</label><input id="dsUser"></div><div><label>Password</label><input id="dsPass" placeholder="blank = auto-generate"></div><div style="align-self:flex-end"><button onclick="addDosAcct()">➕ Add DOS</button></div></div>
-  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Actions</th></tr>${school.dos.map(d=>`<tr><td>${escapeHtml(d.name||'-')}</td><td>${escapeHtml(d.username)}</td><td><button class="ghost" onclick="resetDosAcct('${d.id}')">🔑 Reset Password</button> <button class="danger" onclick="delDosAcct('${d.id}')">✕</button></td></tr>`).join('')}</table></div>
+  <p class="small">Add DOS accounts, or tap <b>✏️ Edit</b> on any account to change the name, <b>username</b>, email, phone or password. A disabled account cannot sign in. At least one active DOS account is always kept.</p>
+  <div class="row"><div><label>Name</label><input id="dsName"></div><div><label>Username</label><input id="dsUser" autocapitalize="none" autocomplete="off"></div><div><label>Password</label><input id="dsPass" placeholder="blank = auto-generate"></div><div><label>Email <span class="small">(optional)</span></label><input id="dsEmail" type="email"></div><div><label>Phone <span class="small">(optional)</span></label><input id="dsPhone"></div><div style="align-self:flex-end"><button onclick="addDosAcct()">➕ Add DOS</button></div></div>
+  ${sadAcctTableHTML('dos', school.dos)}</div>
   `,
     teachers: sadminTeachersHTML(school),
     staffing: sadminStaffingHTML(school),
@@ -8445,21 +8453,98 @@ function bulkAddTeachers(){
   saveDB(DB); toast(added+' teacher(s) added'+(skipped?' — '+skipped+' skipped (missing details or username already used)':'')); rerenderRole();
 }
 function acctPw(v){ return v || Math.random().toString(36).slice(2,10); }
-function addAcct(list, prefix, nameId, userId, passId, label){
+function addAcct(list, prefix, nameId, userId, passId, label, emailId, phoneId){
   const school = currentSchool(); const name = qs(nameId).value.trim(), username = qs(userId).value.trim();
   if(!name||!username){ toast('Enter a name and username','err'); return; }
   if(school.dos.concat(school.finance,school.sadmins,school.teachers).some(x=>x.username===username)){ toast('That username is already taken','err'); return; }
   const password = acctPw(qs(passId).value.trim());
-  list.push({id:uid(prefix), name, username, password, email:'', phone:''}); saveDB(DB);
+  const email = emailId&&qs(emailId) ? qs(emailId).value.trim() : '', phone = phoneId&&qs(phoneId) ? qs(phoneId).value.trim() : '';
+  list.push({id:uid(prefix), name, username, password, email, phone}); saveDB(DB);
   toast(`${label} added. Password: ${password}`); renderSadmin();
 }
-function addDosAcct(){ addAcct(currentSchool().dos,'dos_','#dsName','#dsUser','#dsPass','DOS account'); }
+function addDosAcct(){ addAcct(currentSchool().dos,'dos_','#dsName','#dsUser','#dsPass','DOS account','#dsEmail','#dsPhone'); }
 function addSadminAcct(){ addAcct(currentSchool().sadmins,'sa_','#saName','#saUser','#saPass','Admin account'); }
-function resetAcct(list,id){ const a=list.find(x=>x.id===id); if(!a) return; if(!confirm(`Reset password for ${a.username}?`)) return; a.password = acctPw(''); saveDB(DB); alert(`New password for ${a.username}: ${a.password}`); }
+function resetAcct(list,id){ const a=list.find(x=>x.id===id); if(!a) return; const custom = prompt(`Enter a new password for ${a.name||a.username} (username: ${a.username}). Leave blank to auto-generate one:`); if(custom===null) return; a.password = acctPw(custom.trim()); saveDB(DB); alert(`${a.name||a.username} (username: ${a.username}) — new password: ${a.password}\n\nShare this with them directly.`); }
 function resetDosAcct(id){ resetAcct(currentSchool().dos,id); }
 function resetSadminAcct(id){ resetAcct(currentSchool().sadmins,id); }
 function delDosAcct(id){ const sc=currentSchool(); if(sc.dos.length<=1){ toast('Keep at least one DOS account','err'); return; } if(!confirm('Remove this DOS account?')) return; sc.dos=sc.dos.filter(x=>x.id!==id); saveDB(DB); renderSadmin(); }
 function delSadminAcct(id){ if(!confirm('Remove this admin account?')) return; const sc=currentSchool(); sc.sadmins=sc.sadmins.filter(x=>x.id!==id); saveDB(DB); renderSadmin(); }
+
+/* ---- School Admin: edit DOS / Finance accounts (name, username, contact, password, access, enable/disable) ---- */
+let acctEdit = null;   // {kind:'dos'|'finance', id} while a row is open for editing
+function acctList(kind){ const sc=currentSchool(); return kind==='dos' ? sc.dos : sc.finance; }
+function sadAcctTableHTML(kind, list){
+  const isFin = kind==='finance';
+  const activeDos = list.filter(x=>!x.disabled).length;
+  const head = `<tr><th>Name</th><th>Username</th>${isFin?'<th>Access</th>':''}<th>Email</th><th>Phone</th><th>Status</th><th>Actions</th></tr>`;
+  const cols = isFin ? 7 : 6;
+  const rows = list.map(a=>{
+    const dis = !!a.disabled;
+    if(acctEdit && acctEdit.kind===kind && acctEdit.id===a.id){
+      return `<tr><td colspan="${cols}" style="background:#f7f9fc">
+        <b>✏️ Editing ${escapeHtml(a.name||a.username)}</b>
+        <div class="row" style="margin-top:6px">
+          <div><label>Name</label><input id="acName" value="${escapeHtml(a.name||'')}"></div>
+          <div><label>Username</label><input id="acUser" value="${escapeHtml(a.username||'')}" autocapitalize="none" autocomplete="off"></div>
+          <div><label>Email <span class="small">(optional)</span></label><input id="acEmail" type="email" value="${escapeHtml(a.email||'')}"></div>
+          <div><label>Phone <span class="small">(optional)</span></label><input id="acPhone" value="${escapeHtml(a.phone||'')}"></div>
+          ${isFin?`<div><label>Access</label><select id="acLevel"><option value="full" ${a.level==='view'?'':'selected'}>Full (can edit)</option><option value="view" ${a.level==='view'?'selected':''}>View-only</option></select></div>`:''}
+          <div><label>New password <span class="small">(blank = keep current)</span></label><input id="acPass" autocomplete="new-password" placeholder="min 4 characters"></div>
+        </div>
+        <p class="small">If you change the username or password, tell this person — their old login stops working straight away. Usernames must be unique across the whole school (DOS, Finance, School Admin and Teachers).</p>
+        <div class="flexbtns"><button onclick="saveAcctEdit()">💾 Save changes</button><button class="ghost" onclick="cancelAcctEdit()">Cancel</button></div>
+      </td></tr>`;
+    }
+    const status = dis ? '<span class="badge" style="background:#d1473f">Disabled</span>' : '<span class="badge" style="background:#1f8a4c">Active</span>';
+    const canDisable = !( !dis && !isFin && activeDos<=1 );
+    return `<tr${dis?' style="opacity:.7"':''}>
+      <td>${escapeHtml(a.name||'-')}</td><td>${escapeHtml(a.username)}</td>
+      ${isFin?`<td>${a.level==='view'?'View-only':'Full'}</td>`:''}
+      <td>${escapeHtml(a.email||'')||'<span class="small">—</span>'}</td><td>${escapeHtml(a.phone||'')||'<span class="small">—</span>'}</td>
+      <td>${status}</td>
+      <td style="white-space:nowrap"><button class="ghost" onclick="startAcctEdit('${kind}','${a.id}')">✏️ Edit</button> <button class="ghost" onclick="${kind==='dos'?'resetDosAcct':'resetFinancePassword'}('${a.id}')">🔑 Password</button> ${canDisable?`<button class="ghost" onclick="toggleAcctDisabled('${kind}','${a.id}')">${dis?'▶ Enable':'⏸ Disable'}</button>`:''} <button class="danger" onclick="${kind==='dos'?'delDosAcct':'delFinance'}('${a.id}')">✕</button></td></tr>`;
+  }).join('') || `<tr><td colspan="${cols}" class="small">No ${isFin?'finance':'DOS'} accounts yet.</td></tr>`;
+  return `<div style="overflow-x:auto"><table style="margin-top:10px">${head}${rows}</table></div>`;
+}
+function startAcctEdit(kind,id){ acctEdit={kind,id}; renderSadmin(); setTimeout(()=>{ const el=qs('#acName'); if(el&&el.scrollIntoView) el.scrollIntoView({block:'center',behavior:'smooth'}); },30); }
+function cancelAcctEdit(){ acctEdit=null; renderSadmin(); }
+function saveAcctEdit(){
+  if(!acctEdit) return;
+  const school=currentSchool(), list=acctList(acctEdit.kind), a=list.find(x=>x.id===acctEdit.id);
+  if(!a){ acctEdit=null; renderSadmin(); return; }
+  const name=qs('#acName').value.trim(), username=qs('#acUser').value.trim(), email=qs('#acEmail').value.trim(), phone=qs('#acPhone').value.trim(), pw=qs('#acPass').value.trim();
+  if(!name){ toast('Enter a name','err'); return; }
+  if(!username){ toast('Enter a username','err'); return; }
+  if(/\s/.test(username)){ toast('Username cannot contain spaces','err'); return; }
+  if(username.length<3){ toast('Username must be at least 3 characters','err'); return; }
+  if(email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ toast('That email address does not look right','err'); return; }
+  if(pw && pw.length<4){ toast('New password must be at least 4 characters','err'); return; }
+  const userChanged = username!==a.username;
+  if(userChanged){
+    const clash = school.dos.concat(school.finance,school.sadmins,school.teachers).some(x=>x!==a && x.username===username);
+    if(clash){ toast('That username is already taken','err'); return; }
+  }
+  const oldUser=a.username;
+  a.name=name; a.username=username; a.email=email; a.phone=phone;
+  if(acctEdit.kind==='finance') a.level = (qs('#acLevel')||{}).value==='view' ? 'view' : 'full';
+  if(pw) a.password=pw;
+  // Keep an open session for this very account showing the right name.
+  if(session && session.userId===a.id && session.role===acctEdit.kind){ session.label = acctEdit.kind==='finance' ? `${a.name} (Finance) · ${school.name}` : `${a.name} · ${school.name}`; }
+  const kind=acctEdit.kind; acctEdit=null; saveDB(DB);
+  toast('Account updated'); renderSadmin();
+  if(userChanged || pw){
+    setTimeout(()=>alert(`${a.name} — updated login details\n\nSchool code: ${school.code}\nUsername: ${a.username}${userChanged?'  (was: '+oldUser+')':''}\nPassword: ${pw?pw:'(unchanged)'}\n\nShare this with them directly.`),50);
+  }
+}
+function toggleAcctDisabled(kind,id){
+  const list=acctList(kind), a=list.find(x=>x.id===id); if(!a) return;
+  if(!a.disabled){
+    if(kind==='dos' && list.filter(x=>!x.disabled).length<=1){ toast('Keep at least one active DOS account','err'); return; }
+    if(!confirm(`Disable ${a.name||a.username}? They will no longer be able to sign in until you enable the account again.`)) return;
+    a.disabled=true;
+  } else a.disabled=false;
+  saveDB(DB); toast(a.disabled?'Account disabled':'Account enabled'); renderSadmin();
+}
 
 /* ============================= FINANCE ACCOUNTS (DOS-side management) =============================
    A Finance account is deliberately simpler than a Teacher account: no per-class/learning-area
@@ -8467,7 +8552,7 @@ function delSadminAcct(id){ if(!confirm('Remove this admin account?')) return; c
    import + report viewing), so there is nothing else to grant. */
 function tplFinanceAccounts(school){
   return `<div class="card"><h2>💰 Finance Accounts</h2>
-  <p class="small">Finance accounts manage SMS credit, record payments, can bulk-import fee balances (via CSV), see the fees summary, and view learner report forms — but cannot enter or edit marks, and never see any other DOS or Teacher tools.</p>
+  <p class="small">${(session&&session.role=='sadmin')?'Tap <b>✏️ Edit</b> on an account to change its name, <b>username</b>, email, phone, access level or password, or disable it. ':''}Finance accounts manage SMS credit, record payments, can bulk-import fee balances (via CSV), see the fees summary, and view learner report forms — but cannot enter or edit marks, and never see any other DOS or Teacher tools.</p>
   <div class="row">
     <div><label>Name</label><input id="fiName"></div>
     <div><label>Username</label><input id="fiUser"></div>
@@ -8477,7 +8562,7 @@ function tplFinanceAccounts(school){
     <div><label>Access</label><select id="fiLevel"><option value="full">Full (can edit)</option><option value="view">View-only</option></select></div>
   </div>
   <div class="flexbtns"><button onclick="addFinance()">➕ Add Finance Account</button></div>
-  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Access</th><th>Email</th><th>Phone</th><th>Actions</th></tr>
+  ${(session&&session.role==='sadmin') ? sadAcctTableHTML('finance', school.finance) : `<table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Access</th><th>Email</th><th>Phone</th><th>Actions</th></tr>
   ${school.finance.map(fi=>`<tr>
     <td>${escapeHtml(fi.name)}</td><td>${escapeHtml(fi.username)}</td>
     <td><select onchange="setFinanceContact('${fi.id}','level',this.value)"><option value="full" ${fi.level==='view'?'':'selected'}>Full</option><option value="view" ${fi.level==='view'?'selected':''}>View-only</option></select></td>
@@ -8485,7 +8570,7 @@ function tplFinanceAccounts(school){
     <td><input value="${escapeHtml(fi.phone||'')}" placeholder="phone" onchange="setFinanceContact('${fi.id}','phone',this.value)"></td>
     <td><button class="ghost" onclick="resetFinancePassword('${fi.id}')">🔑 Reset Password</button> <button class="danger" onclick="delFinance('${fi.id}')">✕</button></td>
   </tr>`).join('') || '<tr><td colspan="5" class="small">No finance accounts yet.</td></tr>'}
-  </table>
+  </table>`}
   </div>`;
 }
 function setFinanceContact(fid,field,value){
@@ -12013,8 +12098,13 @@ function fitReportCardsToPage(){
   plan.forEach(({el,k,tooBig})=>{ el.style.setProperty('--rc-k', String(k)); el.classList.toggle('rc-big', !!tooBig); });
 }
 /* ---- Printing sheets (cumulative, class assessment, grade lists, analysis...): orientation, paper, repeating headings ---- */
+// Phones/tablets: the print dialog (Android "Save as PDF" etc.) decides paper size and orientation itself and ignores
+// the page's own. If the sheet is laid out for a different shape (e.g. forced landscape) than the paper actually used,
+// it is shrunk onto the page and the bottom half of every page is left blank. So on those devices we do NOT force a
+// page size; the sheet is laid out for whatever the dialog is set to and each page is filled before the next starts.
+function isTouchPrintDevice(){ const ua=navigator.userAgent||''; return /Android|iPhone|iPad|iPod|Mobile|; wv\)/i.test(ua) || (navigator.maxTouchPoints>1 && /Macintosh/.test(ua)); }
 function sheetOrient(){ try{ const v=localStorage.getItem('edutrack_sheet_orient'); if(v==='portrait'||v==='landscape'||v==='auto') return v; }catch(e){} return 'auto'; }
-function setSheetOrient(v){ try{ localStorage.setItem('edutrack_sheet_orient', v); }catch(e){} document.querySelectorAll('.sheet-orient-sel').forEach(x=>x.value=v); toast('Print layout: '+(v==='auto'?'automatic':v)+' — in the print dialog keep the same Paper size'); }
+function setSheetOrient(v){ try{ localStorage.setItem('edutrack_sheet_orient', v); }catch(e){} document.querySelectorAll('.sheet-orient-sel').forEach(x=>x.value=v); toast(isTouchPrintDevice() ? 'On phones/tablets, choose Portrait or Landscape in the print dialog itself — pages fill completely either way' : 'Print layout: '+(v==='auto'?'automatic':v)+' — in the print dialog keep the same Paper size'); }
 function sheetPrintPick(){
   const o = sheetOrient();
   return rcPaperPick() + `<select class="sheet-orient-sel no-print" onchange="setSheetOrient(this.value)" style="width:auto;margin:0" title="Wide sheets with many subjects usually need Landscape"><option value="auto" ${o==='auto'?'selected':''}>Layout: Auto</option><option value="portrait" ${o==='portrait'?'selected':''}>Layout: Portrait</option><option value="landscape" ${o==='landscape'?'selected':''}>Layout: Landscape</option></select>`;
@@ -12041,7 +12131,7 @@ function prepareSheetPrint(){
   sheetRepeatHeaders();
   const paper = rcPaper(); let o = sheetOrient();
   if(o==='auto') o = sheetWidestCols() >= 10 ? 'landscape' : 'portrait';
-  const st = document.createElement('style'); st.id = 'sheetPageCss'; st.textContent = '@page{size:'+paper+' '+o+';margin:8mm}';
+  const st = document.createElement('style'); st.id = 'sheetPageCss'; st.textContent = isTouchPrintDevice() ? '@page{size:auto;margin:8mm}' : '@page{size:'+paper+' '+o+';margin:8mm}';
   const rp = document.getElementById('rcPageCss'); if(rp) rp.remove();
   document.head.appendChild(st);
   onPrintDone(()=>{ const e=document.getElementById('sheetPageCss'); if(e) e.remove(); }, 'sheetcss');
