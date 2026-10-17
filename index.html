@@ -5074,7 +5074,7 @@ const DOS_MENU = [
   {group:'School setup', items:[['classes','🏷 Grades'],['areas','📚 Learning Areas'],['grading','🎯 Grading System'],['students','🧑‍🎓 Learners'],['teachers','👩‍🏫 Teachers &amp; Permissions']]},
   {group:'Timetable', items:[['tt','🗓 Timetables'],['ttsetup','⚙️ Timetable Setup'],['ttrem','🔁 Remedial Timetables'],['ttwork','📊 Teacher Workload'],['extt','📝 Exam Timetable'],['duty','👮 Duty Rota']]},
   {group:'Exams &amp; marks', items:[['exams','📝 Exams'],['qpaper','🧠 Exam Paper Generator'],['sow','📅 Scheme of Work'],['marks','✏️ Enter/Edit Marks']]},
-  {group:'Results &amp; reports', items:[['assess','🖨 Assessment Sheets'],['analysis','📈 Results Analysis'],['reports','📄 Reports'],['history','🗂 Exam History']]},
+  {group:'Results &amp; reports', items:[['assess','🖨 Assessment Sheets'],['analysis','📈 Results Analysis'],['reports','📄 Reports'],['certs','🎓 Certificates'],['history','🗂 Exam History']]},
   {group:'Parents', items:[['assignments','📎 Assignments'],['sms','💬 SMS to Parents'],['links','🔗 Share Login Links']]},
   {group:'School &amp; account', items:[['profile','🏫 School Details'],['account','🔑 My Account'],['help','❓ Help / Manual']]}
 ];
@@ -5594,6 +5594,7 @@ function renderDOS(){
   if(dosTab==='assess') c.innerHTML = tplAssessPicker(school);
   if(dosTab==='analysis'){ c.innerHTML = tplResultsAnalysis(school); raFillExams(); }
   if(dosTab==='reports'){ c.innerHTML = tplReportsPicker(school); if(school.classes.length){ fillRepExams(); fillRepLearners(); } }
+  if(dosTab==='certs'){ c.innerHTML = tplCertificates(school); if(qs('#certClass')) certClassChanged(); }
   if(dosTab==='history') c.innerHTML = tplHistory(school);
   if(dosTab==='assignments') c.innerHTML = tplAssignments(school);
   if(dosTab==='sms'){ c.innerHTML = tplSms(school); smsFillExamOptions(); }
@@ -5637,6 +5638,7 @@ const HELP_SECTIONS = [
       <tr><td><b>Assessment Sheets</b></td><td>Generate/print a class assessment sheet for an exam, or a cumulative end-of-term sheet.</td></tr>
       <tr><td><b>Results Analysis</b></td><td>Deeper analysis than the dashboard: rank grades, compare learning areas, drill into an exam.</td></tr>
       <tr><td><b>Reports</b></td><td>Generate and print individual learner progress reports.</td></tr>
+      <tr><td><b>Certificates</b></td><td>Print completion certificates for learners moving up a level (PP2 → Grade 1, Grade 3 → 4, Grade 6 → 7, Grade 9 → 10, Grade 12 graduation) or plain promotion certificates for other grades. Pick the grade, untick any learner who should not get one, edit the wording if you wish, and print on A4 landscape.</td></tr>
       <tr><td><b>Exam History</b></td><td>Look back at past exams and their results.</td></tr>
       <tr><td><b>Assignments</b></td><td>Send a printable assignment/homework sheet to a grade's Parent Portal, with an optional image attachment.</td></tr>
       <tr><td><b>SMS to Parents</b></td><td>Send results/announcements by SMS (requires SMS to be configured).</td></tr>
@@ -6712,7 +6714,7 @@ function studentRowsHTML(school){
     <td style="white-space:nowrap"><input class="${mc(s.parentPin).trim()}" value="${escapeHtml(s.parentPin||'')}" placeholder="PIN" style="width:76px" inputmode="numeric" onchange="updStudentPin('${s.id}', this.value, this)"> <button class="ghost" title="Generate a new PIN" onclick="regenStudentPin('${s.id}')">🔁</button></td>
     <td style="white-space:nowrap"><button class="ghost" title="More details" onclick="stuToggle(this)">▾ More</button> <button class="danger" title="Delete learner" onclick="delStudent('${s.id}')">✕</button></td></tr>
     <tr class="stu-more" style="display:none"><td></td><td colspan="7"><div class="stu-moregrid">
-      <label>Photo<span style="display:flex;gap:6px;margin-top:2px"><label class="small" style="cursor:pointer;background:#eef2f7;border:1px solid var(--border);border-radius:7px;padding:7px 10px;color:var(--navy);font-weight:700">📷 ${s.photo?'Change':'Upload / take'}<input type="file" accept="image/*" capture="user" style="display:none" onchange="stuPhotoPick('${s.id}',this)"></label>${s.photo?`<button class="danger" onclick="stuPhotoRemove('${s.id}')">Remove</button>`:''}</span></label>
+      <label>Photo<span style="display:flex;gap:6px;margin-top:2px"><label class="small" style="cursor:pointer;background:#eef2f7;border:1px solid var(--border);border-radius:7px;padding:7px 10px;color:var(--navy);font-weight:700">📷 ${s.photo?'Change':'Upload / take'}<input type="file" accept="image/*" capture="user" style="display:none" onchange="stuPhotoPick('${s.id}',this)"></label>${s.photo?`<button class="danger" onclick="stuPhotoRemove('${s.id}')">Remove</button>`:''}</span>${s.photo?`<span class="small" style="display:block;margin-top:4px">Background: ${photoBgCtl('pbg_'+s.id,s.photoBg||(s.photoOrig?(school.photoBg||'cert'):'none'),'stuPhotoBg',"'"+s.id+"',")}</span>`:''}</label>
       <label>KNEC Assessment No.<input value="${escapeHtml(s.assessNo||'')}" placeholder="— none —" onchange="updStudentAssessNo('${s.id}', this.value, this)"></label>
       ${pd?`<label>Parent / Guardian<input value="${escapeHtml(s.parentName||'')}" placeholder="Name" onchange="updStudentParent('${s.id}','parentName',this.value,this)"></label>
       <label>Relationship<select onchange="updStudentParent('${s.id}','parentRel',this.value,this)">${['','Mother','Father','Guardian','Other'].map(o=>`<option value="${o}" ${(s.parentRel||'')===o?'selected':''}>${o||'—'}</option>`).join('')}</select></label>
@@ -6722,7 +6724,7 @@ function studentRowsHTML(school){
   });
   return out;
 }
-let stuNewPhotoData = '';
+let stuNewPhotoData = '', stuNewPhotoOrig = '', stuNewPhotoBgV = '';
 // Reads an image file, centre-crops it to a 4:5 passport shape and shrinks it to 240x300 JPEG (~10-20 KB)
 // so photos stay small enough to save, sync and print for a whole school.
 function stuPhotoFromFile(file){
@@ -6739,20 +6741,70 @@ function stuPhotoFromFile(file){
     fr.readAsDataURL(file);
   });
 }
-function stuNewPhotoPick(inp){ const f=inp.files&&inp.files[0]; if(!f){ stuNewPhotoData=''; return; }
-  stuPhotoFromFile(f).then(d=>{ stuNewPhotoData=d; toast('Photo ready — it will be saved when you tap Add Learner'); }).catch(e=>{ stuNewPhotoData=''; inp.value=''; toast(e.message,'err'); }); }
+/* ---- Photo background: applied automatically whenever a photo is added (uses the cutout engine in the Certificates section).
+   The untouched passport crop is kept as photoOrig so the background can be changed again later without re-uploading. ---- */
+const PHOTO_BG_LIST=[['cert','Certificate blue'],['white','Plain white'],['sky','Sky blue'],['grey','Light grey'],['cream','Cream / gold tint'],['navy','School navy'],['custom','Custom colour…'],['none','Keep original background']];
+function photoBgCtl(id,cur,fn,arg){
+  const c=/^custom:#[0-9a-f]{6}$/i.test(cur||''), col=c?cur.slice(7):'#ffffff', sel=c?'custom':(cur||'cert');
+  return `<span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap"><select id="${id}" style="width:auto" onchange="var c=document.getElementById('${id}c');c.style.display=this.value==='custom'?'':'none';${fn}(${arg}this.value==='custom'?'custom:'+c.value:this.value)">${PHOTO_BG_LIST.map(([v,l])=>`<option value="${v}" ${sel===v?'selected':''}>${l}</option>`).join('')}</select><input type="color" id="${id}c" value="${col}" title="Pick any background colour" style="width:44px;height:34px;padding:0;${c?'':'display:none'}" onchange="${fn}(${arg}'custom:'+this.value)"></span>`;
+}
+function stuBgNote(m){ return m==='failed'?'Photo saved, but the background could not be separated reliably — original kept. A photo against a plainer wall works best.':m==='orig'?'Photo saved with its original background':'Photo saved with a clean background'; }
+async function stuPhotoApplyBg(orig,bg,cache){
+  if(!bg||bg==='none') return {src:orig,method:'orig'};
+  return certQueue(async()=>{
+    const k='o|'+orig.length+':'+orig.slice(-24); let mk=cache?_certMask[k]:null;
+    if(!mk){ mk=await certMakeMask(orig); if(cache){ if(Object.keys(_certMask).length>40) for(const q in _certMask) delete _certMask[q]; _certMask[k]=mk; } }
+    return mk.mask?{src:certCompose(mk,bg),method:mk.method}:{src:orig,method:'failed'};
+  });
+}
+async function stuPhotoPrepare(file,bg,cache){
+  const orig=await stuPhotoFromFile(file), r=await stuPhotoApplyBg(orig,bg,cache);
+  return {photo:r.src, orig, method:r.method, bg:bg||'none'};
+}
+function stuSchoolBg(){ const sc=currentSchool(); return (sc&&sc.photoBg)||'cert'; }
+function stuNewPhotoPick(inp){ const f=inp.files&&inp.files[0]; if(!f){ stuNewPhotoData=''; stuNewPhotoOrig=''; const pv=qs('#stuNewPhotoPrev'); if(pv) pv.style.display='none'; return; }
+  const bg=stuNewPhotoBgV||stuSchoolBg(); toast('Preparing photo…');
+  stuPhotoPrepare(f,bg,true).then(r=>{ stuNewPhotoData=r.photo; stuNewPhotoOrig=r.orig; stuNewPhotoBgV=bg; const pv=qs('#stuNewPhotoPrev'); if(pv){ pv.src=r.photo; pv.style.display=''; }
+    toast(r.method==='failed'?stuBgNote('failed'):'Photo ready with a clean background — it will be saved when you tap Add Learner', r.method==='failed'?'err':undefined); })
+   .catch(e=>{ stuNewPhotoData=''; stuNewPhotoOrig=''; inp.value=''; toast(e.message,'err'); }); }
+function stuNewPhotoBgSet(v){ stuNewPhotoBgV=v; if(!stuNewPhotoOrig) return; toast('Changing background…');
+  stuPhotoApplyBg(stuNewPhotoOrig,v,true).then(r=>{ stuNewPhotoData=r.photo; const pv=qs('#stuNewPhotoPrev'); if(pv){ pv.src=r.photo; pv.style.display=''; } if(r.method==='failed') toast(stuBgNote('failed'),'err'); }); }
 function stuPhotoPick(id, inp){
   const f=inp.files&&inp.files[0]; if(!f) return; const school=currentSchool(), st=school.students.find(x=>x.id===id); if(!st) return;
-  stuPhotoFromFile(f).then(d=>{ st.photo=d; saveDB(DB); toast('Photo saved for '+st.name); renderStudentRows(); }).catch(e=>toast(e.message,'err'));
+  const bg=stuSchoolBg(); toast('Preparing photo…');
+  stuPhotoPrepare(f,bg,true).then(r=>{ st.photo=r.photo; st.photoOrig=r.orig; st.photoBg=bg; saveDB(DB); toast(r.method==='failed'?stuBgNote('failed'):'Photo saved for '+st.name+' with a clean background', r.method==='failed'?'err':undefined); renderStudentRows(); }).catch(e=>toast(e.message,'err'));
 }
-function stuPhotoRemove(id){ const school=currentSchool(), st=school.students.find(x=>x.id===id); if(!st||!confirm('Remove the photo of '+st.name+'?')) return; delete st.photo; saveDB(DB); toast('Photo removed'); renderStudentRows(); }
+async function stuPhotoBg(id,bg){
+  const school=currentSchool(), st=school.students.find(x=>x.id===id); if(!st||!st.photo) return;
+  if(!st.photoOrig) st.photoOrig=st.photo;
+  toast('Changing background…');
+  try{ const r=await stuPhotoApplyBg(st.photoOrig,bg,true); st.photo=r.src; st.photoBg=bg; saveDB(DB); toast(r.method==='failed'?stuBgNote('failed'):'Background updated for '+st.name, r.method==='failed'?'err':undefined); renderStudentRows(); }
+  catch(e){ toast('Could not change the background','err'); }
+}
+function setPhotoBg(v){ currentSchool().photoBg=v; saveDB(DB); toast('New photos will use this background'); }
+async function stuPhotoReapplyAll(){
+  const school=currentSchool(), bg=school.photoBg||'cert', L=school.students.filter(x=>x.photo), msg=qs('#stuPhotoBgMsg');
+  if(!L.length){ toast('No learner photos yet','err'); return; }
+  if(!confirm('Apply this background to all '+L.length+' learner photos? You can still change any single learner afterwards.')) return;
+  let ok=0, bad=0;
+  for(const st of L){
+    if(!st.photoOrig) st.photoOrig=st.photo;
+    try{ const r=await stuPhotoApplyBg(st.photoOrig,bg,false); st.photo=r.src; st.photoBg=bg; if(r.method==='failed') bad++; else ok++; }catch(e){ bad++; }
+    if(msg) msg.textContent='Working… '+(ok+bad)+' of '+L.length;
+    if((ok+bad)%10===0) saveDB(DB);
+  }
+  saveDB(DB); renderStudentRows();
+  if(msg) msg.innerHTML='✅ <b>'+ok+'</b> photo(s) updated.'+(bad?' <b style="color:#d1473f">'+bad+'</b> could not be separated from their background and were left as they were.':'');
+  toast(ok+' photo(s) updated');
+}
+function stuPhotoRemove(id){ const school=currentSchool(), st=school.students.find(x=>x.id===id); if(!st||!confirm('Remove the photo of '+st.name+'?')) return; delete st.photo; delete st.photoOrig; delete st.photoBg; saveDB(DB); toast('Photo removed'); renderStudentRows(); }
 async function stuPhotoBulk(inp){
   const files=[...(inp.files||[])], school=currentSchool(), msg=qs('#stuPhotoMsg'); if(!files.length) return;
   let ok=0; const bad=[];
   for(const f of files){
     const adm=f.name.replace(/\.[^.]+$/,'').trim().toLowerCase(), st=school.students.find(x=>String(x.adm||'').trim().toLowerCase()===adm);
     if(!st){ bad.push(f.name); continue; }
-    try{ st.photo=await stuPhotoFromFile(f); ok++; }catch(e){ bad.push(f.name); }
+    try{ const r=await stuPhotoPrepare(f,stuSchoolBg(),false); st.photo=r.photo; st.photoOrig=r.orig; st.photoBg=r.bg; ok++; }catch(e){ bad.push(f.name); }
     if(msg) msg.textContent='Working… '+ok+' of '+files.length;
   }
   saveDB(DB); inp.value=''; renderStudentRows();
@@ -6814,12 +6866,18 @@ function tplStudents(school){
     <div><label>Parent ID / Passport No.</label><input id="stuParentId" placeholder="Leave blank if not needed"></div>
     <div><label>Other Phone</label><input id="stuPhone2" placeholder="Second contact"></div>`:''}
     <div><label>Photo <span class="small">(optional)</span></label><input type="file" accept="image/*" id="stuNewPhoto" onchange="stuNewPhotoPick(this)"></div>
+    <div><label>Photo background <span class="small">(changes automatically)</span></label><span style="display:flex;gap:8px;align-items:center">${photoBgCtl('stuNewBg',stuNewPhotoBgV||school.photoBg||'cert','stuNewPhotoBgSet','')}<img id="stuNewPhotoPrev" alt="" style="display:none;width:48px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--border)"></span></div>
     <div style="align-self:flex-end"><button onclick="addStudent()">Add Learner</button></div>
   </div></details>
 
   <details class="stu-box"><summary>📸 Upload many photos at once</summary>
-  <p class="small">Name each photo file with the learner's <b>admission number</b> (e.g. <b>1001.jpg</b>, <b>1002.png</b>) and select them all together. Each photo is matched to its learner, trimmed to a passport shape and shrunk automatically. Files that match no learner are listed so you can fix them.</p>
+  <p class="small">Name each photo file with the learner's <b>admission number</b> (e.g. <b>1001.jpg</b>, <b>1002.png</b>) and select them all together. Each photo is matched to its learner, trimmed to a passport shape, shrunk, and its background is replaced automatically with the one chosen under “🎨 Photo background” below. Files that match no learner are listed so you can fix them.</p>
   <input type="file" accept="image/*" multiple onchange="stuPhotoBulk(this)"><p class="small" id="stuPhotoMsg"></p></details>
+
+  <details class="stu-box"><summary>🎨 Photo background (automatic)</summary>
+  <p class="small">Every photo you add — one at a time, by camera, or in bulk — is cut out and placed on this background, so all learners look consistent on certificates and report forms wherever the photo was taken. The original is kept, so you can change the background again at any time, for one learner (open “▾ More” on their row) or for everyone.</p>
+  <div class="flexbtns" style="align-items:center"><b class="small">Background:</b> ${photoBgCtl('schoolPhotoBg',school.photoBg||'cert','setPhotoBg','')}
+  <button class="ghost" onclick="stuPhotoReapplyAll()">🔄 Apply to all existing photos</button></div><p class="small" id="stuPhotoBgMsg"></p></details>
 
   <details class="stu-box"><summary>📋 Add many learners at once (bulk paste)</summary>
   <p class="small">One learner per line, “Admission,Name,Gender,ParentPhone”. Gender is <b>Boy/Girl</b> (or M/F) and may be left out. Blank admission or phone is OK. They go into the grade chosen in “Add a learner” above.</p>
@@ -6911,7 +6969,7 @@ function addStudent(){
   // learners are allowed to have no admission number at the same time.
   if(adm && school.students.some(s=>s.adm===adm)){ toast('Admission number already exists','err'); return; }
   if(assessNo && school.students.some(s=>s.assessNo===assessNo)){ toast('Assessment number already exists','err'); return; }
-  const _rid = takeRetainedId(school, adm); school.students.push({id:_rid||uid('stu_'), adm, assessNo, name: name.replace(/\s+/g,' '), classId, gender, parentPhone, parentName, parentRel, parentId, parentPhone2, photo: (typeof stuNewPhotoData==='string'?stuNewPhotoData:''), parentPin: genParentPin()}); stuNewPhotoData=''; saveDB(DB); renderDOS();
+  const _rid = takeRetainedId(school, adm); school.students.push({id:_rid||uid('stu_'), adm, assessNo, name: name.replace(/\s+/g,' '), classId, gender, parentPhone, parentName, parentRel, parentId, parentPhone2, photo: (typeof stuNewPhotoData==='string'?stuNewPhotoData:''), ...(stuNewPhotoData&&stuNewPhotoOrig?{photoOrig:stuNewPhotoOrig, photoBg:stuNewPhotoBgV}:{}), parentPin: genParentPin()}); stuNewPhotoData=''; stuNewPhotoOrig=''; stuNewPhotoBgV=''; saveDB(DB); renderDOS();
 }
 // Lets HOI/DOS correct a learner's admission number directly from the Learners table
 // (e.g. it was mistyped or a number gets assigned later) without removing and re-adding
@@ -9329,7 +9387,7 @@ function printPlain(){ flushPrintJobs(); safePrint(); }
 // Pop-up print windows (fees, invoices, receipts, parent documents). If the browser blocks the pop-up the document
 // is printed from a hidden frame instead, and printing waits until the page and its pictures have loaded.
 function printWin(){
-  let w = null; try{ w = printWin(); }catch(e){}
+  let w = null; try{ w = window.open('','_blank'); }catch(e){}
   if(w && w.document) return w;
   const f = document.createElement('iframe'); f.setAttribute('aria-hidden','true');
   f.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none';
@@ -9521,7 +9579,7 @@ function raBadge(school,classId,level){
 }
 function tplResultsAnalysis(school){
   return `<div class="card"><h2 class="no-print">📈 Results Analysis</h2>
-  <p class="small no-print">Ranks every grade by its mean score, names the best grade, shows score spread (standard deviation), most improved learners, gender comparison and learners needing support, and compares streams of the same grade (e.g. Grade 6 Blue vs Grade 6 Red — grades are grouped by the grade number in their name).</p>
+  <p class="small no-print">Ranks every grade by its mean score, names the best grade, shows score spread (standard deviation), most improved learners, gender comparison and learners needing support, and compares streams of the same grade (e.g. Grade 6 Blue vs Grade 6 Red — grades are grouped by the grade number in their name). Where the school has more than one level (Lower Primary, Upper Primary, Junior School, Senior School), learner-to-learner comparisons — most improved, needing support, top learners — are shown separately per level, since different levels sit different subjects and expectations and shouldn't be ranked against each other.</p>
   <div class="row no-print">
     <div><label>Term</label><select id="raTerm" onchange="raFillExams()"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>
     <div><label>Year</label><input id="raYear" type="number" value="${new Date().getFullYear()}" onchange="raFillExams()"></div>
@@ -9559,7 +9617,7 @@ function raCompute(school,term,year,exName){
     if(!lrn.length) return;
     const sumMeans=lrn.reduce((x,l)=>x+l.mean,0), mean=sumMeans/lrn.length;
     const tbl=gradingFor(school,cls.id).slice().sort((a,b)=>b.points-a.points), top=tbl.slice(0,2).map(g=>g.level);
-    stats.push({cls, glabel:raGradeLabel(cls.name), enrolled:learners.length, assessed:lrn.length, sumMeans, mean, lrn, lv,
+    stats.push({cls, glabel:raGradeLabel(cls.name), sect:ttLevel(cls.name), enrolled:learners.length, assessed:lrn.length, sumMeans, mean, lrn, lv,
       tableLevels:tbl.map(g=>g.level), top, meet:top.reduce((n,l)=>n+(lv[l]||0),0),
       areas:areas.map((a,i)=>({name:a.name, avg:sub[i].n?sub[i].sum/sub[i].n:null, v:sub[i].v})), sd:raSD(lrn.map(l=>l.mean)), med:raMedian(lrn.map(l=>l.mean)), hi:Math.max(...lrn.map(l=>l.mean)), lo:Math.min(...lrn.map(l=>l.mean)), level:gradeFor(school,mean,cls.id)});
   });
@@ -9572,6 +9630,12 @@ function runResultsAnalysis(){
   const ranked=stats.slice(); raRank(ranked,'mean','rank');
   const best=ranked.filter(r=>r.rank===1);
   const nAll=stats.reduce((s,r)=>s+r.assessed,0), schoolMean=stats.reduce((s,r)=>s+r.sumMeans,0)/nAll;
+  // group grades by school level (Pre-Primary/Lower/Upper/Junior/Senior/Other) so comparisons below
+  // only ever pit a grade/learner against others sitting the same level, not the whole mixed school
+  const activeSects=SAD_LV_ORDER.filter(k=>k!=='none' && stats.some(r=>r.sect===k));
+  const multiSect=activeSects.length>1;
+  const sectMean={}; activeSects.forEach(k=>{ const rs=stats.filter(r=>r.sect===k), n=rs.reduce((s,r)=>s+r.assessed,0); sectMean[k]=rs.reduce((s,r)=>s+r.sumMeans,0)/n; });
+  const bestBySect={}; activeSects.forEach(k=>{ const rs=ranked.filter(r=>r.sect===k), mx=Math.max(...rs.map(r=>r.mean)); bestBySect[k]=rs.filter(r=>r.mean===mx); });
   // previous term (Term 1 -> Term 3 of last year) for the change column
   const pt=Number(term.slice(-1)), prev={}, prevL={};
   raCompute(school, pt>1?'Term '+(pt-1):'Term 3', pt>1?year:year-1, exName).forEach(r=>{ prev[r.cls.id]=r.mean; r.lrn.forEach(l=>{ prevL[l.s.id]=l.mean; }); });
@@ -9585,46 +9649,71 @@ function runResultsAnalysis(){
   const meets=r=>r.meet, sameTop=stats.every(r=>r.top.join()===stats[0].top.join()), topLbl=sameTop?stats[0].top.map(escapeHtml).join(' + '):'Top 2 levels', cell=(n,t)=>`${n} (${(n/t*100).toFixed(0)}%)`;
   const totLv={}; stats.forEach(r=>levels.forEach(l=>{ totLv[l]=(totLv[l]||0)+(r.lv[l]||0); }));
   // learners
-  const all=stats.flatMap(r=>r.lrn.map(l=>({s:l.s,mean:l.mean,lv:l.lv,c:r.cls.name,cid:r.cls.id})));
+  const all=stats.flatMap(r=>r.lrn.map(l=>({s:l.s,mean:l.mean,lv:l.lv,c:r.cls.name,cid:r.cls.id,sect:r.sect})));
   raRank(all,'mean','rank');
   const H=t=>`<h3 style="color:var(--navy);margin:0 0 6px">${t}</h3>`;
+  const lvlH=(t,k)=>`<p class="small" style="font-weight:800;color:var(--navy);margin:14px 0 4px">${escapeHtml(SAD_LV[k])}</p>`;
 
   const dv=d=>`<b style="color:${d>=0?'#1f8a4c':'#d1473f'}">${d>=0?'+':''}${d.toFixed(1)}</b>`;
   const hasPrev=Object.keys(prevL).length>0, prevName=(pt>1?'Term '+(pt-1):'Term 3')+' '+(pt>1?year:year-1);
   const imp=hasPrev?all.filter(l=>prevL[l.s.id]!=null).map(l=>({...l,prevM:prevL[l.s.id],d:l.mean-prevL[l.s.id]})):[];
-  const improved=imp.filter(l=>l.d>0).sort((a,b)=>b.d-a.d).slice(0,10), declined=imp.filter(l=>l.d<0).sort((a,b)=>a.d-b.d).slice(0,5);
   const impRow=(l,i)=>`<tr><td>${i+1}</td><td>${l.s.adm?escapeHtml(l.s.adm):'—'}</td><td style="text-align:left">${escapeHtml(l.s.name)}</td><td>${escapeHtml(l.c)}</td><td>${l.prevM.toFixed(1)}%</td><td>${l.mean.toFixed(1)}%</td><td>${dv(l.d)}</td></tr>`;
   const impHead=`<tr><th>#</th><th>Adm No.</th><th>Name</th><th>Grade</th><th>${escapeHtml(prevName)} Mean %</th><th>Now Mean %</th><th>Change</th></tr>`;
+  const impBlock=k=>{
+    const li=imp.filter(l=>k?l.sect===k:true);
+    const up=li.filter(l=>l.d>0).sort((a,b)=>b.d-a.d).slice(0,multiSect?6:10), dn=li.filter(l=>l.d<0).sort((a,b)=>a.d-b.d).slice(0,multiSect?3:5);
+    return `${k?lvlH('',k):''}
+    ${up.length?`<table class="ra-table">${impHead}${up.map(impRow).join('')}</table>`:'<p class="small">No learner improved on the previous term.</p>'}
+    ${dn.length?`<p class="small" style="margin:8px 0 2px"><b>Needs attention — biggest drops:</b></p><table class="ra-table">${impHead}${dn.map(impRow).join('')}</table>`:''}`;
+  };
   const improvedHtml=!hasPrev?`<div class="ra-sec" style="margin-top:14px">${H('Most Improved Learners')}<p class="small">No results were found for ${escapeHtml(prevName)}${exName?' ('+escapeHtml(exName)+')':''}, so improvement cannot be calculated yet.</p></div>`
    :`<div class="ra-sec" style="margin-top:14px">${H('Most Improved Learners (vs '+escapeHtml(prevName)+')')}
-   ${improved.length?`<table class="ra-table">${impHead}${improved.map(impRow).join('')}</table>`:'<p class="small">No learner improved on the previous term.</p>'}
-   <p class="small">Change = mean % now minus mean % in ${escapeHtml(prevName)}, in percentage points. Only learners with results in both periods are compared.</p></div>
-   ${declined.length?`<div class="ra-sec" style="margin-top:14px">${H('Learners Whose Performance Dropped Most — Needs Attention')}<table class="ra-table">${impHead}${declined.map(impRow).join('')}</table></div>`:''}`;
+   <p class="small">Change = mean % now minus mean % in ${escapeHtml(prevName)}, in percentage points. Only learners with results in both periods are compared.${multiSect?' Learners are compared only against others in the same school level — Lower Primary, Upper Primary, Junior School, Senior School — since the subjects and expectations differ by level, so ranking them against each other would not be fair.':''}</p>
+   ${multiSect?activeSects.map(impBlock).join(''):impBlock(null)}
+   </div>`;
   const cons=sd=>sd<10?'Consistent':sd<15?'Moderate spread':'Wide gap';
   const sdAll=raSD(all.map(l=>l.mean)), medAll=raMedian(all.map(l=>l.mean));
   const spreadHtml=`<div class="ra-sec" style="margin-top:14px">${H('Score Spread &amp; Deviation')}
   <table class="ra-table"><tr><th>Grade</th><th>Assessed</th><th>Highest %</th><th>Lowest %</th><th>Range</th><th>Median %</th><th>Std Dev</th><th>Spread</th></tr>
   ${ranked.map(r=>`<tr><td style="text-align:left">${escapeHtml(r.cls.name)}</td><td>${r.assessed}</td><td>${r.hi.toFixed(1)}</td><td>${r.lo.toFixed(1)}</td><td>${(r.hi-r.lo).toFixed(1)}</td><td>${r.med.toFixed(1)}</td><td><b>${r.sd.toFixed(1)}</b></td><td>${cons(r.sd)}</td></tr>`).join('')}
   <tr class="rc-total"><td>Whole school</td><td>${nAll}</td><td>${Math.max(...all.map(l=>l.mean)).toFixed(1)}</td><td>${Math.min(...all.map(l=>l.mean)).toFixed(1)}</td><td>${(Math.max(...all.map(l=>l.mean))-Math.min(...all.map(l=>l.mean))).toFixed(1)}</td><td>${medAll.toFixed(1)}</td><td>${sdAll.toFixed(1)}</td><td>${cons(sdAll)}</td></tr></table>
-  <p class="small">Std Dev (standard deviation) shows how far learners' mean scores spread around the class mean. A small value means learners are performing at similar levels; a large value means a big gap between the strongest and weakest learners, so plan both extension and remedial support. Rule of thumb used here: under 10 consistent, 10–15 moderate, over 15 wide gap. "vs School Mean" in the Grade Ranking shows how many points a grade is above (+) or below (−) the whole-school mean.</p></div>`;
+  <p class="small">Std Dev (standard deviation) shows how far learners' mean scores spread around the class mean. A small value means learners are performing at similar levels; a large value means a big gap between the strongest and weakest learners, so plan both extension and remedial support. Rule of thumb used here: under 10 consistent, 10–15 moderate, over 15 wide gap. "vs School Mean" in the Grade Ranking shows how many points a grade is above (+) or below (−) the whole-school mean; "vs Level Mean" shows the same against grades in its own level only, which is the fairer comparison when the school spans more than one level.</p></div>`;
   const gOf=l=>normGender(l.s.gender), hasG=all.some(l=>gOf(l));
   const gM=a=>a.length?a.reduce((t,l)=>t+l.mean,0)/a.length:null, gC=a=>a.length?a.length+' — '+gM(a).toFixed(1)+'%':'—';
   const gRow=(name,L)=>{ const b=L.filter(l=>gOf(l)==='M'), g=L.filter(l=>gOf(l)==='F'), d=(b.length&&g.length)?gM(g)-gM(b):null; return `<tr><td style="text-align:left">${name}</td><td>${gC(b)}</td><td>${gC(g)}</td><td>${d==null?'—':dv(d)}</td></tr>`; };
   const genderHtml=hasG?`<div class="ra-sec" style="margin-top:14px">${H('Performance by Gender')}
   <table class="ra-table"><tr><th>Grade</th><th>Boys (no. — mean)</th><th>Girls (no. — mean)</th><th>Girls minus Boys</th></tr>
   ${ranked.map(r=>gRow(escapeHtml(r.cls.name),all.filter(l=>l.cid===r.cls.id))).join('')}
+  ${multiSect?activeSects.map(k=>`<tr class="rc-total">${gRow(escapeHtml(SAD_LV_SHORT[k])+' total',all.filter(l=>l.sect===k)).replace(/^<tr>/,'').replace(/<\/tr>$/,'')}</tr>`).join(''):''}
   <tr class="rc-total">${gRow('Whole school',all).replace(/^<tr>/,'').replace(/<\/tr>$/,'')}</tr></table>
   <p class="small">Learners whose gender is not set are left out of this table.</p></div>`:'';
-  const support=all.slice().sort((a,b)=>a.mean-b.mean).slice(0,10);
-  const supportHtml=`<div class="ra-sec" style="margin-top:14px">${H('Learners Needing Support (lowest 10)')}
-  <table class="ra-table"><tr><th>#</th><th>Adm No.</th><th>Name</th><th>Grade</th><th>Mean %</th><th>Level</th></tr>
-  ${support.map((l,i)=>`<tr><td>${i+1}</td><td>${l.s.adm?escapeHtml(l.s.adm):'—'}</td><td style="text-align:left">${escapeHtml(l.s.name)}</td><td>${escapeHtml(l.c)}</td><td><b>${l.mean.toFixed(1)}%</b></td><td>${raBadge(school,l.cid,l.lv)}</td></tr>`).join('')}</table></div>`;
-  const obs=[], lowG=ranked[ranked.length-1], wide=ranked.slice().sort((a,b)=>b.sd-a.sd)[0];
-  if(ranked.length>1) obs.push(`Lowest-performing grade: <b>${escapeHtml(lowG.cls.name)}</b> (${lowG.mean.toFixed(1)}%), ${(ranked[0].mean-lowG.mean).toFixed(1)} points behind the best grade.`);
+  const supRow=(l,i)=>`<tr><td>${i+1}</td><td>${l.s.adm?escapeHtml(l.s.adm):'—'}</td><td style="text-align:left">${escapeHtml(l.s.name)}</td><td>${escapeHtml(l.c)}</td><td><b>${l.mean.toFixed(1)}%</b></td><td>${raBadge(school,l.cid,l.lv)}</td></tr>`;
+  const supHead=`<tr><th>#</th><th>Adm No.</th><th>Name</th><th>Grade</th><th>Mean %</th><th>Level</th></tr>`;
+  const supportHtml=multiSect
+   ?`<div class="ra-sec" style="margin-top:14px">${H('Learners Needing Support')}<p class="small">Shown separately for each school level, since the lowest scorers in Senior School are not necessarily comparable to the lowest scorers in Lower Primary.</p>
+   ${activeSects.map(k=>{ const sup=all.filter(l=>l.sect===k).slice().sort((a,b)=>a.mean-b.mean).slice(0,5); return sup.length?lvlH('',k)+`<table class="ra-table">${supHead}${sup.map(supRow).join('')}</table>`:''; }).join('')}
+   </div>`
+   :`<div class="ra-sec" style="margin-top:14px">${H('Learners Needing Support (lowest 10)')}
+   <table class="ra-table">${supHead}${all.slice().sort((a,b)=>a.mean-b.mean).slice(0,10).map(supRow).join('')}</table></div>`;
+  const obs=[];
+  if(multiSect){
+    activeSects.forEach(k=>{
+      const rs=ranked.filter(r=>r.sect===k);
+      if(rs.length>1){ const lo=rs[rs.length-1]; obs.push(`${escapeHtml(SAD_LV[k])} — lowest-performing grade: <b>${escapeHtml(lo.cls.name)}</b> (${lo.mean.toFixed(1)}%), ${(rs[0].mean-lo.mean).toFixed(1)} points behind the top grade in that level.`); }
+    });
+  } else if(ranked.length>1){
+    const lowG=ranked[ranked.length-1];
+    obs.push(`Lowest-performing grade: <b>${escapeHtml(lowG.cls.name)}</b> (${lowG.mean.toFixed(1)}%), ${(ranked[0].mean-lowG.mean).toFixed(1)} points behind the best grade.`);
+  }
+  const wide=ranked.slice().sort((a,b)=>b.sd-a.sd)[0];
   obs.push(`Widest spread of scores: <b>${escapeHtml(wide.cls.name)}</b> (Std Dev ${wide.sd.toFixed(1)}) — ${cons(wide.sd).toLowerCase()} between strongest and weakest learners.`);
   const gch=ranked.filter(r=>prev[r.cls.id]!=null).map(r=>({r,d:r.mean-prev[r.cls.id]})).sort((a,b)=>b.d-a.d);
-  if(gch.length) obs.push(`Most improved grade vs ${escapeHtml(prevName)}: <b>${escapeHtml(gch[0].r.cls.name)}</b> (${gch[0].d>=0?'+':''}${gch[0].d.toFixed(1)} points).`);
-  if(improved.length) obs.push(`Most improved learner: <b>${escapeHtml(improved[0].s.name)}</b> (${escapeHtml(improved[0].c)}), up ${improved[0].d.toFixed(1)} points.`);
+  if(multiSect){
+    activeSects.forEach(k=>{ const gk=gch.filter(x=>x.r.sect===k); if(gk.length) obs.push(`Most improved grade in ${escapeHtml(SAD_LV[k])} vs ${escapeHtml(prevName)}: <b>${escapeHtml(gk[0].r.cls.name)}</b> (${gk[0].d>=0?'+':''}${gk[0].d.toFixed(1)} points).`); });
+  } else if(gch.length) obs.push(`Most improved grade vs ${escapeHtml(prevName)}: <b>${escapeHtml(gch[0].r.cls.name)}</b> (${gch[0].d>=0?'+':''}${gch[0].d.toFixed(1)} points).`);
+  if(multiSect){
+    activeSects.forEach(k=>{ const ik=imp.filter(l=>l.sect===k && l.d>0).sort((a,b)=>b.d-a.d); if(ik.length) obs.push(`Most improved learner in ${escapeHtml(SAD_LV[k])}: <b>${escapeHtml(ik[0].s.name)}</b> (${escapeHtml(ik[0].c)}), up ${ik[0].d.toFixed(1)} points.`); });
+  } else { const impAll=imp.filter(l=>l.d>0).sort((a,b)=>b.d-a.d); if(impAll.length) obs.push(`Most improved learner: <b>${escapeHtml(impAll[0].s.name)}</b> (${escapeHtml(impAll[0].c)}), up ${impAll[0].d.toFixed(1)} points.`); }
   const obsHtml=`<div class="rc-remark" style="margin-top:10px">🔎 <b>Key observations</b><ul style="margin:6px 0 0 18px">${obs.map(o=>'<li>'+o+'</li>').join('')}</ul></div>`;
   const extraHtml=spreadHtml+improvedHtml+genderHtml+supportHtml;
   const streamHtml=Object.values(stats.reduce((g,r)=>{ const k=r.glabel.toLowerCase(); (g[k]=g[k]||[]).push(r); return g; },{})).filter(g=>g.length>1).map(g=>{
@@ -9643,12 +9732,13 @@ function runResultsAnalysis(){
   target.innerHTML=`
   <div class="print-only-block">
   <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>Results Analysis — ${term} ${year}</p><p class="small">${exName?escapeHtml(exName):'Average of all exams in the term'}</p></div>
-  <div class="rc-remark">🏆 <b>Best grade:</b> ${best.map(r=>escapeHtml(r.cls.name)).join(', ')} — ${best[0].mean.toFixed(1)}% (${best[0].level.level}) &nbsp;|&nbsp; <b>School mean:</b> ${schoolMean.toFixed(1)}% &nbsp;|&nbsp; <b>Meeting expectation or above (${topLbl}):</b> ${(stats.reduce((s,r)=>s+meets(r),0)/nAll*100).toFixed(0)}%<br>
+  <div class="rc-remark">🏆 <b>Best grade${multiSect?' overall':''}:</b> ${best.map(r=>escapeHtml(r.cls.name)).join(', ')} — ${best[0].mean.toFixed(1)}% (${best[0].level.level}) &nbsp;|&nbsp; <b>School mean:</b> ${schoolMean.toFixed(1)}% &nbsp;|&nbsp; <b>Meeting expectation or above (${topLbl}):</b> ${(stats.reduce((s,r)=>s+meets(r),0)/nAll*100).toFixed(0)}%<br>
+  ${multiSect?`🏷 <b>Best grade by level:</b> ${activeSects.map(k=>`${escapeHtml(SAD_LV_SHORT[k])}: <b>${bestBySect[k].map(r=>escapeHtml(r.cls.name)).join(', ')}</b> (${bestBySect[k][0].mean.toFixed(1)}%)`).join(' &nbsp;|&nbsp; ')}<br>`:''}
   📚 <b>Strongest learning area:</b> ${escapeHtml(subjects[0].name)} (${subjects[0].mean.toFixed(1)}%) &nbsp;|&nbsp; <b>Weakest learning area:</b> ${escapeHtml(subjects[subjects.length-1].name)} (${subjects[subjects.length-1].mean.toFixed(1)}%)</div>
   ${obsHtml}<div class="ra-sec" style="margin-top:14px">${H('Grade Ranking')}
-  <table class="ra-table"><tr><th>Rank</th><th>Grade</th><th>Grade Teacher</th><th>Learners Assessed</th><th>Mean %</th><th>Level</th><th>Change vs previous term</th><th>Std Dev</th><th>vs School Mean</th></tr>
-  ${ranked.map(r=>`<tr class="${r.rank===1?'ra-best':''}"><td>${r.rank}</td><td style="text-align:left">${escapeHtml(r.cls.name)}</td><td>${escapeHtml((school.classTeachers||{})[r.cls.id]||'—')}</td><td>${r.assessed} of ${r.enrolled}</td><td><b>${r.mean.toFixed(1)}%</b></td><td>${raBadge(school,r.cls.id,r.level.level)}</td><td>${chg(r)}</td><td>${r.sd.toFixed(1)}</td><td>${dv(r.mean-schoolMean)}</td></tr>`).join('')}
-  </table></div>
+  <table class="ra-table"><tr><th>Rank</th><th>Grade</th><th>Grade Teacher</th><th>Learners Assessed</th><th>Mean %</th><th>Level</th><th>Change vs previous term</th><th>Std Dev</th><th>vs School Mean</th>${multiSect?'<th>vs Level Mean</th>':''}</tr>
+  ${ranked.map(r=>`<tr class="${r.rank===1?'ra-best':''}"><td>${r.rank}</td><td style="text-align:left">${escapeHtml(r.cls.name)} <span class="small">(${escapeHtml(SAD_LV_SHORT[r.sect])})</span></td><td>${escapeHtml((school.classTeachers||{})[r.cls.id]||'—')}</td><td>${r.assessed} of ${r.enrolled}</td><td><b>${r.mean.toFixed(1)}%</b></td><td>${raBadge(school,r.cls.id,r.level.level)}</td><td>${chg(r)}</td><td>${r.sd.toFixed(1)}</td><td>${dv(r.mean-schoolMean)}</td>${multiSect?`<td>${dv(r.mean-sectMean[r.sect])}</td>`:''}</tr>`).join('')}
+  </table>${multiSect?'<p class="small">"vs School Mean" compares a grade to the whole school (all levels combined); "vs Level Mean" compares it only to other grades in its own level (Lower/Upper Primary, Junior, Senior), which is the fairer measure when the school spans more than one level.</p>':''}</div>
   ${streamHtml}
   <div class="ra-sec" style="margin-top:14px">${H('Performance Level Distribution')}
   <table class="ra-table"><tr><th>Grade</th>${levels.map(l=>`<th>${escapeHtml(l)}</th>`).join('')}<th>${topLbl}</th></tr>
@@ -9658,10 +9748,14 @@ function runResultsAnalysis(){
   <table class="ra-table"><tr><th>Rank</th><th>Learning Area</th><th>School Mean %</th><th>Best Grade</th><th>Lowest Grade</th><th>Std Dev</th></tr>
   ${subjects.map((x,i)=>`<tr><td>${i+1}</td><td style="text-align:left">${escapeHtml(x.name)}</td><td><b>${x.mean.toFixed(1)}%</b></td><td>${escapeHtml(x.best.c)} (${x.best.v.toFixed(1)}%)</td><td>${x.one?'—':escapeHtml(x.low.c)+' ('+x.low.v.toFixed(1)+'%)'}</td><td>${x.sd.toFixed(1)}</td></tr>`).join('')}
   </table></div>
-  <div class="ra-sec" style="margin-top:14px">${H('Top 10 Learners (whole school)')}
+  ${multiSect?`<div class="ra-sec" style="margin-top:14px">${H('Top Learners by Level')}<p class="small">Shown per school level rather than as one mixed list, since a Senior School mean % and a Lower Primary mean % aren't measuring the same thing.</p>
+  ${activeSects.map(k=>{ const top=all.filter(l=>l.sect===k).slice().sort((a,b)=>b.mean-a.mean).slice(0,5), an2=hasAssessNo(top,l=>l.s);
+    return top.length?lvlH('',k)+`<table class="ra-table"><tr><th>#</th><th>Adm No.</th>${assessTh(an2)}<th>Name</th><th>Grade</th><th>Mean %</th><th>Level</th></tr>${top.map((l,i)=>`<tr><td>${i+1}</td><td>${l.s.adm?escapeHtml(l.s.adm):'—'}</td>${assessTd(l.s,an2)}<td style="text-align:left">${escapeHtml(l.s.name)}</td><td>${escapeHtml(l.c)}</td><td><b>${l.mean.toFixed(1)}%</b></td><td>${raBadge(school,l.cid,l.lv)}</td></tr>`).join('')}</table>`:'';
+  }).join('')}
+  </div>`:`<div class="ra-sec" style="margin-top:14px">${H('Top 10 Learners (whole school)')}
   <table class="ra-table"><tr><th>Rank</th><th>Adm No.</th>${assessTh(hasAssessNo(all.slice(0,10), l=>l.s))}<th>Name</th><th>Grade</th><th>Mean %</th><th>Level</th></tr>
   ${all.slice(0,10).map(l=>`<tr><td>${l.rank}</td><td>${l.s.adm?escapeHtml(l.s.adm):'—'}</td>${assessTd(l.s,hasAssessNo(all.slice(0,10), x=>x.s))}<td style="text-align:left">${escapeHtml(l.s.name)}</td><td>${escapeHtml(l.c)}</td><td><b>${l.mean.toFixed(1)}%</b></td><td>${raBadge(school,l.cid,l.lv)}</td></tr>`).join('')}
-  </table></div>
+  </table></div>`}
   <div class="ra-sec" style="margin-top:14px">${H('Top 3 Learners per Grade')}
   <table class="ra-table"><tr><th>Grade</th><th>1st</th><th>2nd</th><th>3rd</th></tr>
   ${ranked.map(r=>{ const t=r.lrn.slice().sort((a,b)=>b.mean-a.mean); return `<tr><td style="text-align:left">${escapeHtml(r.cls.name)}</td>${[0,1,2].map(i=>`<td>${t[i]?escapeHtml(t[i].s.name)+' — '+t[i].mean.toFixed(1)+'%':'—'}</td>`).join('')}</tr>`; }).join('')}
@@ -9670,6 +9764,291 @@ function runResultsAnalysis(){
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px">${sigBox('Head of Institution: '+escapeHtml(school.hoiName||''), hoiSigImg(school))}${sigBox('Date', '<span class="sig-date">'+new Date().toLocaleDateString()+'</span>')}</div>
   <div class="flexbtns no-print">${inkPick()}<button class="gold" onclick="printSection('raArea')">🖨 Print</button></div>
   </div>`;
+}
+
+/* ============================= CERTIFICATES (DOS) =============================
+   Completion / promotion certificates for learners leaving a level: PP2 -> Grade 1, Grade 3 -> 4,
+   Grade 6 -> 7, Grade 9 -> 10, Grade 12 (graduation). Any other grade gets a plain promotion certificate.
+   Wording is pre-filled from the grade picked and can be edited before printing. Printed A4 landscape,
+   one certificate per page, from a pop-up window (same route as fee statements). */
+function certInfo(name){
+  const n=String(name||'').replace(/\s+/g,' ').trim(), k=gradeSortKey(n), g=k.num;
+  if(k.tier===0){
+    if(/\bpp\s*-?\s*2\b/i.test(n)) return {exit:true,  title:'Certificate of Completion', done:'Pre-Primary Education (PP2)', next:'Grade 1'};
+    if(/\bpp\s*-?\s*1\b/i.test(n)) return {exit:false, title:'Certificate of Promotion',  done:'Pre-Primary 1 (PP1)', next:'PP2'};
+    return {exit:false, title:'Certificate of Promotion', done:n, next:''};
+  }
+  if(g===3)  return {exit:true,  title:'Certificate of Completion', done:'Lower Primary (Grades 1–3)', next:'Grade 4'};
+  if(g===6)  return {exit:true,  title:'Certificate of Completion', done:'Primary School (Upper Primary, Grades 4–6)', next:'Grade 7 (Junior School)'};
+  if(g===9)  return {exit:true,  title:'Certificate of Completion', done:'Junior School (Grades 7–9)', next:'Grade 10 (Senior School)'};
+  if(g===12) return {exit:true,  title:'Certificate of Graduation', done:'Senior School (Grades 10–12)', next:''};
+  if(isFinite(g)) return {exit:false, title:'Certificate of Promotion', done:'Grade '+g, next:'Grade '+(g+1)};
+  return {exit:false, title:'Certificate of Promotion', done:n, next:''};
+}
+const CERT_CSS=`.cert,.cert *{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box}.cert h1,.cert h2{border:0;padding:0;background:none}
+.cert{position:relative;width:277mm;height:189mm;background:#fff;color:#123a63;font-family:Georgia,'Times New Roman',serif;page-break-after:always;break-after:page;overflow:hidden}
+.cert:last-child{page-break-after:auto;break-after:auto}
+.cert .b1{position:absolute;left:2mm;top:2mm;right:2mm;bottom:2mm;border:2.2mm solid #123a63}
+.cert .b2{position:absolute;left:6.5mm;top:6.5mm;right:6.5mm;bottom:6.5mm;border:.6mm solid #c9a227}
+.cert .in{position:absolute;left:12mm;top:11mm;right:12mm;bottom:10mm;display:flex;flex-direction:column;align-items:center;text-align:center}
+.cert .lg{max-height:20mm;max-width:60mm;margin:0 auto 1.5mm;display:block}
+.cert .sn{margin:0;font-size:25px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;line-height:1.15}
+.cert .mo{margin:1px 0 0;font-style:italic;color:#8a6d1f;font-size:13px}
+.cert .ct{margin-top:3px;font-size:11px;color:#333;display:flex;flex-wrap:wrap;justify-content:center;gap:2px 14px}
+.cert .mid{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;width:100%}
+.cert .ti{margin:0;font-size:40px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:#8a6d1f;line-height:1.1}
+.cert .rule{width:70mm;height:0;border-top:.5mm solid #c9a227;margin:3mm auto}
+.cert .tx{font-size:16px;margin:2px 0;color:#222}
+.cert .nm{font-size:38px;font-weight:700;font-style:italic;color:#123a63;margin:3mm 0 1mm;padding:0 12mm 1mm;border-bottom:.4mm solid #123a63;min-width:140mm;line-height:1.2}
+.cert .id{font-size:12px;color:#555;margin-bottom:3mm}
+.cert .bd{font-size:17px;line-height:1.55;max-width:205mm;color:#222}
+.cert .bd b{color:#123a63}
+.cert .ex{font-size:15px;font-style:italic;color:#8a6d1f;margin-top:2.5mm}
+.cert .ft{width:100%;display:flex;justify-content:space-between;align-items:flex-end;gap:8mm}
+.cert .sg{flex:1;text-align:center;font-size:12.5px;color:#222}
+.cert .sg .sl{height:15mm;display:flex;align-items:flex-end;justify-content:center}
+.cert .sg .sl img{max-height:14mm;max-width:90%}
+.cert .sg .ln{border-top:.3mm solid #333;padding-top:1.5mm}
+.cert .dt .sl{font-size:14px;font-weight:700;color:#123a63;padding-bottom:1mm}
+.cert .sp{width:38mm;text-align:center}
+.cert .ph{position:absolute;right:19mm;top:68mm;width:31mm;height:39mm;padding:.8mm;background:#fff;border:.7mm solid #c9a227;outline:.3mm solid #123a63;outline-offset:.6mm}
+.cert .ph img{width:100%;height:100%;object-fit:cover;display:block}
+.cert.hp .bd{max-width:170mm}
+.cert.pt{width:190mm;height:276mm}
+.cert.pt .in{left:11mm;right:11mm;top:13mm;bottom:12mm}
+.cert.pt .lg{max-height:24mm}
+.cert.pt .sn{font-size:24px}
+.cert.pt .ct{font-size:10.5px;gap:2px 10px}
+.cert.pt .ti{font-size:27px;letter-spacing:2px}
+.cert.pt .rule{margin:5mm auto}
+.cert.pt .tx{font-size:15px}
+.cert.pt .nm{font-size:31px;min-width:100mm;padding:0 6mm 1mm;margin:4mm 0 1mm}
+.cert.pt .bd,.cert.pt.hp .bd{font-size:16px;max-width:150mm;line-height:1.65}
+.cert.pt .ex{font-size:14px}
+.cert.pt .ph{position:static;width:38mm;height:48mm;margin:0 auto 5mm}
+.cert.pt .ft{gap:3mm;flex-wrap:nowrap}
+.cert.pt .sg{font-size:11px}
+.cert.pt .sg .sl{height:16mm}
+.cert.pt .sp{width:30mm}
+.cert .cn{position:absolute;left:13mm;bottom:8.6mm;font-size:9.5px;color:#666;letter-spacing:.4px;font-family:Arial,sans-serif}`;
+function certDateText(iso){ try{ const d=new Date(iso+'T00:00:00'); if(isNaN(d)) return ''; return d.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}); }catch(e){ return ''; } }
+function certPageHTML(school, s, cls, o){
+  const ctName=(school.classTeachers||{})[cls.id]||'', st=stampFor(school,'report',cls.id);
+  const contact=[school.address, school.phone?('Tel: '+school.phone):'', school.email?('Email: '+school.email):'', school.regNo?('NEMIS/Reg No: '+school.regNo):''].map(x=>String(x||'').trim()).filter(Boolean);
+  const idBits=[s.adm?('Adm No. '+escapeHtml(s.adm)):'', s.assessNo?('Assessment No. '+escapeHtml(s.assessNo)):''].filter(Boolean).join(' &nbsp;·&nbsp; ');
+  const body=`has successfully completed <b>${escapeHtml(o.done)}</b> at <b>${escapeHtml(school.name)}</b> in the year <b>${escapeHtml(o.year)}</b>${o.next?` and is promoted to <b>${escapeHtml(o.next)}</b>`:''}.`;
+  const phSrc=o.showPhoto!==false?((o.photos&&o.photos[s.id])||s.photo||''):'', hasPh=!!phSrc;
+  const P=o.orient==='portrait';
+  const phHtml=hasPh?`<div class="ph"><img src="${phSrc}" alt="Learner photo"></div>`:'';
+  const certNo=s.adm?('Certificate No. '+escapeHtml(String(o.year||''))+'/'+escapeHtml(s.adm)):'';
+  return `<div class="cert${hasPh?' hp':''}${P?' pt':''}"><div class="b1"></div><div class="b2"></div><div class="in">
+  <div>${school.logo?`<img class="lg" src="${school.logo}" alt="">`:''}<h1 class="sn">${escapeHtml(school.name)}</h1>${school.motto&&school.motto.trim()?`<p class="mo">${escapeHtml(school.motto)}</p>`:''}${contact.length?`<div class="ct">${contact.map(t=>`<span>${escapeHtml(t)}</span>`).join('')}</div>`:''}</div>
+  <div class="mid"><h2 class="ti">${escapeHtml(o.title)}</h2><div class="rule"></div>${P?phHtml:''}<p class="tx">This is to certify that</p>
+    <div class="nm">${escapeHtml(s.name)}</div>${idBits?`<div class="id">${idBits}</div>`:''}
+    <p class="bd">${body}</p>${o.extra?`<p class="ex">${escapeHtml(o.extra)}</p>`:''}<p class="tx" style="margin-top:3mm">We wish ${s.gender==='F'?'her':s.gender==='M'?'him':'the learner'} every success in the next stage of ${s.gender==='F'?'her':s.gender==='M'?'his':'their'} learning.</p></div>
+  <div class="ft">
+    <div class="sg"><div class="sl">${ctSigImg(school,cls.id)}</div><div class="ln">Class Teacher${ctName?': '+escapeHtml(ctName):''}</div></div>
+    <div class="sp">${st?`<img src="${st.img}" alt="" style="max-height:${stampPx(st)}px;max-width:100%;mix-blend-mode:multiply;transform:rotate(-6deg)">`:''}</div>
+    <div class="sg"><div class="sl">${hoiSigImg(school)}</div><div class="ln">Head of Institution${school.hoiName?': '+escapeHtml(school.hoiName):''}</div></div>
+    <div class="sg dt"><div class="sl">${escapeHtml(certDateText(o.date))}</div><div class="ln">Date</div></div>
+  </div></div>${hasPh&&!P?phHtml:''}${certNo?`<div class="cn">${certNo}</div>`:''}</div>`;
+}
+function tplCertificates(school){
+  if(!school.classes.length || !school.students.length) return `<div class="card"><h2>🎓 Certificates</h2><p class="small">Add your grades and learners first (☰ Menu → Grades / Learners), then come back here to print completion certificates.</p></div>`;
+  const d=new Date(), iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const opts=school.classes.map(c=>{ const i=certInfo(c.name); return `<option value="${c.id}">${escapeHtml(c.name)}${i.exit?' — ★ completes '+escapeHtml(i.done):''}</option>`; }).join('');
+  return `<div class="card"><h2 class="no-print">🎓 Certificates</h2>
+  <p class="small no-print">Print certificates of successful completion for learners moving up a level — PP2 → Grade 1, Grade 3 → 4, Grade 6 → 7, Grade 9 → 10 and Grade 12 graduation (★). Any other grade gets a plain promotion certificate. The wording fills in from the grade you pick and you can edit it. Your school logo, motto, signatures and stamp (set under School Details) are added automatically, and so is the learner’s photo — its background is replaced to match the certificate; A4 landscape or portrait (your choice), one certificate per page.</p>
+  <div class="row no-print">
+    <div><label>Grade</label><select id="certClass" onchange="certClassChanged()">${opts}</select></div>
+    <div><label>Year</label><input id="certYear" type="number" value="${d.getFullYear()}" oninput="certPreview()"></div>
+    <div><label>Date issued</label><input id="certDate" type="date" value="${iso}" oninput="certPreview()"></div>
+  </div>
+  <div class="row no-print">
+    <div><label>Certificate title</label><input id="certTitle" oninput="certPreview()"></div>
+    <div><label>Has completed</label><input id="certDone" oninput="certPreview()"></div>
+    <div><label>Promoted to (optional)</label><input id="certNext" oninput="certPreview()"></div>
+  </div>
+  <div class="row no-print"><div><label>Extra line (optional, e.g. “Awarded with distinction”)</label><input id="certExtra" oninput="certPreview()"></div></div>
+  <div class="row no-print">
+    <div><label>Learner photo</label><label class="small" style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" id="certShowPhoto" style="width:auto;margin:0" checked onchange="certPreview()"> Print the learner’s photo on the certificate</label></div>
+    <div><label>Page orientation</label><select id="certOrient" onchange="certOrientChanged()"><option value="landscape" ${school.certOrient!=='portrait'?'selected':''}>Landscape (wide)</option><option value="portrait" ${school.certOrient==='portrait'?'selected':''}>Portrait (tall)</option></select></div>
+    <div><label>Photo background</label><select id="certPhotoBg" onchange="certPreview()"><option value="saved">Same as the learner’s saved photo (recommended)</option><option value="cert">Certificate blue</option><option value="white">Plain white</option><option value="sky">Sky blue</option><option value="grey">Light grey</option><option value="cream">Cream / gold tint</option><option value="navy">School navy</option><option value="none">Original background</option></select></div>
+  </div>
+  <p class="small no-print" id="certPhotoMsg" style="margin:0 0 6px"></p>
+  <div class="no-print" id="certList"></div>
+  <div class="flexbtns no-print"><button class="gold" onclick="certPrint()">🖨 Print selected certificates</button></div>
+  <h3 class="no-print" style="color:var(--navy);margin:16px 0 6px">Preview</h3>
+  <style>${CERT_CSS}</style>
+  <div class="no-print" id="certPrevBox" style="width:100%;overflow:hidden;border:1px solid var(--border);border-radius:8px;background:#f4f6f9"><div id="certPrev" style="transform-origin:0 0"></div></div></div>`;
+}
+function certClassChanged(){
+  const school=currentSchool(), cls=school.classes.find(c=>c.id===qs('#certClass').value); if(!cls) return;
+  const i=certInfo(cls.name);
+  qs('#certTitle').value=i.title; qs('#certDone').value=i.done; qs('#certNext').value=i.next; qs('#certExtra').value='';
+  const L=studentsInClass(school,cls.id);
+  qs('#certList').innerHTML=L.length
+   ?`<label class="small" style="display:flex;gap:6px;align-items:center;margin:8px 0 4px"><input type="checkbox" style="width:auto;margin:0" checked onchange="qsa('.certChk').forEach(x=>x.checked=this.checked);certPreview()"> <b>Select all (${L.length} learners)</b> — untick anyone who should not get a certificate</label>
+     <div style="max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:4px 8px">${L.map(s=>`<div style="display:flex;gap:8px;align-items:center;padding:3px 0"><input type="checkbox" class="certChk" style="width:auto;margin:0" value="${s.id}" checked onchange="certPreview()"><span style="flex:1">${escapeHtml(s.name)} <span class="small">${s.adm?'· '+escapeHtml(s.adm):''}</span>${s.photo?'<span title="Photo on file">📷</span>':'<span class="small" style="color:#d1473f">no photo</span>'}</span><button class="ghost" style="padding:2px 8px;font-size:12px" onclick="certPrint('${s.id}')">🖨</button></div>`).join('')}</div>`
+   :'<p class="small">No learners in this grade yet.</p>';
+  certPreview();
+}
+function certOrientChanged(){ currentSchool().certOrient=qs('#certOrient').value; saveDB(DB); certPreview(); }
+function certOpts(){
+  return {title:qs('#certTitle').value.trim()||'Certificate of Completion', done:qs('#certDone').value.trim(), next:qs('#certNext').value.trim(),
+    year:qs('#certYear').value||String(new Date().getFullYear()), date:qs('#certDate').value, extra:qs('#certExtra').value.trim(),
+    orient:(qs('#certOrient')||{value:'landscape'}).value, showPhoto:!qs('#certShowPhoto')||qs('#certShowPhoto').checked, bg:(qs('#certPhotoBg')||{value:'saved'}).value};
+}
+function certSelected(onlyId){
+  const school=currentSchool(), cls=school.classes.find(c=>c.id===qs('#certClass').value); if(!cls) return {school,cls:null,list:[]};
+  const ids=onlyId?[onlyId]:qsa('.certChk').filter(x=>x.checked).map(x=>x.value);
+  return {school, cls, list:studentsInClass(school,cls.id).filter(s=>ids.includes(s.id))};
+}
+function certPreview(){
+  const box=qs('#certPrevBox'), pv=qs('#certPrev'); if(!box||!pv) return;
+  const {school,cls,list}=certSelected(); if(!cls) return;
+  const s=list[0]; if(!s){ pv.style.transform='none'; pv.style.height='auto'; pv.innerHTML='<p class="small" style="padding:12px">Tick at least one learner to preview a certificate.</p>'; box.style.height='auto'; return; }
+  const o=certOpts(), msg=qs('#certPhotoMsg'); o.photos={};
+  const hit=(o.showPhoto&&s.photo)?certPhotoCached(s,o.bg):null;
+  if(hit) o.photos[s.id]=hit.src;
+  pv.innerHTML=certPageHTML(school,s,cls,o);
+  const PT=o.orient==='portrait', w=(PT?190:277)*96/25.4, h=(PT?276:189)*96/25.4, sc=Math.min(1,(box.clientWidth||w)/w);
+  pv.style.transform='scale('+sc+')'; pv.style.width=w+'px'; pv.style.height=h+'px'; box.style.height=(h*sc)+'px';
+  if(!msg) return;
+  if(!o.showPhoto){ msg.textContent=''; return; }
+  if(!s.photo){ msg.innerHTML='📷 <b>'+escapeHtml(s.name)+'</b> has no photo yet — add one under Learners and it will appear here automatically.'; return; }
+  if(hit){ msg.textContent=certPhotoNote(hit.method); return; }
+  msg.textContent='⏳ Cleaning the photo background…';
+  const tok=(window._certTok=(window._certTok||0)+1);
+  certPhotoFor(s,o.bg).then(()=>{ if(tok===window._certTok) certPreview(); }).catch(()=>{ if(tok===window._certTok&&msg) msg.textContent='Could not process the photo — the original is used.'; });
+}
+async function certPrint(onlyId){
+  const {school,cls,list}=certSelected(onlyId);
+  if(!cls||!list.length){ toast('Tick at least one learner first','err'); return; }
+  const o=certOpts(); if(!o.done){ toast('Fill in what the learner has completed','err'); return; }
+  o.photos={};
+  if(o.showPhoto){
+    const withPh=list.filter(x=>x.photo); let n=0, soft=0;
+    if(withPh.length&&o.bg!=='none'&&o.bg!=='saved') toast('Preparing photos…');
+    for(const x of withPh){
+      try{ const r=await certPhotoFor(x,o.bg); o.photos[x.id]=r.src; if(r.method==='failed') soft++; }catch(e){ o.photos[x.id]=x.photo; soft++; }
+      n++;
+    }
+    if(soft) toast(soft+' photo(s) could not be separated from the background — original kept','err');
+  }
+  const pages=list.map(x=>certPageHTML(school,x,cls,o)).join('');
+  const w=printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
+  w.document.write(`<html><head><meta charset="utf-8"><title>Certificates — ${escapeHtml(cls.name)}</title><style>@page{size:A4 ${o.orient==='portrait'?'portrait':'landscape'};margin:10mm}html,body{margin:0;padding:0}${CERT_CSS}</style></head><body>${pages}</body></html>`);
+  printWinGo(w);
+}
+
+/* ---------- Certificate photo: automatic background replacement ----------
+   The learner's photo (taken anywhere — classroom, compound, home) is cut out and placed on a clean studio-style
+   backdrop that matches the certificate. Tries on-device AI person segmentation (MediaPipe, loaded once from the
+   CDN) and falls back to a built-in edge-seeded colour method if that cannot load (e.g. offline).
+   The original photo is never changed; results are cached in memory only. */
+const CERT_BGS={cert:['#f3f7fc','#b9cde4'], white:['#ffffff','#f1f1f1'], cream:['#fdf8ea','#e6d6a6'], navy:['#2f6296','#0f3257'], sky:['#d6ecfa','#8dc3e8'], grey:['#f4f5f7','#cfd4da']};
+function certBgCols(bg){
+  if(/^custom:#[0-9a-f]{6}$/i.test(bg||'')){ const h=bg.slice(8), r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16), m=v=>Math.round(v+(255-v)*0.35);
+    return ['rgb('+m(r)+','+m(g)+','+m(b)+')','rgb('+r+','+g+','+b+')']; }
+  return CERT_BGS[bg]||CERT_BGS.cert;
+}
+function certSrc(s){ return s.photoOrig||s.photo; }
+function certEffBg(s,bg){ if(bg!=='saved') return bg; const sc=currentSchool(), sb=(sc&&sc.photoBg)||'cert'; return (s.photoOrig||sb==='none')?'saved':sb; }
+function certDirect(s,eb){ return eb==='saved'?{src:s.photo,method:'saved'}:eb==='none'?{src:certSrc(s),method:'orig'}:null; }
+const CERT_MP_BASE='https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/';
+const _certMask={}, _certOut={}; let _certMPP=null, _certQ=Promise.resolve();
+function certPhotoKey(s){ const p=certSrc(s); return s.id+'|'+p.length+':'+p.slice(-24); }
+function certPhotoCached(s,bg){ const eb=certEffBg(s,bg); return certDirect(s,eb)||_certOut[certPhotoKey(s)+'|'+eb]||null; }
+function certPhotoNote(m){ return m==='saved'?'✅ Using the learner’s saved photo (background already replaced when it was added).':m==='orig'?'📷 Photo shown with its original background.':m==='ai'?'✅ Photo background replaced automatically to match the certificate.':m==='basic'?'✅ Photo background replaced automatically (basic mode). For the sharpest edges use a photo against a fairly plain wall.':'⚠️ The background could not be separated reliably on this photo, so the original is used. A photo against a plainer wall works best.'; }
+function certQueue(fn){ const p=_certQ.then(fn,fn); _certQ=p.catch(()=>{}); return p; }
+function certLoadImg(src){ return new Promise((ok,no)=>{ const im=new Image(); im.onload=()=>ok(im); im.onerror=()=>no(new Error('image')); im.src=src; }); }
+function certLoadMP(){
+  if(_certMPP) return _certMPP;
+  _certMPP=new Promise((ok,no)=>{
+    const t=setTimeout(()=>no(new Error('timeout')),25000);
+    const fin=()=>{ try{ const seg=new window.SelfieSegmentation({locateFile:f=>CERT_MP_BASE+f}); seg.setOptions({modelSelection:0});
+      seg.initialize().then(()=>{ clearTimeout(t); ok(seg); }).catch(e=>{ clearTimeout(t); no(e); }); }catch(e){ clearTimeout(t); no(e); } };
+    if(window.SelfieSegmentation) return fin();
+    const sc=document.createElement('script'); sc.src=CERT_MP_BASE+'selfie_segmentation.js'; sc.crossOrigin='anonymous'; sc.onload=fin; sc.onerror=()=>{ clearTimeout(t); no(new Error('load')); };
+    document.head.appendChild(sc);
+  });
+  _certMPP.catch(()=>{ setTimeout(()=>{ _certMPP=null; },60000); });
+  return _certMPP;
+}
+function certMaskOK(m){ let n=0; for(let i=0;i<m.length;i++) if(m[i]>0.5) n++; const f=n/m.length; return f>0.12&&f<0.88; }
+async function certMaskAI(cv,W,H){
+  const seg=await certLoadMP();
+  const mk=await new Promise((ok,no)=>{ const t=setTimeout(()=>no(new Error('timeout')),15000); seg.onResults(r=>{ clearTimeout(t); ok(r.segmentationMask); }); seg.send({image:cv}).catch(e=>{ clearTimeout(t); no(e); }); });
+  const c=document.createElement('canvas'); c.width=W; c.height=H; const x=c.getContext('2d',{willReadFrequently:true});
+  x.drawImage(mk,0,0,W,H); const d=x.getImageData(0,0,W,H).data, m=new Float32Array(W*H);
+  let minA=255; for(let i=0;i<W*H;i++) if(d[i*4+3]<minA) minA=d[i*4+3];
+  const ch=minA>250?0:3;               // confidence lives in alpha; if alpha is flat, use the red channel
+  for(let i=0;i<W*H;i++) m[i]=d[i*4+ch]/255;
+  return m;
+}
+function certMaskBasic(cv,W,H){
+  const d=cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data, N=W*H;
+  const seeds=[], lim=Math.round(H*0.8), t=4;
+  for(let y=0;y<t;y++) for(let x=0;x<W;x++) seeds.push(y*W+x);
+  for(let y=0;y<lim;y++) for(let x=0;x<t;x++){ seeds.push(y*W+x); seeds.push(y*W+(W-1-x)); }
+  const px=i=>[d[i*4],d[i*4+1],d[i*4+2]];
+  const sm=seeds.map(i=>({i,c:px(i),l:0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2]})).sort((a,b)=>a.l-b.l);
+  let cen=[0.1,0.5,0.9].map(q=>sm[Math.floor(q*(sm.length-1))].c.slice());
+  for(let it=0;it<8;it++){ const sum=cen.map(()=>[0,0,0,0]);
+    sm.forEach(o=>{ let b=0,bd=1e9; cen.forEach((c,k)=>{ const e=(c[0]-o.c[0])**2+(c[1]-o.c[1])**2+(c[2]-o.c[2])**2; if(e<bd){bd=e;b=k;} }); const r=sum[b]; r[0]+=o.c[0]; r[1]+=o.c[1]; r[2]+=o.c[2]; r[3]++; });
+    cen=cen.map((c,k)=>sum[k][3]?[sum[k][0]/sum[k][3],sum[k][1]/sum[k][3],sum[k][2]/sum[k][3]]:c); }
+  const rad=cen.map(()=>({s:0,n:0}));
+  sm.forEach(o=>{ let b=0,bd=1e9; cen.forEach((c,k)=>{ const e=Math.hypot(c[0]-o.c[0],c[1]-o.c[1],c[2]-o.c[2]); if(e<bd){bd=e;b=k;} }); rad[b].s+=bd*bd; rad[b].n++; });
+  const thr=rad.map(r=>Math.min(70,Math.max(30,2.6*Math.sqrt(r.n?r.s/r.n:100))));
+  const cand=new Uint8Array(N);
+  for(let i=0;i<N;i++){ for(let k=0;k<3;k++){ const c=cen[k]; if(Math.hypot(d[i*4]-c[0],d[i*4+1]-c[1],d[i*4+2]-c[2])<thr[k]){ cand[i]=1; break; } } }
+  const bg=new Uint8Array(N), st=[];
+  seeds.forEach(i=>{ if(cand[i]&&!bg[i]){ bg[i]=1; st.push(i); } });
+  while(st.length){ const i=st.pop(), x=i%W, y=(i/W)|0;
+    if(x>0&&cand[i-1]&&!bg[i-1]){ bg[i-1]=1; st.push(i-1); } if(x<W-1&&cand[i+1]&&!bg[i+1]){ bg[i+1]=1; st.push(i+1); }
+    if(y>0&&cand[i-W]&&!bg[i-W]){ bg[i-W]=1; st.push(i-W); } if(y<H-1&&cand[i+W]&&!bg[i+W]){ bg[i+W]=1; st.push(i+W); } }
+  // keep only the largest connected "person" blob (drops stray background objects)
+  const lab=new Int32Array(N); let best=0,bestN=0,id=0;
+  for(let i=0;i<N;i++){ if(bg[i]||lab[i]) continue; id++; let n=0; st.push(i); lab[i]=id;
+    while(st.length){ const j=st.pop(); n++; const x=j%W, y=(j/W)|0;
+      if(x>0&&!bg[j-1]&&!lab[j-1]){ lab[j-1]=id; st.push(j-1); } if(x<W-1&&!bg[j+1]&&!lab[j+1]){ lab[j+1]=id; st.push(j+1); }
+      if(y>0&&!bg[j-W]&&!lab[j-W]){ lab[j-W]=id; st.push(j-W); } if(y<H-1&&!bg[j+W]&&!lab[j+W]){ lab[j+W]=id; st.push(j+W); } }
+    if(n>bestN){ bestN=n; best=id; } }
+  let m=new Float32Array(N); for(let i=0;i<N;i++) m[i]=lab[i]===best?1:0;
+  // soften edges (two light box blurs)
+  for(let p=0;p<2;p++){ const o=new Float32Array(N);
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){ let a=0,c=0; for(let dy=-1;dy<=1;dy++){ const yy=y+dy; if(yy<0||yy>=H) continue; for(let dx=-1;dx<=1;dx++){ const xx=x+dx; if(xx<0||xx>=W) continue; a+=m[yy*W+xx]; c++; } } o[y*W+x]=a/c; }
+    m=o; }
+  return m;
+}
+async function certMakeMask(src){
+  const im=await certLoadImg(src), W=im.naturalWidth, H=im.naturalHeight, cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  cv.getContext('2d',{willReadFrequently:true}).drawImage(im,0,0);
+  try{ const m=await certMaskAI(cv,W,H); if(certMaskOK(m)) return {cv,W,H,mask:m,method:'ai'}; }catch(e){}
+  try{ const m=certMaskBasic(cv,W,H); if(certMaskOK(m)) return {cv,W,H,mask:m,method:'basic'}; }catch(e){}
+  return {cv,W,H,mask:null,method:'failed'};
+}
+function certCompose(mk,bg){
+  const {cv,W,H,mask}=mk, c=document.createElement('canvas'); c.width=W; c.height=H; const x=c.getContext('2d',{willReadFrequently:true});
+  const col=certBgCols(bg), g=x.createRadialGradient(W/2,H*0.38,8,W/2,H*0.38,H*0.85); g.addColorStop(0,col[0]); g.addColorStop(1,col[1]);
+  x.fillStyle=g; x.fillRect(0,0,W,H);
+  const pc=document.createElement('canvas'); pc.width=W; pc.height=H; const px=pc.getContext('2d',{willReadFrequently:true});
+  px.drawImage(cv,0,0); const id=px.getImageData(0,0,W,H), d=id.data;
+  for(let i=0;i<W*H;i++){ let a=(mask[i]-0.4)/0.35; a=a<0?0:a>1?1:a; d[i*4+3]=Math.round(255*a*a*(3-2*a)); }
+  px.putImageData(id,0,0); x.drawImage(pc,0,0);
+  return c.toDataURL('image/jpeg',0.88);
+}
+function certPhotoFor(s,bg){
+  if(!s.photo) return Promise.resolve(null);
+  const eb=certEffBg(s,bg), dir=certDirect(s,eb); if(dir) return Promise.resolve(dir);
+  const k=certPhotoKey(s), ok=k+'|'+eb; if(_certOut[ok]) return Promise.resolve(_certOut[ok]);
+  return certQueue(async()=>{
+    if(_certOut[ok]) return _certOut[ok];
+    let mk=_certMask[k]; if(!mk){ if(Object.keys(_certMask).length>40) for(const q in _certMask) delete _certMask[q]; mk=await certMakeMask(certSrc(s)); _certMask[k]=mk; }
+    const r=mk.mask?{src:certCompose(mk,eb),method:mk.method}:{src:certSrc(s),method:'failed'};
+    _certOut[ok]=r; return r;
+  });
 }
 
 /* ============================= DASHBOARD (landing page) ============================= */
