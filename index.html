@@ -9015,7 +9015,8 @@ function tplTeacherAssessPicker(school, myClasses){
   <p class="small no-print">${myClasses.some(c=>!teacherSeesAll(c,'canPrintAssess')) ? 'Sheets show only your assigned learning area(s) — total, mean and position are based on those. ' : ''}${(typeof currentTeacher==='function'&&currentTeacher()&&(currentTeacher().classTeacherOf||[]).length)?'For a grade you are Class Teacher of, sheets show <b>all learning areas</b> for the whole class.':''}</p>
   <div class="row no-print">
     <div><label>Exam</label><select id="asExam">${examOpts}</select></div>
-    ${genderPickerHTML('asGender')}<div style="align-self:flex-end"><button onclick="viewClassAssessment(qs('#asExam').value)">View / Print Sheet</button></div>
+    ${genderPickerHTML('asGender')}<div style="align-self:flex-end"><button onclick="runAssessSheet()">View / Print Sheet</button></div>
+    ${combineBoxesHTML('asCombo', myClasses, 'asExam', true)}
   </div>
   <div id="assessArea"></div>
   <div class="card" style="margin-top:14px"><h2 class="no-print">📊 Cumulative End-Term Sheet</h2>
@@ -9023,13 +9024,16 @@ function tplTeacherAssessPicker(school, myClasses){
     <div><label>Grade</label><select id="cumClass">${classOpts}</select></div>
     <div><label>Term</label><select id="cumTerm"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>
     <div><label>Year</label><input id="cumYear" type="number" value="${new Date().getFullYear()}"></div>
-    ${genderPickerHTML('cumGender')}<div style="align-self:flex-end"><button onclick="viewCumulative()">Generate Cumulative Sheet</button></div>
+    ${genderPickerHTML('cumGender')}<div style="align-self:flex-end"><button onclick="runCumSheet()">Generate Cumulative Sheet</button></div>
+    ${combineBoxesHTML('cumCombo', myClasses, 'cumClass', false)}
   </div>
   <div id="cumArea"></div></div>
-  <div class="card" style="margin-top:14px"><h2 class="no-print">🧾 Blank Grade List (Manual Marking Sheet)</h2>
+  <div class="card" style="margin-top:14px"><h2 class="no-print">🧾 Class List / Blank Grade List (Manual Marking Sheet)</h2>
+  <p class="small no-print">To print streams together (for example 4E and 4W as one list), tick the other streams under “Combine with other streams”.</p>
   <div class="row no-print">
-    <div><label>Grade</label><select id="blankClass">${classOpts}</select></div>
-    ${genderPickerHTML('blankGender')}<div style="align-self:flex-end"><button onclick="viewBlankClassList(qs('#blankClass').value)">Generate Blank Grade List</button></div>
+    <div><label>Grade / stream</label><select id="blankClass">${classOpts}</select></div>
+    ${genderPickerHTML('blankGender')}<div style="align-self:flex-end"><button onclick="viewBlankClassList(qs('#blankClass').value)">Generate List</button></div>
+    ${blankExtraHTML(myClasses)}
   </div>
   <div id="blankListArea"></div>
   </div>
@@ -9334,7 +9338,8 @@ function tplAssessPicker(school){
   return `<div class="card"><h2 class="no-print">🖨 Grade Assessment Sheet</h2>
   <div class="row no-print">
     <div><label>Exam</label><select id="asExam">${school.exams.map(e=>{const c=school.classes.find(x=>x.id===e.classId);return `<option value="${e.id}">${escapeHtml(e.name)} - ${c?escapeHtml(c.name):''} (${e.term} ${e.year})</option>`;}).join('') || '<option value="">No exams</option>'}</select></div>
-    ${genderPickerHTML('asGender')}<div style="align-self:flex-end"><button onclick="viewClassAssessment(qs('#asExam').value)">View / Print Sheet</button></div>
+    ${genderPickerHTML('asGender')}<div style="align-self:flex-end"><button onclick="runAssessSheet()">View / Print Sheet</button></div>
+    ${combineBoxesHTML('asCombo', school.classes.map(c=>c.id), 'asExam', true)}
   </div>
   <div id="assessArea"></div>
   <div class="card" style="margin-top:14px"><h2 class="no-print">📊 Cumulative End-Term Sheet</h2>
@@ -9342,34 +9347,63 @@ function tplAssessPicker(school){
     <div><label>Grade</label><select id="cumClass">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
     <div><label>Term</label><select id="cumTerm"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>
     <div><label>Year</label><input id="cumYear" type="number" value="${new Date().getFullYear()}"></div>
-    ${genderPickerHTML('cumGender')}<div style="align-self:flex-end"><button onclick="viewCumulative()">Generate Cumulative Sheet</button></div>
+    ${genderPickerHTML('cumGender')}<div style="align-self:flex-end"><button onclick="runCumSheet()">Generate Cumulative Sheet</button></div>
+    ${combineBoxesHTML('cumCombo', school.classes.map(c=>c.id), 'cumClass', false)}
   </div>
   <div id="cumArea"></div></div>
-  <div class="card" style="margin-top:14px"><h2 class="no-print">🧾 Blank Grade List (Manual Marking Sheet)</h2>
-  <p class="small no-print">A blank roster — admission numbers and names in order, with empty columns for each learning area — for teachers to fill in by hand when marking on paper.</p>
+  <div class="card" style="margin-top:14px"><h2 class="no-print">🧾 Class List / Blank Grade List (Manual Marking Sheet)</h2>
+  <p class="small no-print">A roster — admission numbers and names in order, with empty columns for each learning area for marking by hand, or names only. To print streams together (for example 4E and 4W as one list), tick the other streams under “Combine with other streams”.</p>
   <div class="row no-print">
-    <div><label>Grade</label><select id="blankClass">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
-    ${genderPickerHTML('blankGender')}<div style="align-self:flex-end"><button onclick="viewBlankClassList(qs('#blankClass').value)">Generate Blank Grade List</button></div>
+    <div><label>Grade / stream</label><select id="blankClass">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
+    ${genderPickerHTML('blankGender')}<div style="align-self:flex-end"><button onclick="viewBlankClassList(qs('#blankClass').value)">Generate List</button></div>
+    ${blankExtraHTML(school.classes.map(c=>c.id))}
   </div>
   <div id="blankListArea"></div>
   </div>`;
 }
+// Extra controls for the Class List / Blank Grade List: combine streams, list type, ordering.
+function blankExtraHTML(ids){
+  const school = currentSchool();
+  const boxes = ids.map(id=>{ const c=school.classes.find(x=>x.id===id); return c?`<label class="te-area"><input type="checkbox" value="${id}"><span>${escapeHtml(c.name)}</span></label>`:''; }).join('');
+  return `<div style="flex:1 1 100%"><label>Combine with other streams <span class="small">(optional — tick to print one joined list)</span></label>
+    <div class="te-areagrid" id="blankCombo">${boxes}</div>
+    <div class="flexbtns" style="margin-top:6px"><button type="button" class="ghost" onclick="blankTickStreams()">Tick all streams of the selected grade</button><button type="button" class="ghost" onclick="blankTickNone()">Clear</button></div></div>
+  <div><label>List type</label><select id="blankCols"><option value="marks">With blank marking columns</option><option value="plain">Names only (class list)</option></select></div>
+  <div><label>Order (combined list)</label><select id="blankOrder"><option value="name">Alphabetical across streams</option><option value="adm">By admission number</option><option value="stream">Stream by stream</option></select></div>`;
+}
+function blankTickStreams(){
+  const school=currentSchool(), sel=qs('#blankClass'); if(!sel) return;
+  const cur=school.classes.find(c=>c.id===sel.value); if(!cur) return;
+  const gl=raGradeLabel(cur.name).toLowerCase(), same=new Set(school.classes.filter(c=>c.id!==cur.id && raGradeLabel(c.name).toLowerCase()===gl).map(c=>c.id));
+  document.querySelectorAll('#blankCombo input').forEach(i=>{ i.checked = same.has(i.value); });
+  if(!same.size) toast('No other streams found for that grade','err');
+}
+function blankTickNone(){ document.querySelectorAll('#blankCombo input').forEach(i=>{ i.checked=false; }); }
 function viewBlankClassList(classId){
   if(!classId) return;
-  if(teacherDenied('canPrintAssess', classId)) return;
   const school = currentSchool();
-  const cls = school.classes.find(c=>c.id===classId);
+  const extra = [...document.querySelectorAll('#blankCombo input:checked')].map(i=>i.value);
+  const ids = [...new Set([classId, ...extra])].filter(id=>school.classes.some(c=>c.id===id));
+  for(const id of ids){ if(teacherDenied('canPrintAssess', id)) return; }
+  const combined = ids.length>1, plain = ((qs('#blankCols')||{}).value==='plain'), order = (qs('#blankOrder')||{}).value || 'name';
+  const cname = id=>{ const c=school.classes.find(x=>x.id===id); return c?c.name:''; };
   const gm = genderMode('blankGender');
-  const learners = applyGenderMode(studentsInClass(school, classId), gm);
+  let raw = []; ids.forEach(id=>studentsInClass(school, id).forEach(x=>raw.push(x)));
+  if(combined && order!=='stream') raw.sort(order==='adm' ? admOrName : (a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+  const learners = applyGenderMode(raw, gm);
   const nB = learners.filter(x=>x.gender==='M').length, nG = learners.filter(x=>x.gender==='F').length;
-  const areas = visibleAreas(school, classId, 'canPrintAssess');
+  const seen = new Set(), areas = [];
+  if(!plain) ids.forEach(id=>visibleAreas(school, id, 'canPrintAssess').forEach(a=>{ if(!seen.has(a.id)){ seen.add(a.id); areas.push(a); } }));
   const target = qs('#blankListArea');
   if(!target) return;
+  const an = hasAssessNo(learners), cs = 4 + (an?1:0) + (combined?1:0) + areas.length + (plain?0:1);
+  const title = ids.map(cname).join(' + ');
+  const perStream = combined ? `<p class="small">${ids.map(id=>escapeHtml(cname(id))+': '+learners.filter(x=>x.classId===id).length).join(' &nbsp;·&nbsp; ')}</p>` : '';
   target.innerHTML = `
   <div class="print-only-block">
-  <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>${escapeHtml(cls.name)}</p><p class="small">Blank Grade List — for manual marking</p>${genderNote(gm).replace(" (positions are class positions)","")}<p class="small">Boys: ${nB} &nbsp;·&nbsp; Girls: ${nG} &nbsp;·&nbsp; Total: ${learners.length}</p></div>
-  <table><tr><th>S/N</th><th>Adm No.</th>${assessTh(hasAssessNo(learners))}<th>Name</th><th>Sex</th>${areas.map(a=>`<th>${escapeHtml(a.name)}</th>`).join('')}<th>Total</th></tr>
-  ${groupedRowsHTML(learners, gm, 5+areas.length+(hasAssessNo(learners)?1:0), x=>x, (s,i)=>`<tr><td>${i+1}</td><td>${s.adm?escapeHtml(s.adm):'<span style="display:inline-block;height:26px"></span>'}</td>${hasAssessNo(learners)?`<td>${s.assessNo?escapeHtml(s.assessNo):''}</td>`:''}<td style="text-align:left">${escapeHtml(s.name)}</td><td>${s.gender==='M'?'M':s.gender==='F'?'F':''}</td>${areas.map(()=>'<td style="height:26px">&nbsp;</td>').join('')}<td>&nbsp;</td></tr>`) || `<tr><td colspan="${5+areas.length+(hasAssessNo(learners)?1:0)}" class="small">No learners in this grade.</td></tr>`}
+  <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>${escapeHtml(title)}</p><p class="small">${plain?'Class List':'Blank Grade List — for manual marking'}${combined?' (combined streams)':''}</p>${genderNote(gm).replace(" (positions are class positions)","")}<p class="small">Boys: ${nB} &nbsp;·&nbsp; Girls: ${nG} &nbsp;·&nbsp; Total: ${learners.length}</p>${perStream}</div>
+  <table><tr><th>S/N</th><th>Adm No.</th>${assessTh(an)}<th>Name</th><th>Sex</th>${combined?'<th>Stream</th>':''}${areas.map(a=>`<th>${escapeHtml(a.name)}</th>`).join('')}${plain?'':'<th>Total</th>'}</tr>
+  ${groupedRowsHTML(learners, gm, cs, x=>x, (s,i)=>`<tr><td>${i+1}</td><td>${s.adm?escapeHtml(s.adm):'<span style="display:inline-block;height:26px"></span>'}</td>${an?`<td>${s.assessNo?escapeHtml(s.assessNo):''}</td>`:''}<td style="text-align:left">${escapeHtml(s.name)}</td><td>${s.gender==='M'?'M':s.gender==='F'?'F':''}</td>${combined?`<td>${escapeHtml(cname(s.classId))}</td>`:''}${areas.map(()=>'<td style="height:26px">&nbsp;</td>').join('')}${plain?'':'<td>&nbsp;</td>'}</tr>`) || `<tr><td colspan="${cs}" class="small">No learners in ${combined?'these grades':'this grade'}.</td></tr>`}
   </table>
   <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
   <div class="flexbtns no-print">${inkPick()}<button class="gold" onclick="printSection('blankListArea')">🖨 Print</button></div>
@@ -9577,6 +9611,161 @@ function viewCumulative(){
     ${sigBox('Class Teacher: '+escapeHtml(classTeacher), ctSigImg(school, classId))}
     ${sigBox('DOS: '+escapeHtml(school.hoiName), hoiSigImg(school))}
   </div>
+  <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
+  <div class="flexbtns no-print">${inkPick()}<button class="gold" onclick="printSection('cumArea')">🖨 Print</button></div>
+  </div>`;
+}
+
+/* ===== Combined streams: one Assessment / Cumulative sheet for several streams of a grade (e.g. 4E + 4W) =====
+   Learners from every ticked stream are ranked together (Pos) and also within their own stream (Stream Pos).
+   Streams are matched by exam name + term + year (cumulative: by term + year). */
+function combineBoxesHTML(id, ids, selId, isExam){
+  const school = currentSchool();
+  const boxes = ids.map(cid=>{ const c=school.classes.find(x=>x.id===cid); return c?`<label class="te-area"><input type="checkbox" value="${cid}"><span>${escapeHtml(c.name)}</span></label>`:''; }).join('');
+  return `<div style="flex:1 1 100%"><label>Combine streams <span class="small">(optional — tick the other streams to print ONE sheet for the whole grade)</span></label>
+    <div class="te-areagrid" id="${id}">${boxes}</div>
+    <div class="flexbtns" style="margin-top:6px"><button type="button" class="ghost" onclick="comboTick('${id}','${selId}',${isExam?1:0})">Tick all streams of the selected grade</button><button type="button" class="ghost" onclick="document.querySelectorAll('#${id} input').forEach(i=>i.checked=false)">Clear</button></div>
+    <p class="small" style="margin:4px 0 0">The other streams must have an exam with the same name, term and year${isExam?'':' (cumulative: same term and year)'}.</p></div>`;
+}
+function comboTick(id, selId, isExam){
+  const school = currentSchool(), sel = qs('#'+selId); if(!sel) return;
+  let cid = sel.value; if(isExam){ const e = school.exams.find(x=>x.id===cid); cid = e && e.classId; }
+  const cur = school.classes.find(c=>c.id===cid); if(!cur) return;
+  const gl = raGradeLabel(cur.name).toLowerCase(), same = new Set(school.classes.filter(c=>c.id!==cur.id && raGradeLabel(c.name).toLowerCase()===gl).map(c=>c.id));
+  document.querySelectorAll('#'+id+' input').forEach(i=>{ i.checked = same.has(i.value); });
+  if(!same.size) toast('No other streams found for that grade','err');
+}
+function comboChecked(id){ return [...document.querySelectorAll('#'+id+' input:checked')].map(i=>i.value); }
+function runAssessSheet(){
+  const eid = qs('#asExam').value; if(!eid) return;
+  const ex = currentSchool().exams.find(e=>e.id===eid);
+  if(ex && comboChecked('asCombo').some(id=>id!==ex.classId)) viewCombinedAssessment(eid); else viewClassAssessment(eid);
+}
+function runCumSheet(){
+  const cid = qs('#cumClass').value;
+  if(comboChecked('cumCombo').some(id=>id!==cid)) viewCombinedCumulative(); else viewCumulative();
+}
+function combStreamTable(school, parts, rows, cols, extraHead, extraCell){
+  const list = parts.map(p=>{ const L = rows.filter(r=>r.p===p); const mean = L.length ? L.reduce((t,r)=>t+r.meanPct,0)/L.length : 0; return {p, n:L.length, mean, g:gradeFor(school,mean,p.id)}; });
+  const best = Math.max.apply(null, list.map(x=>x.mean));
+  return `<p class="small" style="margin:14px 0 4px"><b>Stream comparison</b></p><table><tr><th style="text-align:left">Stream</th><th>Learners</th><th>Mean %</th><th>Level</th></tr>
+  ${list.map(x=>`<tr><td style="text-align:left">${escapeHtml(x.p.cls.name)}${x.mean===best&&list.length>1?' ⭐':''}</td><td>${x.n}</td><td>${x.mean.toFixed(1)}%</td><td>${raBadge(school,x.p.id,x.g.level)}</td></tr>`).join('')}</table>`;
+}
+function viewCombinedAssessment(examId){
+  const school = currentSchool(), exam0 = school.exams.find(e=>e.id===examId); if(!exam0) return;
+  const ids = [...new Set([exam0.classId, ...comboChecked('asCombo')])].filter(id=>school.classes.some(c=>c.id===id));
+  for(const id of ids){ if(teacherDenied('canPrintAssess', id)) return; }
+  const parts = [], missing = [];
+  ids.forEach(id=>{
+    const ex = id===exam0.classId ? exam0 : school.exams.find(e=>e.classId===id && e.name===exam0.name && e.term===exam0.term && String(e.year)===String(exam0.year));
+    const cls = school.classes.find(c=>c.id===id);
+    if(ex) parts.push({id, ex, cls, areas:visibleAreas(school,id,'canPrintAssess'), marks:school.marks[ex.id]||{}}); else missing.push(cls.name);
+  });
+  if(parts.length<2){ toast('No matching exam ("'+exam0.name+'", '+exam0.term+' '+exam0.year+') found in the other stream(s)','err'); return; }
+  const seen = new Set(), areas = []; parts.forEach(p=>p.areas.forEach(a=>{ if(!seen.has(a.id)){ seen.add(a.id); areas.push(a); } }));
+  const scoped = !!(session && session.role==='teacher') && parts.some(p=>!teacherSeesAll(p.id,'canPrintAssess'));
+  let rows = [];
+  parts.forEach(p=>{
+    const have = new Set(p.areas.map(a=>a.id));
+    studentsForExam(school, p.ex).forEach(s=>{
+      let total=0, totalPts=0, maxTotal=0;
+      const cells = areas.map(a=>{
+        const max = p.ex.maxMarksByArea[a.id] ?? 100;
+        if(!have.has(a.id) || !takesArea(school,s.id,a.id)) return {score:null,max,na:true};
+        const score = (p.marks[s.id]||{})[a.id]; maxTotal += max;
+        if(score!=null){ total+=score; totalPts += gradeFor(school,pctOf(score,max),p.id).points; }
+        return {score,max};
+      });
+      const meanPct = cells.reduce((t,c)=>t+(c.score!=null?pctOf(c.score,c.max):0),0)/(cells.filter(c=>!c.na).length||1);
+      rows.push({s,p,cells,total,totalPts,maxTotal,meanPct});
+    });
+  });
+  const optMode = rows.some(r=>r.cells.some(c=>c.na)) || new Set(rows.map(r=>r.maxTotal)).size>1, rk = r=>optMode ? r.meanPct : r.total;
+  rows.sort((a,b)=>rk(b)-rk(a));
+  rows.forEach((r,i)=>{ r.position=i+1; if(i>0 && rk(rows[i-1])===rk(r)) r.position=rows[i-1].position; });
+  parts.forEach(p=>{ const L=rows.filter(r=>r.p===p); L.forEach((r,i)=>{ r.spos=i+1; if(i>0 && rk(L[i-1])===rk(r)) r.spos=L[i-1].spos; }); });
+  const gm = genderMode('asGender'), allRows = rows;
+  rows = applyGenderMode(rows, gm, r=>r.s);
+  const subjAvg = areas.map((a,i)=>{ const v=rows.map(r=>r.cells[i].score!=null?pctOf(r.cells[i].score,r.cells[i].max):null).filter(x=>x!=null); return v.length?v.reduce((t,x)=>t+x,0)/v.length:null; });
+  const classMeanPct = rows.length ? rows.reduce((t,r)=>t+r.meanPct,0)/rows.length : 0, c0 = parts[0].id, classMeanG = gradeFor(school,classMeanPct,c0);
+  const keyTable = gradingFor(school, c0), gradingKey = keyTable.length ? `<div class="rc-key">${keyTable.map(k=>`<span><b>${escapeHtml(k.level)}</b> = ${escapeHtml(k.label)}</span>`).join('')}</div>` : '';
+  const an = hasAssessNo(rows, r=>r.s), title = parts.map(p=>p.cls.name).join(' + ');
+  const cts = parts.map(p=>escapeHtml(p.cls.name)+': '+escapeHtml((school.classTeachers||{})[p.id]||'Not Set')).join(' &nbsp;·&nbsp; ');
+  const target = qs('#assessArea'); if(!target) return;
+  target.innerHTML = `
+  <div class="print-only-block">
+  <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>${escapeHtml(exam0.name)} — ${exam0.term} ${exam0.year} — ${escapeHtml(title)}</p><p class="small">Combined Grade Assessment Sheet (${parts.length} streams) — Pos is across all streams, Stream Pos is within the learner's own stream</p>${genderNote(gm)}${optMode?'<p class="small">Positions go by Mean % (N/A = learning area not taken or not offered in that stream).</p>':''}<p class="small">Class Teachers — ${cts}</p>${missing.length?`<p class="small">⚠ No matching exam found for: ${missing.map(escapeHtml).join(', ')}</p>`:''}${scoped?'<p class="small">Assigned learning area(s) only for grades where you are not the class teacher.</p>':''}${school.requireApproval?`<p class="small">Status: ${parts.every(p=>p.ex.resultsApproval==='approved')?'✅ Approved by DOS':'⚠ Provisional — not all streams approved'}</p>`:''}</div>
+  <table><tr><th>Pos</th><th>Stream Pos</th><th>Adm No.</th>${assessTh(an)}<th>Name</th><th>Sex</th><th>Stream</th>${areas.map(a=>`<th>${escapeHtml(a.name)}</th>`).join('')}<th>Total</th><th>Total Pts</th><th>Mean %</th><th>Level</th></tr>
+  ${groupedRowsHTML(rows, gm, 10+areas.length+(an?1:0), r=>r.s, r=>{ const g=gradeFor(school,r.meanPct,r.p.id);
+    return `<tr><td>${r.position}</td><td>${r.spos}</td><td>${r.s.adm?escapeHtml(r.s.adm):'—'}</td>${assessTd(r.s,an)}<td>${escapeHtml(r.s.name)}</td><td>${r.s.gender==='M'?'M':r.s.gender==='F'?'F':''}</td><td>${escapeHtml(r.p.cls.name)}</td>
+    ${r.cells.map(c=>`<td>${c.na?'N/A':(c.score??'-')}</td>`).join('')}
+    <td>${r.total}</td><td>${r.totalPts}</td><td>${r.meanPct.toFixed(1)}%</td><td>${raBadge(school,r.p.id,g.level)}</td></tr>`; })}
+  <tr class="rc-total"><td colspan="${6+(an?1:0)}" style="text-align:left">${gm==='M'?'BOYS AVERAGE':gm==='F'?'GIRLS AVERAGE':'GRADE AVERAGE'}</td>
+  ${subjAvg.map(v=>`<td>${v!=null?v.toFixed(1)+'%':'-'}</td>`).join('')}
+  <td>-</td><td>-</td><td>${classMeanPct.toFixed(1)}%</td><td>${raBadge(school,c0,classMeanG.level)}</td></tr>
+  </table>
+  ${combStreamTable(school, parts, allRows)}
+  ${genderSummaryHTML(school, c0, allRows)}
+  ${gradingKey}
+  <div style="display:grid;grid-template-columns:1fr;gap:20px;margin-top:22px">${sigBox('DOS: '+escapeHtml(school.hoiName), hoiSigImg(school))}</div>
+  <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
+  <div class="flexbtns no-print">${inkPick()}<button class="gold" onclick="printSection('assessArea')">🖨 Print</button></div>
+  </div>`;
+}
+function viewCombinedCumulative(){
+  const school = currentSchool(), cid0 = qs('#cumClass').value, term = qs('#cumTerm').value, year = Number(qs('#cumYear').value);
+  const ids = [...new Set([cid0, ...comboChecked('cumCombo')])].filter(id=>school.classes.some(c=>c.id===id));
+  for(const id of ids){ if(teacherDenied('canPrintAssess', id)) return; }
+  const parts = [], missing = [];
+  ids.forEach(id=>{ const cls = school.classes.find(c=>c.id===id), exams = school.exams.filter(e=>e.classId===id && e.term===term && e.year===year);
+    if(exams.length) parts.push({id, cls, exams, areas:visibleAreas(school,id,'canPrintAssess')}); else missing.push(cls.name); });
+  if(parts.length<2){ qs('#cumArea').innerHTML = '<p class="small">Not enough streams have exams recorded for this term/year to combine.</p>'; return; }
+  const scoped = !!(session && session.role==='teacher') && parts.some(p=>!teacherSeesAll(p.id,'canPrintAssess'));
+  const seen = new Set(), areas = []; parts.forEach(p=>p.areas.forEach(a=>{ if(!seen.has(a.id)){ seen.add(a.id); areas.push(a); } }));
+  let rows = [];
+  parts.forEach(p=>{
+    const have = new Set(p.areas.map(a=>a.id));
+    unionStudents(p.exams.flatMap(ex=>studentsForExam(school, ex))).forEach(s=>{
+      let grandTotalPct=0, grandTotalPts=0;
+      const cells = areas.map(a=>{
+        if(!have.has(a.id) || !takesArea(school,s.id,a.id)) return 'NA';
+        let sumPct=0, n=0;
+        p.exams.forEach(ex=>{ const max=ex.maxMarksByArea[a.id] ?? 100, sc=(school.marks[ex.id]||{})[s.id]?.[a.id]; if(sc!=null){ sumPct+=pctOf(sc,max); n++; } });
+        const avg = n ? sumPct/n : null;
+        if(avg!=null){ grandTotalPct+=avg; grandTotalPts+=gradeFor(school,avg,p.id).points; }
+        return avg;
+      });
+      const nT = cells.filter(c=>c!=='NA').length, meanPct = nT ? grandTotalPct/nT : 0;
+      rows.push({s,p,cells,meanPct,grandTotalPts,totalMarks:grandTotalPct});
+    });
+  });
+  const cmp = (a,b)=>b.totalMarks-a.totalMarks || b.meanPct-a.meanPct, same = (a,b)=>a.totalMarks.toFixed(2)===b.totalMarks.toFixed(2);
+  rows.sort(cmp); rows.forEach((r,i)=>{ r.position=i+1; if(i>0 && same(rows[i-1],r)) r.position=rows[i-1].position; });
+  parts.forEach(p=>{ const L=rows.filter(r=>r.p===p); L.forEach((r,i)=>{ r.spos=i+1; if(i>0 && same(L[i-1],r)) r.spos=L[i-1].spos; }); });
+  const gm = genderMode('cumGender'), allRows = rows; rows = applyGenderMode(rows, gm, r=>r.s);
+  const subjAvg = areas.map((a,i)=>{ const v=rows.map(r=>r.cells[i]).filter(x=>typeof x==='number'); return v.length?v.reduce((t,x)=>t+x,0)/v.length:null; });
+  const classTotalAvg = rows.length ? rows.reduce((t,r)=>t+r.totalMarks,0)/rows.length : 0, classTop = rows.length ? Math.max.apply(null, rows.map(r=>r.totalMarks)) : 0;
+  const classMeanPct = rows.length ? rows.reduce((t,r)=>t+r.meanPct,0)/rows.length : 0, c0 = parts[0].id, classMeanG = gradeFor(school,classMeanPct,c0);
+  const keyTable = gradingFor(school, c0), gradingKey = keyTable.length ? `<div class="rc-key">${keyTable.map(k=>`<span><b>${escapeHtml(k.level)}</b> = ${escapeHtml(k.label)}</span>`).join('')}</div>` : '';
+  const an = hasAssessNo(rows, r=>r.s), title = parts.map(p=>p.cls.name).join(' + ');
+  const cts = parts.map(p=>escapeHtml(p.cls.name)+': '+escapeHtml((school.classTeachers||{})[p.id]||'Not Set')).join(' &nbsp;·&nbsp; ');
+  const exLine = parts.map(p=>escapeHtml(p.cls.name)+' — '+p.exams.map(e=>escapeHtml(e.name)).join(', ')).join('; ');
+  qs('#cumArea').innerHTML = `
+  <div class="print-only-block">
+  <div class="report-header">${schoolHeaderTop(school)}${schoolContactLine(school)}<p>Cumulative Assessment — ${term} ${year} — ${escapeHtml(title)}</p><p class="small">Combined sheet (${parts.length} streams). Each learning area shows the learner's average % across that stream's exams; <b>Total Marks</b> is the sum of those averages. Pos is across all streams, Stream Pos is within the learner's own stream.</p>${genderNote(gm)}${rows.some(r=>r.cells.includes('NA'))?'<p class="small">N/A = learning area not taken or not offered in that stream; the mean uses only the areas that apply.</p>':''}<p class="small">Exams counted: ${exLine}</p><p class="small">Class Teachers — ${cts}</p>${missing.length?`<p class="small">⚠ No exams recorded for: ${missing.map(escapeHtml).join(', ')}</p>`:''}${scoped?'<p class="small">Assigned learning area(s) only for grades where you are not the class teacher.</p>':''}</div>
+  <table><tr><th>Pos</th><th>Stream Pos</th><th>Adm No.</th>${assessTh(an)}<th>Name</th><th>Sex</th><th>Stream</th>${areas.map(a=>`<th>${escapeHtml(a.name)} (avg %)</th>`).join('')}<th>Total Marks</th><th>Mean %</th><th>Total Pts</th><th>Level</th></tr>
+  ${groupedRowsHTML(rows, gm, 10+areas.length+(an?1:0), r=>r.s, r=>{ const g=gradeFor(school,r.meanPct,r.p.id); return `<tr><td>${r.position}</td><td>${r.spos}</td><td>${r.s.adm?escapeHtml(r.s.adm):'—'}</td>${assessTd(r.s,an)}<td>${escapeHtml(r.s.name)}</td><td>${r.s.gender==='M'?'M':r.s.gender==='F'?'F':''}</td><td>${escapeHtml(r.p.cls.name)}</td>
+    ${r.cells.map(c=>`<td>${c==='NA'?'N/A':(c!=null?Math.round(c):'-')}</td>`).join('')}
+    <td><b>${Math.round(r.totalMarks)}</b></td><td>${Math.round(r.meanPct)}%</td><td>${r.grandTotalPts}</td><td>${raBadge(school,r.p.id,g.level)}</td></tr>`; })}
+  <tr class="rc-total"><td colspan="${6+(an?1:0)}" style="text-align:left">${gm==='M'?'BOYS AVERAGE':gm==='F'?'GIRLS AVERAGE':'GRADE AVERAGE'}</td>
+  ${subjAvg.map(v=>`<td>${v!=null?Math.round(v):'-'}</td>`).join('')}
+  <td>${Math.round(classTotalAvg)}</td><td>${Math.round(classMeanPct)}%</td><td>-</td><td>${raBadge(school,c0,classMeanG.level)}</td></tr>
+  </table>
+  <p class="small">Learners: ${rows.length} · Highest total marks: ${Math.round(classTop)} · Grade average total: ${Math.round(classTotalAvg)}</p>
+  ${combStreamTable(school, parts, allRows)}
+  ${genderSummaryHTML(school, c0, allRows)}
+  ${gradingKey}
+  <div style="display:grid;grid-template-columns:1fr;gap:20px;margin-top:22px">${sigBox('DOS: '+escapeHtml(school.hoiName), hoiSigImg(school))}</div>
   <div class="rc-footer">Generated by EduTrack CBC &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
   <div class="flexbtns no-print">${inkPick()}<button class="gold" onclick="printSection('cumArea')">🖨 Print</button></div>
   </div>`;
