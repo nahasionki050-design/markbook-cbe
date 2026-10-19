@@ -8794,10 +8794,28 @@ function teacherClassIds(school, t){
   return [...new Set(t.assignments.map(a=>a.classId))]
     .filter(cid=>school.classes.some(c=>c.id===cid) && teacherAreaIds(school,t,cid).length);
 }
-// Learning areas a viewer may see for a class: everyone else sees all, a teacher only their own.
-function visibleAreas(school, classId){
+// A teacher who is Class Teacher of a grade AND has been granted the matching permission by the DOS
+// (canPrint = learner reports, canPrintAssess = assessment sheets) sees that whole grade — every learning
+// area, full class totals and positions — exactly as the DOS does. Teachers without this still see only
+// their own assigned learning area(s).
+function teacherSeesAll(classId, perm){
+  if(!session || session.role!=='teacher' || !perm) return false;
+  const t = currentTeacher(); if(!t) return false;
+  return (t.classTeacherOf||[]).includes(classId) && t[perm]===true;
+}
+// Grades a teacher may open under a permission: grades they teach in, plus grades they are Class Teacher of
+// when the DOS has granted that permission.
+function teacherViewClassIds(school, t, perm){
+  const ids = teacherClassIds(school, t).slice();
+  if(perm && t[perm]===true) (t.classTeacherOf||[]).forEach(cid=>{ if(school.classes.some(c=>c.id===cid) && !ids.includes(cid)) ids.push(cid); });
+  return ids;
+}
+// Learning areas a viewer may see for a class: everyone else sees all, a teacher only their own
+// (unless they are the permitted Class Teacher of that grade — pass the permission being used).
+function visibleAreas(school, classId, perm){
   const all = areasForClass(school, classId);
   if(!session || session.role!=='teacher') return all;
+  if(perm && teacherSeesAll(classId, perm)) return all;
   const t = currentTeacher(); if(!t) return [];
   const ids = new Set(teacherAreaIds(school, t, classId));
   return all.filter(a=>ids.has(a.id));
@@ -8806,6 +8824,7 @@ function visibleAreas(school, classId){
 function teacherMay(perm, classId, areaId){
   const t = currentTeacher(); if(!t) return false;
   const school = currentSchool();
+  if(!areaId && classId && (perm==='canPrint'||perm==='canPrintAssess') && teacherSeesAll(classId, perm)) return true;
   if(classId && !teacherAreaIds(school,t,classId).length) return false;
   if(areaId && !teacherAreaIds(school,t,classId).includes(areaId)) return false;
   return perm ? t[perm]===true : true;
@@ -8909,6 +8928,9 @@ function renderTeacher(){
   </div>
   <div id="tdashArea"></div></div>`;
   const classOpts = myClasses.map(cid=>{const c=school.classes.find(x=>x.id===cid);return `<option value="${cid}">${escapeHtml(c.name)}</option>`;}).join('');
+  const repClasses = teacherViewClassIds(school, t, 'canPrint'), assessClasses = teacherViewClassIds(school, t, 'canPrintAssess');
+  const repOpts = repClasses.map(cid=>{const c=school.classes.find(x=>x.id===cid);return c?`<option value="${cid}">${escapeHtml(c.name)}</option>`:'';}).join('');
+  const repNote = repClasses.some(cid=>teacherSeesAll(cid,'canPrint')) ? 'For a grade you are Class Teacher of, reports show <b>all learning areas</b> for the whole class. For other grades they show only your assigned learning area(s) — mean, points and position are based on those.' : 'Reports show only your assigned learning area(s) — mean, points and position are based on those.';
   const P = {
     marks: `  <div class="card"><h2 class="no-print">✏️ Enter Marks</h2>
   <div class="row no-print">
@@ -8926,10 +8948,10 @@ function renderTeacher(){
   <div id="teacherApprovals"></div></div>
 `,
     reports: `  ${t.canPrint ? `<div class="card"><h2 class="no-print">📄 Print Learner Reports</h2>
-  <p class="small no-print">Reports show only your assigned learning area(s) — mean, points and position are based on those.</p>
+  <p class="small no-print">${repNote}</p>
   <div class="row no-print">
-    <div><label>Grade</label><select id="trepClass" onchange="fillTeacherRepExams();fillTeacherRepLearners()">${classOpts}</select></div>
-    <div><label>Exam</label><select id="trepExam" onchange="fillTeacherRepLearners()">${school.exams.filter(e=>e.classId===myClasses[0] && examReleased(school,e)).map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No approved exams for this grade</option>'}</select></div>
+    <div><label>Grade</label><select id="trepClass" onchange="fillTeacherRepExams();fillTeacherRepLearners()">${repOpts}</select></div>
+    <div><label>Exam</label><select id="trepExam" onchange="fillTeacherRepLearners()">${school.exams.filter(e=>e.classId===repClasses[0] && examReleased(school,e)).map(e=>`<option value="${e.id}">${escapeHtml(e.name)} (${e.term} ${e.year})</option>`).join('') || '<option value="">No approved exams for this grade</option>'}</select></div>
     <div><label>Learner</label><select id="trepLearner"></select></div>
     ${genderPickerHTML('trepGender')}
   </div>
@@ -8940,7 +8962,7 @@ function renderTeacher(){
   <div id="treportArea"></div>
   </div>` : ''}
 `,
-    assess: `  ${t.canPrintAssess ? tplTeacherAssessPicker(school, myClasses) : ''}
+    assess: `  ${t.canPrintAssess ? tplTeacherAssessPicker(school, assessClasses) : ''}
 `,
     history: `  ${t.canPrintAssess ? `<div class="card"><h2 class="no-print">🖨 Grade List of Previous Exams</h2><div id="teacherHistory"></div></div>` : ''}
 `,
@@ -8990,7 +9012,7 @@ function tplTeacherAssessPicker(school, myClasses){
   const classOpts = myClasses.map(cid=>{const c=school.classes.find(x=>x.id===cid);return c?`<option value="${cid}">${escapeHtml(c.name)}</option>`:'';}).join('');
   const examOpts = school.exams.filter(e=>myClasses.includes(e.classId)).map(e=>{const c=school.classes.find(x=>x.id===e.classId);return `<option value="${e.id}">${escapeHtml(e.name)} - ${c?escapeHtml(c.name):''} (${e.term} ${e.year})</option>`;}).join('') || '<option value="">No exams</option>';
   return `<div class="card"><h2 class="no-print">🖨 Assessment Sheets</h2>
-  <p class="small no-print">Sheets show only your assigned learning area(s) — total, mean and position are based on those.</p>
+  <p class="small no-print">${myClasses.some(c=>!teacherSeesAll(c,'canPrintAssess')) ? 'Sheets show only your assigned learning area(s) — total, mean and position are based on those. ' : ''}${(typeof currentTeacher==='function'&&currentTeacher()&&(currentTeacher().classTeacherOf||[]).length)?'For a grade you are Class Teacher of, sheets show <b>all learning areas</b> for the whole class.':''}</p>
   <div class="row no-print">
     <div><label>Exam</label><select id="asExam">${examOpts}</select></div>
     ${genderPickerHTML('asGender')}<div style="align-self:flex-end"><button onclick="viewClassAssessment(qs('#asExam').value)">View / Print Sheet</button></div>
@@ -9298,7 +9320,7 @@ function renderTeacherHistory(){
   const school = currentSchool(); const t = currentTeacher(); if(!t) return;
   // Previous exams are only visible when the DOS has granted assessment-sheet access.
   if(!t.canPrintAssess){ host.innerHTML=''; return; }
-  const myClasses = teacherClassIds(school, t);
+  const myClasses = teacherViewClassIds(school, t, 'canPrintAssess');
   const exams = school.exams.filter(e=>myClasses.includes(e.classId));
   host.innerHTML = `<table class="no-print"><tr><th>Exam</th><th>Term/Year</th><th>Grade</th><th></th></tr>
   ${exams.map(e=>{const c=school.classes.find(x=>x.id===e.classId);
@@ -9340,7 +9362,7 @@ function viewBlankClassList(classId){
   const gm = genderMode('blankGender');
   const learners = applyGenderMode(studentsInClass(school, classId), gm);
   const nB = learners.filter(x=>x.gender==='M').length, nG = learners.filter(x=>x.gender==='F').length;
-  const areas = visibleAreas(school, classId);
+  const areas = visibleAreas(school, classId, 'canPrintAssess');
   const target = qs('#blankListArea');
   if(!target) return;
   target.innerHTML = `
@@ -9423,10 +9445,10 @@ function viewClassAssessment(examId, targetId){
   const exam = school.exams.find(e=>e.id===examId);
   if(!exam) return;
   if(teacherDenied('canPrintAssess', exam.classId)) return;
-  const scoped = !!(session && session.role==='teacher');
+  const scoped = !!(session && session.role==='teacher') && !teacherSeesAll(exam.classId,'canPrintAssess');
   const cls = school.classes.find(c=>c.id===exam.classId);
   const learners = studentsForExam(school, exam);
-  const areas = visibleAreas(school, exam.classId);
+  const areas = visibleAreas(school, exam.classId, 'canPrintAssess');
   const marksForExam = school.marks[examId] || {};
   const classTeacher = (school.classTeachers||{})[exam.classId] || 'Not Set';
   // compute totals & positions
@@ -9493,10 +9515,10 @@ function viewCumulative(){
   const school = currentSchool();
   const classId = qs('#cumClass').value, term = qs('#cumTerm').value, year = Number(qs('#cumYear').value);
   if(teacherDenied('canPrintAssess', classId)) return;
-  const scoped = !!(session && session.role==='teacher');
+  const scoped = !!(session && session.role==='teacher') && !teacherSeesAll(classId,'canPrintAssess');
   const exams = school.exams.filter(e=>e.classId===classId && e.term===term && e.year===year);
   const learners = unionStudents(exams.flatMap(ex=>studentsForExam(school, ex)));
-  const areas = visibleAreas(school, classId);
+  const areas = visibleAreas(school, classId, 'canPrintAssess');
   const cls = school.classes.find(c=>c.id===classId);
   if(exams.length===0){ qs('#cumArea').innerHTML = '<p class="small">No exams recorded for this term/year yet.</p>'; return; }
   let rows = learners.map(s=>{
@@ -12089,7 +12111,7 @@ function rcResetCtx(){ RC_CTX = {}; }
 function rcCtx(school, exam, scoped){
   const key = exam.id + '|' + (scoped?1:0);
   if(RC_CTX[key]) return RC_CTX[key];
-  const areas = visibleAreas(school, exam.classId);
+  const areas = visibleAreas(school, exam.classId, 'canPrint');
   const marksForExam = school.marks[exam.id] || {};
   const learners = studentsForExam(school, exam);
   const optMode = learners.some(l=>areas.some(a=>!takesArea(school,l.id,a.id)));
@@ -12158,8 +12180,8 @@ function buildReportHTML(school, sid, examId){
   const student = school.students.find(s=>s.id===sid);
   const exam = school.exams.find(e=>e.id===examId);
   const cls = school.classes.find(c=>c.id===exam.classId) || {id:exam.classId, name:'—'};
-  const scoped = !!(session && session.role==='teacher');
-  const areas = visibleAreas(school, exam.classId);
+  const scoped = !!(session && session.role==='teacher') && !teacherSeesAll(exam.classId,'canPrint');
+  const areas = visibleAreas(school, exam.classId, 'canPrint');
   const marksForExam = school.marks[examId] || {};
   let totalScore=0, totalPts=0, sumPct=0, n=0;
   const subjectRows = areas.map(a=>{
