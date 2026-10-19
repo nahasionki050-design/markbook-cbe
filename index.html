@@ -1388,37 +1388,57 @@ function nonMarksSnapshot(school){
   delete clone.smsCredits;   // the balance lives in a server-only node; a browser must never write it
   return clone;
 }
+function runScheduledCloudPush(school){
+  const code = school.code, snapshot = nonMarksSnapshot(school);
+  /* DATA SAVING: every save used to start a transaction, which makes the phone DOWNLOAD the school's whole
+     data from the cloud just to compare — even when the save was only a mark (marks travel separately).
+     If nothing outside the marks differs from the last copy agreed with the cloud, skip the trip entirely
+     and put the timestamp back, so no other device is told to download either. */
+  const base0 = syncBase[code];
+  if(base0 && dataEqual(stripForMerge(snapshot), base0)){
+    if(syncState.baseStamp[code]!=null && school._updatedAt!==syncState.baseStamp[code]){ school._updatedAt = syncState.baseStamp[code]; saveDB(DB, {skipCloud:true}); }
+    return;
+  }
+  // A transaction reads what is in the cloud RIGHT NOW and merges this device's changes into it,
+  // so someone else's edit saved a moment ago is kept instead of being written over.
+  schoolDataRef(code).transaction(cur=>{
+    if(cur==null) return snapshot;
+    const merged = mergeSchoolData(syncBase[code], snapshot, cur, (cur._updatedAt||0) > (snapshot._updatedAt||0));
+    if(dataEqual(merged, stripForMerge(cur))) return;            // nothing new to write
+    merged._updatedAt = Math.max(cur._updatedAt||0, snapshot._updatedAt||0) + 1;
+    if(snapshot.syncConfig) merged.syncConfig = snapshot.syncConfig;
+    return merged;
+  }).then(res=>{
+    const val = res && res.snapshot && res.snapshot.val();
+    if(val) mergeDataFromCloud(code, val);
+  }).catch(e=>console.warn('Cloud sync push failed', e));
+}
 function scheduleCloudPush(){
   if(!syncState.enabled) return;
   const school = (session && (session.role==='dos'||session.role==='teacher'||session.role==='sadmin')) ? DB.schools[session.schoolCode] : null;
   if(!school || !school.syncConfig || !school.syncConfig.enabled || !fbDb) return;
   clearTimeout(syncState.pushTimer);
-  syncState.pushTimer = setTimeout(()=>{
-    const code = school.code, snapshot = nonMarksSnapshot(school);
-    /* DATA SAVING: every save used to start a transaction, which makes the phone DOWNLOAD the school's whole
-       data from the cloud just to compare — even when the save was only a mark (marks travel separately).
-       If nothing outside the marks differs from the last copy agreed with the cloud, skip the trip entirely
-       and put the timestamp back, so no other device is told to download either. */
-    const base0 = syncBase[code];
-    if(base0 && dataEqual(stripForMerge(snapshot), base0)){
-      if(syncState.baseStamp[code]!=null && school._updatedAt!==syncState.baseStamp[code]){ school._updatedAt = syncState.baseStamp[code]; saveDB(DB, {skipCloud:true}); }
-      return;
-    }
-    // A transaction reads what is in the cloud RIGHT NOW and merges this device's changes into it,
-    // so someone else's edit saved a moment ago is kept instead of being written over.
-    schoolDataRef(code).transaction(cur=>{
-      if(cur==null) return snapshot;
-      const merged = mergeSchoolData(syncBase[code], snapshot, cur, (cur._updatedAt||0) > (snapshot._updatedAt||0));
-      if(dataEqual(merged, stripForMerge(cur))) return;            // nothing new to write
-      merged._updatedAt = Math.max(cur._updatedAt||0, snapshot._updatedAt||0) + 1;
-      if(snapshot.syncConfig) merged.syncConfig = snapshot.syncConfig;
-      return merged;
-    }).then(res=>{
-      const val = res && res.snapshot && res.snapshot.val();
-      if(val) mergeDataFromCloud(code, val);
-    }).catch(e=>console.warn('Cloud sync push failed', e));
-  }, 1500);   // a burst of edits goes up as one push
+  syncState.pushTimer = setTimeout(()=>{ syncState.pushTimer = 0; runScheduledCloudPush(school); }, 1500);   // a burst of edits goes up as one push
 }
+// A change (e.g. a teacher editing an exam's total marks) is only safe once it has actually reached
+// the cloud — until then it sits behind the 1.5s debounce above, purely in this device's memory/local
+// storage. If the tab is closed, reloaded, or backgrounded before that timer fires, the push above
+// never runs at all, and the edit can later be silently overwritten when this device reconnects and
+// finds the cloud has moved on from something else (see mergeDataFromCloud's "no known ancestor"
+// fallback). Flushing the pending push immediately — the same way flushDB() already flushes the local
+// save — closes almost all of that window, the same way flushDB() already does for local storage.
+function flushCloudPush(){
+  if(!syncState.pushTimer) return;
+  clearTimeout(syncState.pushTimer); syncState.pushTimer = 0;
+  if(!syncState.enabled || !fbDb) return;
+  const school = (session && (session.role==='dos'||session.role==='teacher'||session.role==='sadmin')) ? DB.schools[session.schoolCode] : null;
+  if(!school || !school.syncConfig || !school.syncConfig.enabled) return;
+  runScheduledCloudPush(school);
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) flushCloudPush(); });
+window.addEventListener('pagehide', flushCloudPush);
+window.addEventListener('beforeunload', flushCloudPush);
+window.addEventListener('freeze', flushCloudPush);
 /* Marks entered on this device are first written to a small saved "outbox" and only removed once the
    cloud confirms them. Before this, a mark entered while sync was offline or reconnecting was never
    sent, and the next download from the cloud then replaced the device's copy — silently erasing it.
@@ -2022,6 +2042,21 @@ function mergeDataFromCloud(code, remote){
     if(keepStu.length){ next.students = (next.students||[]).concat(keepStu); console.warn('Kept '+keepStu.length+' learner(s) added on this device that the cloud did not have yet'); }
     const rSig = remote.classTeacherSigs||{}, nSig = next.classTeacherSigs = Object.assign({}, next.classTeacherSigs||{});
     Object.keys(local.classTeacherSigs||{}).forEach(k=>{ if(!(k in rSig) && !(k in nSig) && (local.classes||[]).some(c=>c.id===k)) nSig[k] = local.classTeacherSigs[k]; });
+    // Same idea, for an exam edited on THIS device (most commonly: a teacher or DOS changing an
+    // exam's total/max marks — touchExam() stamps exam.stateAt every time) that never reached the
+    // cloud before this device lost track of its sync history. Without this, the fallback above
+    // would silently drop that edit just because the cloud moved on for some unrelated reason, which
+    // is exactly what "the total marks I changed reverted back" looks like from the school's side.
+    const rExamsByid = new Map((remote.exams||[]).map(x=>[x.id,x]));
+    (next.exams||[]).forEach((ex,i)=>{
+      const le = (local.exams||[]).find(x=>x.id===ex.id); if(!le) return;
+      const re = rExamsByid.get(ex.id);
+      const localNewer = (le.stateAt||0) > (re?(re.stateAt||0):0);
+      if(localNewer && !dataEqual(le.maxMarksByArea, ex.maxMarksByArea)){
+        next.exams[i] = Object.assign({}, ex, {maxMarksByArea: le.maxMarksByArea, maxLog: le.maxLog||ex.maxLog});
+        console.warn('Kept a total-marks change made on this device that the cloud did not have yet (exam '+ex.id+')');
+      }
+    });
   }
   if((local.students||[]).length > (next.students||[]).length){
     try{ takeSnapshot('Before cloud update removed learners', {code, force:true, kind:'cloudshrink'}); toast('Another device removed some learners. A restore point was saved first - use Undo > Restore points to bring them back.'); }catch(e){}
@@ -3421,7 +3456,7 @@ function verifyStaffOtp(){
   if(Date.now() > staffOtpState.expiresAt){ msgEl.innerHTML = '<div class="msg err">That code has expired — send a new one.</div>'; staffOtpState = null; return; }
   const entered = (qs('#otpCode').value||'').trim();
   if(entered !== staffOtpState.otp){ msgEl.innerHTML = '<div class="msg err">Incorrect code.</div>'; return; }
-  const nw = qs('#otpNewPw').value, conf = qs('#otpConfPw').value;
+  const nw = qs('#otpNewPw').value.trim(), conf = qs('#otpConfPw').value.trim();
   if(!nw || nw.length<4){ msgEl.innerHTML = '<div class="msg err">New password must be at least 4 characters.</div>'; return; }
   if(nw !== conf){ msgEl.innerHTML = '<div class="msg err">New password and confirmation do not match.</div>'; return; }
   const school = DB.schools[staffOtpState.schoolCode];
@@ -3439,7 +3474,7 @@ function verifyStaffOtp(){
 async function doDosLogin(){
   const code = qs('#scode').value.trim();
   const u = qs('#duser').value.trim();
-  const p = qs('#dpass').value;
+  const p = qs('#dpass').value.trim();
   setLoginBusy(true, 'Logging in…');
   // Fast path: if this device already holds this school locally, check credentials
   // against that copy immediately instead of waiting on the network — login is instant
@@ -3475,7 +3510,7 @@ async function doDosLogin(){
 async function doTeacherLogin(){
   const code = qs('#scode').value.trim();
   const u = qs('#tuser').value.trim();
-  const p = qs('#tpass').value;
+  const p = qs('#tpass').value.trim();
   setLoginBusy(true, 'Logging in…');
   const cached = DB.schools[code];
   const cachedRec = cached && cached.teachers.find(t=>t.username===u && t.password===p);
@@ -3506,7 +3541,7 @@ async function doTeacherLogin(){
 async function doFinanceLogin(){
   const code = qs('#scode').value.trim();
   const u = qs('#fuser').value.trim();
-  const p = qs('#fpass').value;
+  const p = qs('#fpass').value.trim();
   setLoginBusy(true, 'Logging in…');
   const cached = DB.schools[code];
   const cachedRec = cached && cached.finance.find(f=>f.username===u && f.password===p && !f.disabled);
@@ -3538,7 +3573,7 @@ async function doFinanceLogin(){
 async function doSadminLogin(){
   const code = qs('#scode').value.trim();
   const u = qs('#suser').value.trim();
-  const p = qs('#spass').value;
+  const p = qs('#spass').value.trim();
   setLoginBusy(true, 'Logging in…');
   const cached = DB.schools[code];
   const cachedRec = cached && cached.sadmins.find(f=>f.username===u && f.password===p);
@@ -3993,7 +4028,7 @@ function importBackup(evt){
   evt.target.value='';
 }
 function changeAdminPassword(){
-  const cur = qs('#curAdminPw').value, nw = qs('#newAdminPw').value, conf = qs('#confAdminPw').value;
+  const cur = qs('#curAdminPw').value.trim(), nw = qs('#newAdminPw').value.trim(), conf = qs('#confAdminPw').value.trim();
   if(DB.adminPassword !== cur){ qs('#changeAdminMsg').innerHTML='<div class="msg err">Current password is incorrect.</div>'; return; }
   if(!nw || nw.length<4){ qs('#changeAdminMsg').innerHTML='<div class="msg err">New password must be at least 4 characters.</div>'; return; }
   if(nw !== conf){ qs('#changeAdminMsg').innerHTML='<div class="msg err">New password and confirmation do not match.</div>'; return; }
@@ -6223,7 +6258,7 @@ function saveMyContact(){
 function changeDosPassword(){
   const school = currentSchool();
   const me = school.dos.find(d=>d.id===session.userId);
-  const cur = qs('#curPw').value, nw = qs('#newPw').value, conf = qs('#confPw').value;
+  const cur = qs('#curPw').value.trim(), nw = qs('#newPw').value.trim(), conf = qs('#confPw').value.trim();
   if(!me){ qs('#acctMsg').innerHTML='<div class="msg err">Account not found.</div>'; return; }
   if(me.password !== cur){ qs('#acctMsg').innerHTML='<div class="msg err">Current password is incorrect.</div>'; return; }
   if(!nw || nw.length<4){ qs('#acctMsg').innerHTML='<div class="msg err">New password must be at least 4 characters.</div>'; return; }
@@ -8188,7 +8223,7 @@ function saveMyTeacherContact(){
 }
 function changeTeacherPassword(){
   const t = currentTeacher();
-  const cur = qs('#curTPw').value, nw = qs('#newTPw').value, conf = qs('#confTPw').value;
+  const cur = qs('#curTPw').value.trim(), nw = qs('#newTPw').value.trim(), conf = qs('#confTPw').value.trim();
   if(!t){ qs('#tAcctMsg').innerHTML='<div class="msg err">Account not found.</div>'; return; }
   if(t.password !== cur){ qs('#tAcctMsg').innerHTML='<div class="msg err">Current password is incorrect.</div>'; return; }
   if(!nw || nw.length<4){ qs('#tAcctMsg').innerHTML='<div class="msg err">New password must be at least 4 characters.</div>'; return; }
@@ -8706,7 +8741,7 @@ function saveMyFinanceContact(){
 }
 function changeFinancePassword(){
   const fi = currentFinance();
-  const cur = qs('#curFiPw').value, nw = qs('#newFiPw').value, conf = qs('#confFiPw').value;
+  const cur = qs('#curFiPw').value.trim(), nw = qs('#newFiPw').value.trim(), conf = qs('#confFiPw').value.trim();
   if(!fi){ qs('#fiAcctMsg').innerHTML='<div class="msg err">Account not found.</div>'; return; }
   if(fi.password !== cur){ qs('#fiAcctMsg').innerHTML='<div class="msg err">Current password is incorrect.</div>'; return; }
   if(!nw || nw.length<4){ qs('#fiAcctMsg').innerHTML='<div class="msg err">New password must be at least 4 characters.</div>'; return; }
