@@ -822,6 +822,13 @@ function ensureSchoolShape(s){
   });
   if(typeof s.hoiSignature !== 'string') s.hoiSignature = '';
   if(typeof s.logo !== 'string') s.logo = '';
+  // Certificates: two selectable print styles (see tplCertificates/certPageHTML). certCrest is an
+  // OPTIONAL emblem used only on the certificate's decorated style, separate from the main school
+  // logo (s.logo, used everywhere else) so a school can pick a fancier crest for certificates
+  // without changing the logo on every other report. Falls back to s.logo, then to a generated
+  // monogram shield, when empty — see certCrestSVG.
+  if(typeof s.certStyle !== 'string') s.certStyle = 'classic';
+  if(typeof s.certCrest !== 'string') s.certCrest = '';
   // Rubber stamps: a school can keep several (e.g. Primary, Junior). Each {id,name,img,size,report,invoice,tt,grades[]}.
   // grades = the grade ids it is used for; empty = all grades.
   if(!Array.isArray(s.stamps)) s.stamps = [];
@@ -10079,6 +10086,7 @@ const CERT_CSS=`.cert,.cert *{-webkit-print-color-adjust:exact;print-color-adjus
 .cert .cn{position:absolute;left:13mm;bottom:8.6mm;font-size:9.5px;color:#666;letter-spacing:.4px;font-family:Arial,sans-serif}`;
 function certDateText(iso){ try{ const d=new Date(iso+'T00:00:00'); if(isNaN(d)) return ''; return d.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}); }catch(e){ return ''; } }
 function certPageHTML(school, s, cls, o){
+  if(o && o.style==='decorated') return certPageHTMLDecorated(school, s, cls, o);
   const ctName=(school.classTeachers||{})[cls.id]||'', st=stampFor(school,'report',cls.id);
   const contact=[school.address, school.phone?('Tel: '+school.phone):'', school.email?('Email: '+school.email):'', school.regNo?('NEMIS/Reg No: '+school.regNo):''].map(x=>String(x||'').trim()).filter(Boolean);
   const idBits=[s.adm?('Adm No. '+escapeHtml(s.adm)):'', s.assessNo?('Assessment No. '+escapeHtml(s.assessNo)):''].filter(Boolean).join(' &nbsp;·&nbsp; ');
@@ -10099,6 +10107,138 @@ function certPageHTML(school, s, cls, o){
     <div class="sg dt"><div class="sl">${escapeHtml(certDateText(o.date))}</div><div class="ln">Date</div></div>
   </div></div>${hasPh&&!P?phHtml:''}${certNo?`<div class="cn">${certNo}</div>`:''}</div>`;
 }
+
+/* ---------- Certificates: second, more decorated style (crest/ribbon/seal) ----------
+   A second print style a school can pick instead of (or alongside) the plain one above — same
+   wording, data and signature flow, just dressed up: a top ribbon banner with the school name, a
+   shield crest (the school's own crest/logo if set, else a generated monogram shield so every
+   school gets something distinctive even with no artwork of their own), gold corner flourishes,
+   and a seal + cap-and-books accent near the signatures. All drawn as inline SVG — no external
+   images or fonts — so it prints crisply and works fully offline, same as the rest of the app. */
+let _certSvgSeq = 0;
+function certInitials(name){
+  const stop = new Set(['of','the','and','for','school','academy','centre','center','primary','secondary','junior','senior','institute','college']);
+  const words = String(name||'').trim().split(/\s+/).filter(Boolean);
+  const kept = words.filter(w=>!stop.has(w.toLowerCase()));
+  const src = kept.length ? kept : words;
+  return (src.slice(0,3).map(w=>w[0]).join('') || 'S').toUpperCase();
+}
+function certLaurelSVG(){
+  const leaf=(x,y,rot)=>`<ellipse cx="${x}" cy="${y}" rx="5.2" ry="2.4" fill="#c9a227" transform="rotate(${rot} ${x} ${y})"/>`;
+  let out='';
+  for(let i=0;i<5;i++){
+    const yy=94-i*8.5;
+    out += leaf(16-i*2, yy, -34-i*5);
+    out += leaf(104+i*2, yy, 34+i*5);
+  }
+  return `<g opacity=".9">${out}</g>`;
+}
+// The crest: the school's own certificate crest if one was uploaded, else the main school logo
+// (so a school that only ever set up their ordinary logo still gets it on the fancier style),
+// else a generated monogram shield bearing the school's own initials — never blank.
+function certCrestSVG(school, o){
+  const seq = ++_certSvgSeq;
+  const img = (o && o.crestImg) || school.certCrest || school.logo || '';
+  const shield = 'M50 3 L92 17 V46 C92 74 73 92 50 98 C27 92 8 74 8 46 V17 Z';
+  const gId='cg'+seq, cId='cc'+seq;
+  if(img){
+    return `<svg class="crest-svg" viewBox="0 0 120 108" xmlns="http://www.w3.org/2000/svg">
+      <defs><clipPath id="${cId}"><path d="${shield}" transform="translate(10,2)"/></clipPath></defs>
+      <g clip-path="url(#${cId})"><image href="${img}" x="6" y="-2" width="108" height="108" preserveAspectRatio="xMidYMid slice"/></g>
+      <path d="${shield}" transform="translate(10,2)" fill="none" stroke="#c9a227" stroke-width="3.5"/>
+      ${certLaurelSVG()}
+    </svg>`;
+  }
+  const initials = certInitials(school.name);
+  return `<svg class="crest-svg" viewBox="0 0 120 108" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="${gId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c4f82"/><stop offset="1" stop-color="#0d2b4a"/></linearGradient></defs>
+    <g transform="translate(10,2)">
+      <path d="${shield}" fill="url(#${gId})" stroke="#c9a227" stroke-width="3.5"/>
+      <path d="M50 30 l15 6.5 -15 6.5 -15 -6.5 Z" fill="#f4d98a"/>
+      <text x="50" y="66" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="30" font-weight="700" fill="#f4d98a">${escapeHtml(initials)}</text>
+    </g>
+    ${certLaurelSVG()}
+  </svg>`;
+}
+function certSealSVG(){
+  return `<svg class="cert-seal" viewBox="0 0 60 70" xmlns="http://www.w3.org/2000/svg">
+    <path d="M18 40 L10 68 L22 60 L30 68 L26 40 Z" fill="#8a2a33"/>
+    <path d="M42 40 L50 68 L38 60 L30 68 L34 40 Z" fill="#8a2a33"/>
+    <circle cx="30" cy="26" r="22" fill="#d8ae3f" stroke="#9c6f12" stroke-width="2"/>
+    <circle cx="30" cy="26" r="16" fill="none" stroke="#fff6da" stroke-width="1.2" stroke-dasharray="2 2.4"/>
+    <text x="30" y="32" text-anchor="middle" font-family="Georgia,serif" font-size="17" fill="#5a3d08" font-weight="700">★</text>
+  </svg>`;
+}
+function certCapBooksSVG(){
+  return `<svg class="cert-cap" viewBox="0 0 90 60" xmlns="http://www.w3.org/2000/svg">
+    <rect x="8" y="39" width="48" height="9" rx="2" fill="#123a63"/>
+    <rect x="12" y="31" width="42" height="9" rx="2" fill="#1c4f82"/>
+    <rect x="16" y="23" width="36" height="9" rx="2" fill="#c9a227"/>
+    <g transform="translate(32,-2)">
+      <path d="M22 10 L46 2 L70 10 L46 18 Z" fill="#123a63"/>
+      <path d="M46 18 L46 27" stroke="#123a63" stroke-width="2"/>
+      <circle cx="46" cy="28" r="2.4" fill="#c9a227"/>
+      <path d="M65 11 v10" stroke="#123a63" stroke-width="2"/>
+      <circle cx="65" cy="22" r="2.1" fill="#123a63"/>
+    </g>
+  </svg>`;
+}
+function certCornerSVG(){
+  return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+    <path d="M2 2 C2 20 20 2 38 2" fill="none" stroke="#c9a227" stroke-width="1.6"/>
+    <path d="M2 2 C20 2 2 20 2 38" fill="none" stroke="#c9a227" stroke-width="1.6"/>
+    <circle cx="2" cy="2" r="3" fill="#c9a227"/>
+  </svg>`;
+}
+const CERT_CSS_DEC=`.cert.dec{background:linear-gradient(180deg,#fffdf6,#fbf6e8)}
+.cert.dec .b1{border-style:double;border-width:1.8mm;border-color:#123a63}
+.cert.dec .b2{border-color:#c9a227;border-width:.5mm}
+.cert.dec .fl{position:absolute;width:13mm;height:13mm;opacity:.9}
+.cert.dec .fl svg{width:100%;height:100%;display:block}
+.cert.dec .fl.tl{left:3mm;top:3mm}
+.cert.dec .fl.tr{right:3mm;top:3mm;transform:scaleX(-1)}
+.cert.dec .fl.bl{left:3mm;bottom:3mm;transform:scaleY(-1)}
+.cert.dec .fl.br{right:3mm;bottom:3mm;transform:scale(-1,-1)}
+.cert.dec .ribbon{display:inline-block;padding:2.2mm 14mm;background:linear-gradient(90deg,#0d2b4a,#1c4f82,#0d2b4a);color:#f4d98a;font-size:14px;letter-spacing:2.5px;font-weight:700;text-transform:uppercase;clip-path:polygon(4% 0,96% 0,100% 50%,96% 100%,4% 100%,0 50%);margin-bottom:2.5mm}
+.cert.dec .crest-wrap{width:26mm;margin:0 auto 1.5mm}
+.cert.dec .crest-svg{width:100%;display:block}
+.cert.dec .ti{background:linear-gradient(180deg,#d8ae3f,#8a6d1f);-webkit-background-clip:text;background-clip:text;color:transparent}
+.cert.dec .rule{position:relative;width:90mm;border-top:.4mm double #c9a227;margin:3.8mm auto}
+.cert.dec .rule:after{content:'❖';position:absolute;left:50%;top:-3.2mm;transform:translateX(-50%);color:#c9a227;font-size:12px;background:#fffdf6;padding:0 2mm}
+.cert.dec .nm{border-bottom-style:double;border-bottom-width:.5mm}
+.cert.dec .cert-seal{position:absolute;width:19mm;right:15mm;bottom:9mm}
+.cert.dec .cert-cap{position:absolute;width:24mm;left:13mm;bottom:14mm;opacity:.95}
+.cert.dec.pt .cert-seal{width:16mm;right:9mm;bottom:8mm}
+.cert.dec.pt .cert-cap{width:19mm;left:8mm;bottom:13mm}`;
+function certPageHTMLDecorated(school, s, cls, o){
+  const ctName=(school.classTeachers||{})[cls.id]||'', st=stampFor(school,'report',cls.id);
+  const contact=[school.address, school.phone?('Tel: '+school.phone):'', school.email?('Email: '+school.email):'', school.regNo?('NEMIS/Reg No: '+school.regNo):''].map(x=>String(x||'').trim()).filter(Boolean);
+  const idBits=[s.adm?('Adm No. '+escapeHtml(s.adm)):'', s.assessNo?('Assessment No. '+escapeHtml(s.assessNo)):''].filter(Boolean).join(' &nbsp;·&nbsp; ');
+  const body=`has successfully completed <b>${escapeHtml(o.done)}</b> at <b>${escapeHtml(school.name)}</b> in the year <b>${escapeHtml(o.year)}</b>${o.next?` and is promoted to <b>${escapeHtml(o.next)}</b>`:''}.`;
+  const phSrc=o.showPhoto!==false?((o.photos&&o.photos[s.id])||s.photo||''):'', hasPh=!!phSrc;
+  const P=o.orient==='portrait';
+  const phHtml=hasPh?`<div class="ph"><img src="${phSrc}" alt="Learner photo"></div>`:'';
+  const certNo=s.adm?('Certificate No. '+escapeHtml(String(o.year||''))+'/'+escapeHtml(s.adm)):'';
+  const corner=certCornerSVG();
+  return `<div class="cert dec${hasPh?' hp':''}${P?' pt':''}"><div class="b1"></div><div class="b2"></div>
+  <div class="fl tl">${corner}</div><div class="fl tr">${corner}</div><div class="fl bl">${corner}</div><div class="fl br">${corner}</div>
+  <div class="in">
+  <div style="text-align:center">
+    <div class="ribbon">${escapeHtml(school.name)}</div>
+    <div class="crest-wrap">${certCrestSVG(school,o)}</div>
+    ${school.motto&&school.motto.trim()?`<p class="mo">${escapeHtml(school.motto)}</p>`:''}${contact.length?`<div class="ct">${contact.map(t=>`<span>${escapeHtml(t)}</span>`).join('')}</div>`:''}
+  </div>
+  <div class="mid"><h2 class="ti">${escapeHtml(o.title)}</h2><div class="rule"></div>${P?phHtml:''}<p class="tx">This is to certify that</p>
+    <div class="nm">${escapeHtml(s.name)}</div>${idBits?`<div class="id">${idBits}</div>`:''}
+    <p class="bd">${body}</p>${o.extra?`<p class="ex">${escapeHtml(o.extra)}</p>`:''}<p class="tx" style="margin-top:3mm">We wish ${s.gender==='F'?'her':s.gender==='M'?'him':'the learner'} every success in the next stage of ${s.gender==='F'?'her':s.gender==='M'?'his':'their'} learning.</p></div>
+  <div class="ft">
+    <div class="sg"><div class="sl">${ctSigImg(school,cls.id)}</div><div class="ln">Class Teacher${ctName?': '+escapeHtml(ctName):''}</div></div>
+    <div class="sp">${st?`<img src="${st.img}" alt="" style="max-height:${stampPx(st)}px;max-width:100%;mix-blend-mode:multiply;transform:rotate(-6deg)">`:''}</div>
+    <div class="sg"><div class="sl">${hoiSigImg(school)}</div><div class="ln">Head of Institution${school.hoiName?': '+escapeHtml(school.hoiName):''}</div></div>
+    <div class="sg dt"><div class="sl">${escapeHtml(certDateText(o.date))}</div><div class="ln">Date</div></div>
+  </div></div>${hasPh&&!P?phHtml:''}${certSealSVG()}${certCapBooksSVG()}${certNo?`<div class="cn">${certNo}</div>`:''}</div>`;
+}
+
 function tplCertificates(school){
   if(!school.classes.length || !school.students.length) return `<div class="card"><h2>🎓 Certificates</h2><p class="small">Add your grades and learners first (☰ Menu → Grades / Learners), then come back here to print completion certificates.</p></div>`;
   const d=new Date(), iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -10111,6 +10251,10 @@ function tplCertificates(school){
     <div><label>Date issued</label><input id="certDate" type="date" value="${iso}" oninput="certPreview()"></div>
   </div>
   <div class="row no-print">
+    <div><label>Certificate style</label><select id="certStyle" onchange="certStyleChanged()"><option value="classic" ${school.certStyle!=='decorated'?'selected':''}>Classic (plain border)</option><option value="decorated" ${school.certStyle==='decorated'?'selected':''}>Decorated (crest, ribbon &amp; seal)</option></select></div>
+    <div><label>Page orientation</label><select id="certOrient" onchange="certOrientChanged()"><option value="landscape" ${school.certOrient!=='portrait'?'selected':''}>Landscape (wide)</option><option value="portrait" ${school.certOrient==='portrait'?'selected':''}>Portrait (tall)</option></select></div>
+  </div>
+  <div class="row no-print">
     <div><label>Certificate title</label><input id="certTitle" oninput="certPreview()"></div>
     <div><label>Has completed</label><input id="certDone" oninput="certPreview()"></div>
     <div><label>Promoted to (optional)</label><input id="certNext" oninput="certPreview()"></div>
@@ -10118,15 +10262,38 @@ function tplCertificates(school){
   <div class="row no-print"><div><label>Extra line (optional, e.g. “Awarded with distinction”)</label><input id="certExtra" oninput="certPreview()"></div></div>
   <div class="row no-print">
     <div><label>Learner photo</label><label class="small" style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" id="certShowPhoto" style="width:auto;margin:0" checked onchange="certPreview()"> Print the learner’s photo on the certificate</label></div>
-    <div><label>Page orientation</label><select id="certOrient" onchange="certOrientChanged()"><option value="landscape" ${school.certOrient!=='portrait'?'selected':''}>Landscape (wide)</option><option value="portrait" ${school.certOrient==='portrait'?'selected':''}>Portrait (tall)</option></select></div>
     <div><label>Photo background</label><select id="certPhotoBg" onchange="certPreview()"><option value="saved">Same as the learner’s saved photo (recommended)</option><option value="cert">Certificate blue</option><option value="white">Plain white</option><option value="sky">Sky blue</option><option value="grey">Light grey</option><option value="cream">Cream / gold tint</option><option value="navy">School navy</option><option value="none">Original background</option></select></div>
+  </div>
+  <div class="row no-print">
+    <div><label>Certificate crest (optional — only used on the Decorated style)</label><input type="file" id="certCrestFile" accept="image/*" onchange="uploadCertCrest(this)">
+      <p class="small" style="margin:4px 0 0">${school.certCrest?'A custom crest is set for certificates.':(school.logo?'Using your school logo as the crest.':'No logo set — a crest with your school’s initials is generated automatically.')}${school.certCrest?' <a href="#" onclick="removeCertCrest();return false;">Remove &amp; use the school logo instead</a>':''}</p>
+    </div>
   </div>
   <p class="small no-print" id="certPhotoMsg" style="margin:0 0 6px"></p>
   <div class="no-print" id="certList"></div>
   <div class="flexbtns no-print"><button class="gold" onclick="certPrint()">🖨 Print selected certificates</button></div>
   <h3 class="no-print" style="color:var(--navy);margin:16px 0 6px">Preview</h3>
-  <style>${CERT_CSS}</style>
+  <style>${CERT_CSS}${CERT_CSS_DEC}</style>
   <div class="no-print" id="certPrevBox" style="width:100%;overflow:hidden;border:1px solid var(--border);border-radius:8px;background:#f4f6f9"><div id="certPrev" style="transform-origin:0 0"></div></div></div>`;
+}
+function certStyleChanged(){ currentSchool().certStyle=qs('#certStyle').value; saveDB(DB); certPreview(); }
+function uploadCertCrest(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+  if(!file.type.startsWith('image/')){ toast('Please choose an image file','err'); return; }
+  if(file.size > 2*1024*1024){ toast('Image is too large — please use one under 2MB','err'); return; }
+  shrinkImage(file, 500, 'image/png', undefined, dataUrl=>{
+    const school = currentSchool();
+    school.certCrest = dataUrl;
+    saveDB(DB);
+    toast('Certificate crest saved');
+    renderDOS();
+  }, ()=>toast('Could not read that image — please try another file','err'));
+}
+function removeCertCrest(){
+  const school = currentSchool();
+  school.certCrest = '';
+  saveDB(DB); renderDOS();
 }
 function certClassChanged(){
   const school=currentSchool(), cls=school.classes.find(c=>c.id===qs('#certClass').value); if(!cls) return;
@@ -10143,7 +10310,8 @@ function certOrientChanged(){ currentSchool().certOrient=qs('#certOrient').value
 function certOpts(){
   return {title:qs('#certTitle').value.trim()||'Certificate of Completion', done:qs('#certDone').value.trim(), next:qs('#certNext').value.trim(),
     year:qs('#certYear').value||String(new Date().getFullYear()), date:qs('#certDate').value, extra:qs('#certExtra').value.trim(),
-    orient:(qs('#certOrient')||{value:'landscape'}).value, showPhoto:!qs('#certShowPhoto')||qs('#certShowPhoto').checked, bg:(qs('#certPhotoBg')||{value:'saved'}).value};
+    orient:(qs('#certOrient')||{value:'landscape'}).value, showPhoto:!qs('#certShowPhoto')||qs('#certShowPhoto').checked, bg:(qs('#certPhotoBg')||{value:'saved'}).value,
+    style:(qs('#certStyle')||{value:(currentSchool()||{}).certStyle||'classic'}).value};
 }
 function certSelected(onlyId){
   const school=currentSchool(), cls=school.classes.find(c=>c.id===qs('#certClass').value); if(!cls) return {school,cls:null,list:[]};
@@ -10184,7 +10352,7 @@ async function certPrint(onlyId){
   }
   const pages=list.map(x=>certPageHTML(school,x,cls,o)).join('');
   const w=printWin(); if(!w){ toast('Allow pop-ups to print','err'); return; }
-  w.document.write(`<html><head><meta charset="utf-8"><title>Certificates — ${escapeHtml(cls.name)}</title><style>@page{size:A4 ${o.orient==='portrait'?'portrait':'landscape'};margin:10mm}html,body{margin:0;padding:0}${CERT_CSS}</style></head><body>${pages}</body></html>`);
+  w.document.write(`<html><head><meta charset="utf-8"><title>Certificates — ${escapeHtml(cls.name)}</title><style>@page{size:A4 ${o.orient==='portrait'?'portrait':'landscape'};margin:10mm}html,body{margin:0;padding:0}${CERT_CSS}${CERT_CSS_DEC}</style></head><body>${pages}</body></html>`);
   printWinGo(w);
 }
 
@@ -13694,8 +13862,12 @@ function nativeConfirmSafe(m){ return window.confirm(m); }
   function card(err, name, again){
     note(err, name);
     const box = document.getElementById('app'); if(!box) return;
+    // Shown collapsed so it never alarms a non-technical user, but it means a screenshot of this
+    // card (expanded) is now enough to diagnose the problem — no devtools/console access needed.
+    const detail = 'Screen: ' + (name||'(unknown)') + '\n' + String((err&&err.message)||err).slice(0,300) + '\n' + String((err&&err.stack)||'').slice(0,600);
     box.innerHTML = '<div class="card"><h2>⚠ This screen could not load</h2><p class="small">Your data is safe. Tap <b>Try again</b>; if it keeps happening, <b>Reload</b> the app or log out and back in.</p>'
-      + '<div class="flexbtns"><button id="csRetry">Try again</button><button class="ghost" onclick="location.reload()">Reload app</button><button class="ghost" onclick="logout()">Log out</button></div></div>';
+      + '<div class="flexbtns"><button id="csRetry">Try again</button><button class="ghost" onclick="location.reload()">Reload app</button><button class="ghost" onclick="logout()">Log out</button></div>'
+      + '<details style="margin-top:10px"><summary class="small" style="cursor:pointer">Technical details (for support)</summary><pre class="small" style="white-space:pre-wrap;word-break:break-word;background:#f7f9fc;padding:8px;border-radius:6px;margin-top:6px">' + escapeHtml(detail) + '</pre></details></div>';
     const b = document.getElementById('csRetry'); if(b) b.onclick = ()=>{ try{ again(); }catch(e){ card(e,name,again); } };
   }
   ['renderLogin','renderAdmin','renderDOS','renderTeacher','renderFinance','renderSadmin'].forEach(n=>{
