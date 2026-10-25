@@ -10107,19 +10107,24 @@ const CERT_CSS_DEC=`
 .cert.dec .rib::before{left:-5.6mm;clip-path:polygon(0 0,100% 0,100% 100%,0 100%,55% 50%)}
 .cert.dec .rib::after{right:-5.6mm;clip-path:polygon(0 0,100% 0,45% 50%,100% 100%,0 100%)}
 .cert.dec .ribtxt{display:block;position:relative;font-size:30px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;color:#14264a;line-height:1.15;white-space:nowrap}
-.cert.dec .seal{position:absolute;right:15mm;bottom:15mm;width:21mm;z-index:2}
-.cert.dec .seal-ring{width:21mm;height:21mm;border-radius:50%;background:repeating-conic-gradient(#c9a227 0deg 9deg,#eed580 9deg 18deg);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1mm #fff,0 0 0 1.4mm #8a6d1f}
-.cert.dec .seal-core{width:15mm;height:15mm;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff6da,#c9a227 70%,#8a6d1f);display:flex;align-items:center;justify-content:center;color:#5a4710;font-size:13px;font-weight:800;box-shadow:inset 0 0 1mm rgba(0,0,0,.35)}
-.cert.dec .seal-tail{position:absolute;left:50%;top:18.5mm;transform:translateX(-50%);width:15mm;height:9mm}
-.cert.dec .seal-tail span{position:absolute;top:0;width:6.5mm;height:9mm;background:#14264a}
+/* The cap icon and seal used to float just above the signature row and, on real (longer/
+   wrapping) content, ended up overlapping the Date and the Class Teacher line instead of
+   sitting above them. Rather than guess at pixel offsets near content that can vary in
+   height, the decorated style now reserves a dedicated strip below the signatures — exactly
+   like the certificate-number text already safely does — and both decorations live only in
+   that reserved strip, in both orientations, so they can never collide with the footer. */
+.cert.dec .in{bottom:27mm}
+.cert.dec .seal{position:absolute;right:14mm;bottom:8mm;width:16mm;z-index:2}
+.cert.dec .seal-ring{width:16mm;height:16mm;border-radius:50%;background:repeating-conic-gradient(#c9a227 0deg 9deg,#eed580 9deg 18deg);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 .8mm #fff,0 0 0 1.2mm #8a6d1f}
+.cert.dec .seal-core{width:11mm;height:11mm;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff6da,#c9a227 70%,#8a6d1f);display:flex;align-items:center;justify-content:center;color:#5a4710;font-size:9px;font-weight:800;box-shadow:inset 0 0 .8mm rgba(0,0,0,.35)}
+.cert.dec .seal-tail{position:absolute;left:50%;top:14mm;transform:translateX(-50%);width:11mm;height:5.5mm}
+.cert.dec .seal-tail span{position:absolute;top:0;width:5mm;height:5.5mm;background:#14264a}
 .cert.dec .seal-tail span:first-child{left:0;clip-path:polygon(0 0,100% 0,100% 65%,50% 100%,0 65%)}
 .cert.dec .seal-tail span:last-child{right:0;clip-path:polygon(0 0,100% 0,100% 65%,50% 100%,0 65%)}
-.cert.dec .capicon{position:absolute;left:13mm;bottom:15mm;width:13mm;opacity:.95}
+.cert.dec .capicon{position:absolute;left:13mm;bottom:9mm;width:12mm;opacity:.95}
 .cert.dec .capicon svg{width:100%;height:auto;display:block}
-.cert.dec.pt .crest,.cert.dec.pt .seal,.cert.dec.pt .capicon{transform:scale(.78)}
-.cert.dec.pt .crest{transform-origin:top center;margin-bottom:0}
-.cert.dec.pt .seal{transform-origin:bottom right;right:9mm;bottom:9mm}
-.cert.dec.pt .capicon{transform-origin:bottom left;left:8mm;bottom:9mm}
+.cert.dec .cn{left:50%;transform:translateX(-50%);bottom:4.5mm}
+.cert.dec.pt .crest{transform:scale(.78);transform-origin:top center;margin-bottom:0}
 .cert.dec.pt .rib{padding:2mm 8mm;margin:1mm auto 3mm}
 .cert.dec.pt .ribtxt{font-size:19px;letter-spacing:1.5px}`;
 function certInitials(name){
