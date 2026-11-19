@@ -8339,6 +8339,7 @@ function renderSadmin(){
     teachers: sadminTeachersHTML(school),
     staffing: sadminStaffingHTML(school),
     checks: sadminChecksHTML(school),
+    messages: tplSadminMessages(school, me),
     notices: sadNoticesHTML(school),
     duty: sadDutyHTML(school),
     staffatt: sadAttHTML(school),
@@ -8346,9 +8347,9 @@ function renderSadmin(){
     finance: `${tplFinanceAccounts(school)}
   `,
     admins: `<div class="card"><h2>🏫 School Admin Accounts</h2><div class="row"><div><label>Name</label><input id="saName"></div><div><label>Username</label><input id="saUser"></div><div><label>Password</label><input id="saPass" placeholder="blank = auto-generate"></div><div style="align-self:flex-end"><button onclick="addSadminAcct()">➕ Add</button></div></div>
-  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Actions</th></tr>${school.sadmins.map(a=>`<tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.username)}${a.id===me.id?' <span class="small">(you)</span>':''}</td><td><button class="ghost" onclick="resetSadminAcct('${a.id}')">🔑 Reset Password</button> ${a.id===me.id?'':`<button class="danger" onclick="delSadminAcct('${a.id}')">✕</button>`}</td></tr>`).join('')}</table></div>`};
-  const menu = [{group:'Overview', items:[['dashboard','🏠 Dashboard'],['teachers','👩‍🏫 Teachers'],['links','🔗 Portal Links']]},{group:'Notices & staff', items:[['notices','📢 Notice Board'],['duty','🗓 Duty Rota'],['staffatt','🧾 Staff Attendance'],['staffrec','🪪 Staff Records (TSC No.)']]},{group:'Reports & tools', items:[['staffing','📊 Enrolment & Staffing'],['checks','✅ Needs Attention']]},{group:'Accounts', items:[['dos','🎓 DOS Accounts'],['finance','💰 Finance Accounts'],['admins','🏫 School Admins']]}];
-  const quick = portalQuick('gotoSadminTab',[['teachers','👩‍🏫 Teachers'],['notices','📢 Notices'],['duty','🗓 Duty'],['staffatt','🧾 Attendance'],['staffrec','🪪 Staff Records'],['staffing','📊 Enrolment'],['checks','✅ Needs Attention'],['links','🔗 Portal Links'],['dos','🎓 DOS'],['finance','💰 Finance'],['admins','🏫 Admins']]);
+  <table style="margin-top:10px"><tr><th>Name</th><th>Username</th><th>Can message parents</th><th>Actions</th></tr>${school.sadmins.map(a=>`<tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.username)}${a.id===me.id?' <span class="small">(you)</span>':''}</td><td>${a.id===me.id?(a.canMessage===false?'<span class="badge BE">No</span>':'<span class="badge EE">Yes</span>'):`<button class="ghost" onclick="sadToggleMsgPerm('${a.id}')">${a.canMessage===false?'🔒 No — tap to allow':'✅ Yes — tap to block'}</button>`}</td><td><button class="ghost" onclick="resetSadminAcct('${a.id}')">🔑 Reset Password</button> ${a.id===me.id?'':`<button class="danger" onclick="delSadminAcct('${a.id}')">✕</button>`}</td></tr>`).join('')}</table></div>`};
+  const menu = [{group:'Overview', items:[['dashboard','🏠 Dashboard'],['teachers','👩‍🏫 Teachers'],['links','🔗 Portal Links']]},{group:'Messaging', items:[['messages','💬 Message Parents']]},{group:'Notices & staff', items:[['notices','📢 Notice Board'],['duty','🗓 Duty Rota'],['staffatt','🧾 Staff Attendance'],['staffrec','🪪 Staff Records (TSC No.)']]},{group:'Reports & tools', items:[['staffing','📊 Enrolment & Staffing'],['checks','✅ Needs Attention']]},{group:'Accounts', items:[['dos','🎓 DOS Accounts'],['finance','💰 Finance Accounts'],['admins','🏫 School Admins']]}];
+  const quick = portalQuick('gotoSadminTab',[['messages','💬 Message Parents'],['teachers','👩‍🏫 Teachers'],['notices','📢 Notices'],['duty','🗓 Duty'],['staffatt','🧾 Attendance'],['staffrec','🪪 Staff Records'],['staffing','📊 Enrolment'],['checks','✅ Needs Attention'],['links','🔗 Portal Links'],['dos','🎓 DOS'],['finance','💰 Finance'],['admins','🏫 Admins']]);
   app.innerHTML = portalShell({menu, tab:sadminTab, goto:'gotoSadminTab', side:school.name, headName:me.name, headSub:'School Admin · '+school.name}) + (sadminTab==='dashboard' ? P.dashboard + quick : (P[sadminTab]||P.dashboard));
 }
 
@@ -13649,7 +13650,29 @@ function tplSms(school){
       <div><label>Grade</label><select id="smsClass" onchange="smsFillExamOptions()">${school.classes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
       <div><label>Exam</label><select id="smsExam" onchange="smsPreviewResults()"></select></div>
     </div>
+    <div class="row" style="margin-top:6px">
+      <div style="flex:2 1 260px"><label>What to send to parents</label>
+        <select id="smsFormat" onchange="smsPreviewResults()">
+          <option value="summary">📄 Summary — mean, level &amp; position (cheapest)</option>
+          <option value="levels">📋 Levels for every learning area + overall</option>
+          <option value="full">📑 Full results — score AND level for every learning area (costs more)</option>
+        </select></div>
+      <div><label>Preview learner</label><select id="smsPrevLearner" onchange="smsPreviewResults()"></select></div>
+    </div>
+    <div id="smsFullOpts" style="display:none">
+      <div class="row">
+        <div id="smsScoreAsBox"><label>Show scores as</label><select id="smsScoreAs" onchange="smsPreviewResults()"><option value="marks">Marks (e.g. 45/60)</option><option value="pct">Percentage (e.g. 75%)</option></select></div>
+      </div>
+      <div class="flexbtns" style="margin-top:2px">
+        <label class="small" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="smsOptOverall" style="width:auto;margin:0" checked onchange="smsPreviewResults()"> Include mean &amp; overall level</label>
+        <label class="small" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="smsOptPos" style="width:auto;margin:0" checked onchange="smsPreviewResults()"> Include position</label>
+        <label class="small" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="smsOptAbbr" style="width:auto;margin:0" checked onchange="smsPreviewResults()"> Short learning-area names (saves credit)</label>
+      </div>
+    </div>
     <div id="smsResultsPreview" class="small"></div>
+    <details style="margin:6px 0"><summary class="small" style="cursor:pointer">🧪 Send a test of the previewed learner to my own phone first</summary>
+      <div class="row" style="margin-top:6px"><div><label>My phone number</label><input id="smsTestPhone" inputmode="tel" placeholder="e.g. 0712345678"></div><div style="align-self:flex-end"><button class="ghost" onclick="sendResultsSmsTest()">📱 Send test (1 SMS)</button></div></div>
+    </details>
     <div class="flexbtns"><button onclick="sendResultsSms()">📤 Send Results SMS</button></div>
     <div id="smsResultsMsg"></div>
   </div>
@@ -13744,42 +13767,126 @@ function learnerResultSummary(school, sid, examId){
   const text = `Dear Parent, ${student.name}'s results for ${exam.name} (${exam.term} ${exam.year}): Mean ${meanPct.toFixed(1)}%, Grade ${overall.level}, Position ${position}/${learners.length}. - ${school.name}`;
   return text;
 }
+// ---- Results by SMS: three formats. "summary" is the original short text (unchanged); "levels" and "full" list every learning area. ----
+function smsAreaShort(name){
+  const n = String(name||'').trim(), l = n.toLowerCase();
+  const map = [[/^math/,'MATHS'],[/^english/,'ENG'],[/^kiswahili/,'KISW'],[/integrated science/,'INT SCI'],[/science\s*(&|and)\s*tech/,'SCI&TECH'],[/^science/,'SCI'],[/social stud/,'SST'],[/creative art/,'C/ARTS'],[/^agri/,'AGRI'],[/^cre$|christian/,'CRE'],[/^ire$|islamic/,'IRE'],[/physical/,'PE'],[/pre-?\s*tech/,'PRE-TECH'],[/business/,'BUS'],[/computer|ict/,'COMP'],[/home science/,'HOME SCI']];
+  for(const [re,s] of map) if(re.test(l)) return s;
+  if(n.length<=7) return n.toUpperCase();
+  const w = n.split(/[\s&\/-]+/).filter(Boolean);
+  return w.length>1 ? w.map(x=>x[0]).join('').toUpperCase() : n.slice(0,5).toUpperCase();
+}
+function smsPositionOf(school, sid, exam){
+  const areas = areasForClass(school, exam.classId), marksForExam = school.marks[exam.id] || {};
+  const learners = studentsForExam(school, exam);
+  const optMode = learners.some(l=>areas.some(a=>!takesArea(school,l.id,a.id)));
+  const totals = learners.map(s=>{ let t=0, c=0; areas.forEach(a=>{ if(!takesArea(school,s.id,a.id)) return; c++; const sc=(marksForExam[s.id]||{})[a.id]; if(sc!=null) t += optMode ? pctOf(sc,exam.maxMarksByArea[a.id]??100) : sc; }); return {id:s.id, t: optMode ? (c? t/c : 0) : t}; }).sort((a,b)=>b.t-a.t);
+  return {position: totals.findIndex(x=>x.id===sid)+1, of: learners.length};
+}
+function learnerResultFull(school, sid, examId, o){
+  const exam = school.exams.find(e=>e.id===examId); if(!exam) return null;
+  const student = school.students.find(s=>s.id===sid); if(!student) return null;
+  const areas = areasForClass(school, exam.classId), marksForExam = school.marks[examId] || {};
+  const rows = []; let sumPct = 0;
+  areas.forEach(a=>{
+    if(!takesArea(school,sid,a.id)) return;
+    const label = o.abbr ? smsAreaShort(a.name) : a.name;
+    const max = exam.maxMarksByArea[a.id]??100, sc = (marksForExam[sid]||{})[a.id];
+    if(sc==null || sc===''){ rows.push(label+' -'); return; }
+    const pct = pctOf(sc,max); sumPct += pct;
+    const lv = gradeFor(school, pct, exam.classId).level;
+    const scoreTxt = o.fmt==='levels' ? '' : (o.scoreAs==='pct' ? Math.round(pct)+'%' : (Number(sc)+'/'+max));
+    rows.push(label+' '+(scoreTxt?scoreTxt+' ':'')+lv);
+  });
+  const nT = takenCount(school,sid,areas), meanPct = nT ? sumPct/nT : 0;
+  const overall = gradeFor(school, meanPct, exam.classId);
+  const pos = smsPositionOf(school, sid, exam);
+  return `Dear Parent, ${student.name} - ${exam.name} (${exam.term} ${exam.year}): ${rows.join(', ')}.`
+    + (o.overall ? ` Mean ${meanPct.toFixed(1)}% ${overall.level}.` : '')
+    + (o.pos ? ` Position ${pos.position}/${pos.of}.` : '')
+    + ` - ${school.name}`;
+}
+function smsOpts(){
+  const v = id=>{ const e = qs('#'+id); return e ? e.value : ''; }, c = (id,d)=>{ const e = qs('#'+id); return e ? e.checked : d; };
+  return {fmt: v('smsFormat')||'summary', scoreAs: v('smsScoreAs')||'marks', overall: c('smsOptOverall',true), pos: c('smsOptPos',true), abbr: c('smsOptAbbr',true)};
+}
+function smsResultMessage(school, sid, examId, o){
+  return o.fmt==='summary' ? learnerResultSummary(school, sid, examId) : learnerResultFull(school, sid, examId, o);
+}
+function smsFormatLabel(o){ return o.fmt==='full' ? 'Results (Full)' : o.fmt==='levels' ? 'Results (Levels)' : 'Results'; }
+function learnerHasMarks(school, sid, examId){ return Object.keys((school.marks[examId]||{})[sid]||{}).length>0; }
 function smsPreviewResults(){
   const school = currentSchool(); const el = qs('#smsResultsPreview'); if(!el) return;
+  const o = smsOpts();
+  const fo = qs('#smsFullOpts'); if(fo) fo.style.display = o.fmt==='summary' ? 'none' : '';
+  const sa = qs('#smsScoreAsBox'); if(sa) sa.style.display = o.fmt==='full' ? '' : 'none';
   const classId = qs('#smsClass').value, examId = qs('#smsExam').value;
-  if(!examId){ el.innerHTML = ''; return; }
+  const ps = qs('#smsPrevLearner');
+  if(!examId){ el.innerHTML = ''; if(ps) ps.innerHTML=''; return; }
   const exam = school.exams.find(e=>e.id===examId);
   if(!exam || exam.classId!==classId){ el.innerHTML = '<p class="msg err">⚠ That exam is not for the selected grade.</p>'; return; }
-  if(exam && school.requireApproval && exam.resultsApproval!=='approved'){
+  if(school.requireApproval && exam.resultsApproval!=='approved'){
     el.innerHTML = '<p class="msg err">⚠ This exam has not been approved yet — approve it under Exams before sending results to parents.</p>'; return;
   }
   const learners = studentsInClass(school, classId);
   const withPhone = learners.filter(s=>isValidSmsPhone(normalizePhone(s.parentPhone)) && learnerHasMarks(school, s.id, examId));
-  const sample = withPhone[0] ? learnerResultSummary(school, withPhone[0].id, examId) : null;
-  const credits = sample ? smsCreditsNeeded(withPhone.length, sample) : 0;
-  el.innerHTML = `<p>${withPhone.length} of ${learners.length} learner(s) have a valid parent phone AND marks for this exam — ${learners.length-withPhone.length} will be skipped.</p>
-  ${sample?`<p><b>Sample message</b> (${sample.length} chars, ${smsSegments(sample)} credit(s) each): <i>"${escapeHtml(sample)}"</i></p><p>Estimated cost: <b>${credits} credit(s)</b> · Balance: ${school.smsCredits||0}</p>`:'<p class="small">No learner with a phone number has marks for this exam yet.</p>'}`;
+  if(ps){ const prev = ps.value; ps.innerHTML = withPhone.map(s=>`<option value="${s.id}">${escapeHtml((s.adm?s.adm+' · ':'')+s.name)}</option>`).join(''); if(withPhone.some(s=>s.id===prev)) ps.value = prev; }
+  if(!withPhone.length){ el.innerHTML = `<p class="small">No learner with a valid parent phone has marks for this exam yet (${learners.length} learner(s) in the grade).</p>`; return; }
+  const price = DB.settings.smsPricePerCredit||0, bal = school.smsCredits||0;
+  const tally = fmtO=>{ const b = buildSmsRecipients(withPhone.map(s=>({phone:s.parentPhone, message:smsResultMessage(school,s.id,examId,fmtO)}))); return {b, credits:b.recipients.reduce((n,r)=>n+smsSegments(r.message),0), maxSeg:b.recipients.reduce((n,r)=>Math.max(n,smsSegments(r.message)),0)}; };
+  const cur = tally(o);
+  const sel = withPhone.find(s=>s.id===(ps&&ps.value)) || withPhone[0];
+  const sample = smsResultMessage(school, sel.id, examId, o);
+  let h = `<p>${withPhone.length} of ${learners.length} learner(s) have a valid parent phone AND marks for this exam — ${learners.length-withPhone.length} will be skipped.</p>
+    <div style="background:#e9f6ec;border:1px solid #bfe8cc;border-radius:14px;padding:10px 12px;max-width:520px;white-space:pre-wrap;font-size:14px;line-height:1.4">${escapeHtml(sample)}</div>
+    <p class="small" style="margin:4px 0">↑ Sample for ${escapeHtml(sel.name)} · ${sample.length} characters · ${smsSegments(sample)} credit(s) for this parent. Use <b>Preview learner</b> to check others.</p>
+    <p>Estimated cost: <b>${cur.credits} credit(s)</b>${price?` (≈ KES ${(cur.credits*price).toFixed(0)})`:''} · Balance: ${bal}${cur.credits>bal?' <span class="badge BE">not enough credit</span>':''}</p>`;
+  if(o.fmt!=='summary'){
+    const sm = tally({fmt:'summary'});
+    const extra = cur.credits - sm.credits;
+    h += `<div class="msg err" style="margin:8px 0"><b>⚠ Costs more than a summary.</b> Sending every learning area makes each message long (up to ${cur.maxSeg} SMS per parent). This send ≈ <b>${cur.credits} credits</b> versus ≈ ${sm.credits} for the summary — <b>${extra} extra credit(s)${price?` (≈ KES ${(extra*price).toFixed(0)} more)`:''}</b>${sm.credits?`, about ${(cur.credits/sm.credits).toFixed(1)}× the cost`:''}. Cheaper options: use <b>Levels</b> instead of full scores, tick abbreviations, or untick position/mean.</div>`;
+    if(cur.maxSeg>=4) h += `<p class="msg err">⚠ Some messages are ${cur.maxSeg} SMS long. Parents may receive them in several parts. Consider abbreviations or fewer extras.</p>`;
+  }
+  if(pmIsUnicode(sample)) h += `<p class="msg err">⚠ A learner name or text has special characters (accents/emoji/curly quotes), so SMS holds only 70 characters and costs more.</p>`;
+  if(exam.parentVisible===false) h += `<p class="msg err">⚠ This exam is <b>hidden from the Parent Portal</b> (e.g. a mock exam). Sending it by SMS would still show parents the results — you will be asked to confirm.</p>`;
+  h += `<p class="small">Parents who share one phone number receive one message per child. Only learners who have marks and a valid parent number are included; learning areas a learner does not take are left out.</p>`;
+  el.innerHTML = h;
 }
-function learnerHasMarks(school, sid, examId){ return Object.keys((school.marks[examId]||{})[sid]||{}).length>0; }
 function sendResultsSms(){
   if(smsSending){ toast('A send is already in progress — please wait','err'); return; }
   if(!smsPinGate('smsResultsMsg')) return;
-  const school = currentSchool();
+  const school = currentSchool(), o = smsOpts();
   const classId = qs('#smsClass').value, examId = qs('#smsExam').value;
   if(!examId){ toast('Choose a grade and exam first','err'); return; }
   const exam = school.exams.find(e=>e.id===examId);
   if(!exam || exam.classId!==classId){ toast('That exam is not for the selected grade — pick the grade again','err'); return; }
-  if(exam && school.requireApproval && exam.resultsApproval!=='approved'){ toast('Approve this exam\'s results before sending to parents','err'); return; }
+  if(school.requireApproval && exam.resultsApproval!=='approved'){ toast('Approve this exam\'s results before sending to parents','err'); return; }
   const learners = studentsInClass(school, classId).filter(s=>s.parentPhone && s.parentPhone.trim() && learnerHasMarks(school, s.id, examId));
   if(!learners.length){ toast('No learner in this grade has both a parent phone number and marks for this exam','err'); return; }
-  const built = buildSmsRecipients(learners.map(s=>({phone:s.parentPhone, message: learnerResultSummary(school, s.id, examId)})));
+  const built = buildSmsRecipients(learners.map(s=>({phone:s.parentPhone, message: smsResultMessage(school, s.id, examId, o)})));
   const recipients = built.recipients;
   if(!recipients.length){ toast('None of the parent phone numbers are valid — check them on the Learners tab','err'); return; }
   const credits = recipients.reduce((n,r)=>n+smsSegments(r.message),0);
   if(credits > (school.smsCredits||0)){ qs('#smsResultsMsg').innerHTML = `<div class="msg err">Not enough credit: need ${credits}, have ${school.smsCredits||0}.</div>`; return; }
   const skipNote = built.invalid ? `\n\n${built.invalid} learner(s) will be skipped because their parent phone number is invalid.` : '';
-  if(!confirm(`Send exam results to ${recipients.length} parent(s) for ${credits} credit(s)?${skipNote}`)) return;
-  sendSmsBatch(school, recipients, {type:'Results', audience: (school.classes.find(c=>c.id===classId)||{}).name || classId}, 'smsResultsMsg');
+  let warn = '';
+  if(o.fmt!=='summary'){ const sm = buildSmsRecipients(learners.map(s=>({phone:s.parentPhone, message:learnerResultSummary(school,s.id,examId)}))).recipients.reduce((n,r)=>n+smsSegments(r.message),0); warn = `\n\n⚠ ${o.fmt==='full'?'FULL results':'Levels per learning area'} cost more: ${credits} credits instead of about ${sm} for the summary.`; }
+  if(exam.parentVisible===false) warn += `\n\n⚠ This exam is hidden from the Parent Portal. Send it by SMS anyway?`;
+  if(!confirm(`Send ${o.fmt==='summary'?'summary results':o.fmt==='full'?'FULL results (scores and levels)':'results with levels per learning area'} to ${recipients.length} parent(s) for ${credits} credit(s)?${warn}${skipNote}`)) return;
+  sendSmsBatch(school, recipients, {type:smsFormatLabel(o), audience: (school.classes.find(c=>c.id===classId)||{}).name || classId}, 'smsResultsMsg');
+}
+// Sends ONE learner's message to a phone of your choice, so you can see exactly what parents will get before the real send.
+function sendResultsSmsTest(){
+  if(smsSending){ toast('A send is already in progress — please wait','err'); return; }
+  if(!smsPinGate('smsResultsMsg')) return;
+  const school = currentSchool(), o = smsOpts(), el = qs('#smsResultsMsg');
+  const phone = normalizePhone((qs('#smsTestPhone')||{}).value), sid = (qs('#smsPrevLearner')||{}).value, examId = qs('#smsExam').value;
+  if(!isValidSmsPhone(phone)){ el.innerHTML = '<div class="msg err">Enter a valid phone number for the test (e.g. 0712345678).</div>'; return; }
+  if(!sid || !examId){ el.innerHTML = '<div class="msg err">Choose an exam and a preview learner first.</div>'; return; }
+  const m = smsResultMessage(school, sid, examId, o), credits = smsSegments(m);
+  if(credits > (school.smsCredits||0)){ el.innerHTML = `<div class="msg err">Not enough credit: need ${credits}, have ${school.smsCredits||0}.</div>`; return; }
+  if(!confirm(`Send this one test message to ${phone} for ${credits} credit(s)?`)) return;
+  sendSmsBatch(school, [{phone, message:m}], {type:'Results (test)', audience:'Test to ...'+phone.slice(-4)}, 'smsResultsMsg');
 }
 function announcementRecipients(school, classId, text){
   const pool = classId ? studentsInClass(school, classId) : school.students;
@@ -13844,7 +13951,7 @@ async function sendSmsBatch(school, recipients, meta, msgElId){
   const smsPin = smsPinGate(msgElId); if(!smsPin) return;
   smsSending = true;
   const msgEl = qs('#'+msgElId);
-  document.querySelectorAll('button[onclick^="sendResultsSms"],button[onclick^="sendAnnouncementSms"],button[onclick^="retryFailedSms"]').forEach(b=>b.disabled=true);
+  document.querySelectorAll('button[onclick^="sendResultsSms"],button[onclick^="sendAnnouncementSms"],button[onclick^="retryFailedSms"],button[onclick^="pmSend"]').forEach(b=>b.disabled=true);
   if(msgEl) msgEl.innerHTML = '<p class="small">Sending… please don\'t close this page.</p>';
   const ctrl = new AbortController();
   const timer = setTimeout(()=>ctrl.abort(), 65000);
@@ -13858,7 +13965,7 @@ async function sendSmsBatch(school, recipients, meta, msgElId){
     if(!data || !res.ok || !data.ok){
       const errText = (data && data.error) || ('Server error (HTTP '+res.status+')');
       if(/PIN/i.test(errText)) delete smsPinMem[school.code];   // don't keep a PIN the server rejected
-      pushSmsLog(school, {id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, recipients:recipients.length, credits:0, ok:false, error:errText});
+      pushSmsLog(school, {id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, text:meta.text||'', by:meta.by||'', recipients:recipients.length, credits:0, ok:false, error:errText});
       saveDB(DB);
       if(msgEl) msgEl.innerHTML = `<div class="msg err">Send failed: ${escapeHtml(errText)}</div>`;
       return;
@@ -13866,23 +13973,237 @@ async function sendSmsBatch(school, recipients, meta, msgElId){
     if(typeof data.newBalance==='number') school.smsCredits = data.newBalance;
     const failedNumbers = (data.failedNumbers||[]).map(normalizePhone);
     const failedRecipients = recipients.filter(r=>failedNumbers.includes(normalizePhone(r.phone)));
-    pushSmsLog(school, {id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, recipients:recipients.length, credits:data.creditsUsed||0, ok:true, sent:data.sent, failed:data.failed, failedNumbers, recipientsSnapshot:failedRecipients});
+    pushSmsLog(school, {id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, text:meta.text||'', by:meta.by||'', recipients:recipients.length, credits:data.creditsUsed||0, ok:true, sent:data.sent, failed:data.failed, failedNumbers, recipientsSnapshot:failedRecipients});
     saveDB(DB);
     toast(`Sent to ${data.sent==null?recipients.length:data.sent} parent(s)${data.failed?`, ${data.failed} failed`:''}`);
-    if(session && session.role==='finance'){ if(msgEl) msgEl.innerHTML=`<div class="msg ok">Sent to ${data.sent==null?recipients.length:data.sent} parent(s)${data.failed?`, ${data.failed} failed`:''}.</div>`; } else renderDOS();
+    if(session && session.role==='finance'){ if(msgEl) msgEl.innerHTML=`<div class="msg ok">Sent to ${data.sent==null?recipients.length:data.sent} parent(s)${data.failed?`, ${data.failed} failed`:''}.</div>`; } else rerenderRole();
+    return true;
   }catch(err){
     const timedOut = err && err.name==='AbortError';
     const errText = timedOut
       ? 'No reply from the SMS service after 65s — some messages MAY have been sent. Check the balance and your log before resending.'
       : 'Could not reach the SMS service: '+String(err.message||err);
-    pushSmsLog(school, {id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, recipients:recipients.length, credits:0, ok:false, error:errText});
+    pushSmsLog(school, {id:uid('sms_'), ts:Date.now(), type:meta.type, audience:meta.audience, text:meta.text||'', by:meta.by||'', recipients:recipients.length, credits:0, ok:false, error:errText});
     saveDB(DB);
     if(msgEl) msgEl.innerHTML = `<div class="msg err">${escapeHtml(errText)}</div>`;
   }finally{
     clearTimeout(timer);
     smsSending = false;
-    document.querySelectorAll('button[onclick^="sendResultsSms"],button[onclick^="sendAnnouncementSms"],button[onclick^="retryFailedSms"]').forEach(b=>b.disabled=false);
+    document.querySelectorAll('button[onclick^="sendResultsSms"],button[onclick^="sendAnnouncementSms"],button[onclick^="retryFailedSms"],button[onclick^="pmSend"]').forEach(b=>b.disabled=false);
   }
+}
+
+/* ===================== School Admin: Message Parents (custom SMS composer) =====================
+   The Head of Institution (or any School Admin account the HOI has allowed) writes a message, picks who gets it
+   (whole school / chosen grades / chosen learners / parents owing fees), and each parent receives a personalised copy
+   using {parent} {learner} {adm} {grade} {school} {balance}. Sending reuses the same credit wallet, SMS PIN and
+   server-side balance check as the DOS and Finance portals (sendSmsBatch). */
+const PM_TEMPLATES = [
+  {n:'Closing day', t:'Dear {parent}, {school} closes for the term on [DATE] at [TIME]. Kindly pick up {learner} on time. Thank you.'},
+  {n:'Opening day', t:'Dear {parent}, {school} opens for the new term on [DATE]. {learner} should report in full uniform with all required items.'},
+  {n:'Parents meeting', t:'Dear {parent}, you are invited to a parents meeting on [DATE] at [TIME] at {school}. Your attendance is important.'},
+  {n:'Fee balance', t:'Dear {parent}, {learner} ({adm}) has a fee balance of KES {balance}. Kindly clear it by [DATE]. Please ignore if already paid.'},
+  {n:'Exams / assessment', t:'Dear {parent}, assessments for {grade} start on [DATE]. Please make sure {learner} attends every day and is well prepared.'},
+  {n:'Report forms ready', t:'Dear {parent}, the report form for {learner} is ready. Collect it on [DATE] or view it on the Parent Portal.'},
+  {n:'Trip / event', t:'Dear {parent}, {grade} will have a [TRIP/EVENT] on [DATE]. Cost: KES [AMOUNT]. Reply or contact the school to confirm.'},
+  {n:'Learner unwell', t:'Dear {parent}, {learner} is not feeling well. Please contact the school or come for the child as soon as possible.'},
+  {n:'Absent today', t:'Dear {parent}, {learner} was absent from school today. Kindly let us know the reason.'},
+  {n:'Emergency closure', t:'URGENT: {school} is closed on [DATE] due to [REASON]. Learners should stay at home. We will update you.'},
+  {n:'Congratulations', t:'Dear {parent}, congratulations! {learner} ({grade}) did very well. Keep encouraging the good work. - {school}'}
+];
+const PM_FIELDS = [['{parent}','Parent name'],['{learner}','Learner'],['{adm}','Adm No.'],['{grade}','Grade'],['{school}','School'],['{balance}','Fee balance']];
+let pmState = {aud:'all', classIds:[], studentIds:[], term:'', min:0, text:'', second:false, sign:true, notice:false, noticeTitle:'', q:''};
+function pmSig(school){ return school.msgSignature==null ? '- {school}' : String(school.msgSignature); }
+function pmFeeLabel(e){ return [e.name, e.term, e.year].filter(Boolean).join(' '); }
+function pmTerms(school){ return finExams(school).filter(e=>school.fees && school.fees[e.id]); }
+function pmFill(t, s, school, recs){
+  const cname = (school.classes.find(c=>c.id===s.classId)||{}).name || '';
+  const r = recs[s.id]; const bal = (r && r.balance!=null && r.balance!=='') ? Number(r.balance).toLocaleString() : '';
+  return String(t)
+    .replace(/\{parent\}/gi, ()=> (s.parentName && String(s.parentName).trim()) || 'Parent')
+    .replace(/\{learner\}/gi, ()=> s.name||'')
+    .replace(/\{adm\}/gi, ()=> s.adm||'')
+    .replace(/\{grade\}/gi, ()=> cname)
+    .replace(/\{school\}/gi, ()=> school.name||'')
+    .replace(/\{balance\}/gi, ()=> bal);
+}
+function pmIsUnicode(text){ for(const ch of String(text||'')){ if(!GSM7_BASIC.includes(ch) && !GSM7_EXT.includes(ch)) return true; } return false; }
+function pmBuild(school){
+  const S = pmState, text = S.text.trim();
+  const needBal = /\{balance\}/i.test(text);
+  if(!S.term){ const t = pmTerms(school)[0]; if(t) S.term = t.id; }
+  const recs = (school.fees && school.fees[S.term]) || {};
+  const clsOk = s=>!S.classIds.length || S.classIds.includes(s.classId);
+  let pool;
+  if(S.aud==='students') pool = school.students.filter(s=>S.studentIds.includes(s.id));
+  else if(S.aud==='classes') pool = school.students.filter(s=>S.classIds.includes(s.classId));
+  else if(S.aud==='owing') pool = school.students.filter(s=>clsOk(s) && Number((recs[s.id]||{}).balance) > (Number(S.min)||0));
+  else pool = school.students.slice();
+  const sig = S.sign ? pmSig(school).trim() : '';
+  const items = [], noPhone = [], noFee = [];
+  pool.forEach(s=>{
+    if(needBal){ const r = recs[s.id]; if(!r || r.balance==null || r.balance===''){ noFee.push(s); return; } }
+    const phones = [s.parentPhone].concat(S.second ? [s.parentPhone2] : []).filter(p=>p && String(p).trim());
+    if(!phones.length){ noPhone.push(s); return; }
+    const msg = pmFill(text, s, school, recs) + (sig ? '\n' + pmFill(sig, s, school, recs) : '');
+    phones.forEach(p=>items.push({phone:p, message:msg}));
+  });
+  const built = buildSmsRecipients(items);
+  const credits = built.recipients.reduce((n,r)=>n+smsSegments(r.message), 0);
+  const unresolved = (text.match(/\[[^\]]*\]/g) || []);
+  return {pool, built, credits, noPhone, noFee, unresolved, text, recs, sample: built.recipients[0] ? built.recipients[0].message : ''};
+}
+function pmAudienceLabel(school){
+  const S = pmState;
+  if(S.aud==='classes'){ const n = S.classIds.map(id=>(school.classes.find(c=>c.id===id)||{}).name).filter(Boolean); return n.length>3 ? n.length+' grades' : n.join(', '); }
+  if(S.aud==='students') return S.studentIds.length+' selected learner(s)';
+  if(S.aud==='owing'){ const t = finExams(school).find(e=>e.id===S.term); return 'Owing fees'+(t?' · '+pmFeeLabel(t):''); }
+  return 'Whole school';
+}
+function pmUpdatePreview(){
+  const el = qs('#pmPreview'); if(!el) return;
+  const school = currentSchool(), r = pmBuild(school);
+  const bal = school.smsCredits||0;
+  let h = '';
+  if(!r.text){ h = `<p class="small">Write your message above to see exactly what parents will receive and what it will cost.</p>`; }
+  else {
+    const segs = r.built.recipients.length ? Math.max(...r.built.recipients.map(x=>smsSegments(x.message))) : smsSegments(r.text);
+    h += `<div style="background:#e9f6ec;border:1px solid #bfe8cc;border-radius:14px;padding:10px 12px;max-width:420px;white-space:pre-wrap;font-size:14px;line-height:1.4">${r.sample?escapeHtml(r.sample):'<span class="small">No parent with a valid phone number in this audience yet.</span>'}</div>
+    <p class="small" style="margin:4px 0">↑ Sample of what the first parent receives (names and numbers are filled in for each parent).</p>
+    <p><b>${r.built.recipients.length}</b> message(s) to send · up to ${segs} credit(s) each · <b>${r.credits} credit(s)</b> in total · balance ${bal}${r.credits>bal?` <span class="badge BE">not enough credit</span>`:''}</p>`;
+    if(pmIsUnicode(r.text + (pmState.sign?pmSig(school):''))) h += `<p class="msg err" style="margin:6px 0">⚠ This message has special characters (curly quotes, emoji or accents), so each SMS holds only 70 characters instead of 160 and costs more. Use plain characters to save credit.</p>`;
+    if(r.unresolved.length) h += `<p class="msg err" style="margin:6px 0">⚠ Fill in ${escapeHtml(r.unresolved.slice(0,4).join(' '))} before sending — sending is blocked while [square brackets] remain.</p>`;
+    if(r.noFee.length) h += `<p class="small">${r.noFee.length} learner(s) skipped: no fee record for the selected term (needed for {balance}).</p>`;
+    if(r.built.dup) h += `<p class="small">${r.built.dup} duplicate message(s) (same parent number, e.g. siblings with a generic message) will be sent once.</p>`;
+    if(r.built.invalid) h += `<p class="small">${r.built.invalid} invalid phone number(s) skipped.</p>`;
+  }
+  if(r.noPhone.length) h += `<details style="margin-top:6px"><summary class="small" style="cursor:pointer">⚠ ${r.noPhone.length} learner(s) have no parent phone on file (will not receive it)</summary><p class="small">${r.noPhone.slice(0,60).map(s=>escapeHtml(s.name)).join(', ')}${r.noPhone.length>60?' …':''}</p></details>`;
+  el.innerHTML = h;
+  const cnt = qs('#pmCount'); if(cnt) cnt.textContent = pmState.text.length+' / 600 characters';
+}
+function pmOnText(v){ pmState.text = v; pmUpdatePreview(); }
+function pmInsert(tag){
+  const ta = qs('#pmText'); if(!ta) return;
+  const a = ta.selectionStart==null ? ta.value.length : ta.selectionStart, b = ta.selectionEnd==null ? a : ta.selectionEnd;
+  ta.value = ta.value.slice(0,a)+tag+ta.value.slice(b); ta.focus(); ta.selectionStart = ta.selectionEnd = a+tag.length; pmOnText(ta.value);
+}
+function pmSet(k,v){ pmState[k]=v; if(k==='min') { pmUpdatePreview(); return; } pmRefresh(); }
+function pmToggleClass(id){ const a = pmState.classIds, i = a.indexOf(id); if(i<0) a.push(id); else a.splice(i,1); pmRefresh(); }
+function pmToggleStu(id){ const a = pmState.studentIds, i = a.indexOf(id); if(i<0) a.push(id); else a.splice(i,1); pmPaintStudents(); pmUpdatePreview(); }
+function pmFlag(k,on){ pmState[k]=on; if(k==='notice') pmRefresh(); else pmUpdatePreview(); }
+function pmUseTpl(i){ pmState.text = PM_TEMPLATES[i].t; if(!pmState.term){ } pmRefresh(); }
+function pmUseSaved(id){ const t = (currentSchool().msgTemplates||[]).find(x=>x.id===id); if(!t) return; pmState.text = t.text; pmRefresh(); }
+function pmSaveTpl(){
+  const school = currentSchool(); const text = pmState.text.trim();
+  if(!text){ toast('Write the message first, then save it as a template','err'); return; }
+  const name = (prompt('Name for this template (e.g. "Sports day"):','')||'').trim(); if(!name) return;
+  school.msgTemplates = school.msgTemplates||[]; school.msgTemplates.push({id:uid('mt_'), name:name.slice(0,40), text});
+  saveDB(DB); toast('Template saved'); pmRefresh();
+}
+function pmDelTpl(id){ if(!confirm('Delete this saved template?')) return; const sc = currentSchool(); sc.msgTemplates = (sc.msgTemplates||[]).filter(t=>t.id!==id); saveDB(DB); pmRefresh(); }
+function pmSaveSig(v){ const sc = currentSchool(); sc.msgSignature = v; saveDB(DB); pmUpdatePreview(); }
+function pmReuse(logId){ const l = (currentSchool().smsLog||[]).find(x=>x.id===logId); if(!l||!l.text) return; pmState.text = l.text; pmRefresh(); window.scrollTo(0,0); toast('Message loaded — edit and send again'); }
+function pmStuQuery(v){ pmState.q = v; pmPaintStudents(); }
+function pmPaintStudents(){
+  const school = currentSchool(), q = (pmState.q||'').trim().toLowerCase();
+  const sel = qs('#pmSelStu'), list = qs('#pmStuList'); if(!sel||!list) return;
+  const byId = {}; school.students.forEach(s=>byId[s.id]=s);
+  sel.innerHTML = pmState.studentIds.map(id=>byId[id]).filter(Boolean).map(s=>`<button class="sch-chip on" onclick="pmToggleStu('${s.id}')">${escapeHtml(s.name)} ✕</button>`).join('') || '<span class="small">No learners picked yet.</span>';
+  const cn = id=>(school.classes.find(c=>c.id===id)||{}).name||'';
+  const m = school.students.filter(s=>!pmState.studentIds.includes(s.id) && (!q || (s.name+' '+(s.adm||'')+' '+cn(s.classId)).toLowerCase().includes(q))).slice(0,30);
+  list.innerHTML = m.map(s=>`<button class="sch-chip" onclick="pmToggleStu('${s.id}')">${escapeHtml(s.name)} <span class="small">${escapeHtml((s.adm?s.adm+' · ':'')+cn(s.classId))}</span></button>`).join('') || '<span class="small">No match.</span>';
+}
+function pmComposerHTML(school){
+  const S = pmState, terms = pmTerms(school);
+  if(!S.term && terms[0]) S.term = terms[0].id;
+  const chip = (on,label,click)=>`<button class="sch-chip ${on?'on':''}" style="${on?'background:var(--navy);color:#fff':''}" onclick="${click}">${label}</button>`;
+  const audBtns = [['all','🏫 Whole school'],['classes','🎒 Chosen grades'],['students','🧑‍🎓 Chosen learners'],['owing','💰 Parents owing fees']].map(([k,l])=>chip(S.aud===k,l,`pmSet('aud','${k}')`)).join('');
+  const classChips = school.classes.map(c=>chip(S.classIds.includes(c.id), escapeHtml(c.name)+` <b>${school.students.filter(s=>s.classId===c.id).length}</b>`, `pmToggleClass('${c.id}')`)).join('');
+  let audExtra = '';
+  if(S.aud==='classes') audExtra = `<label>Tap the grades to include</label><div class="sch-chips">${classChips}</div>`;
+  if(S.aud==='students') audExtra = `<label>Search learner (name, adm no. or grade)</label><input id="pmQ" value="${escapeHtml(S.q||'')}" oninput="pmStuQuery(this.value)" placeholder="Start typing…"><div class="small" style="margin-top:6px">Selected:</div><div class="sch-chips" id="pmSelStu"></div><div class="small">Tap to add:</div><div class="sch-chips" id="pmStuList"></div>`;
+  if(S.aud==='owing') audExtra = terms.length ? `<div class="row"><div><label>Fee term</label><select onchange="pmSet('term',this.value)">${terms.map(e=>`<option value="${e.id}" ${e.id===S.term?'selected':''}>${escapeHtml(pmFeeLabel(e))}</option>`).join('')}</select></div><div><label>Owing more than (KES)</label><input type="number" min="0" value="${Number(S.min)||0}" oninput="pmSet('min',this.value)"></div></div><label>Limit to grades <span class="small">(optional — leave all unticked for every grade)</span></label><div class="sch-chips">${classChips}</div>` : `<p class="msg err">No fee records exist yet. Finance must enter fees for a term before you can message parents who owe.</p>`;
+  if(S.aud!=='owing' && /\{balance\}/i.test(S.text) && terms.length) audExtra += `<div class="row"><div><label>Fee term used for {balance}</label><select onchange="pmSet('term',this.value)">${terms.map(e=>`<option value="${e.id}" ${e.id===S.term?'selected':''}>${escapeHtml(pmFeeLabel(e))}</option>`).join('')}</select></div></div>`;
+  const saved = school.msgTemplates||[];
+  setTimeout(()=>{ pmPaintStudents(); pmUpdatePreview(); }, 0);
+  return `<div class="card"><h2>✉️ Compose a message</h2>
+    <label>1 · Who should receive it?</label><div class="sch-chips">${audBtns}</div>${audExtra}
+    <label style="margin-top:8px">2 · Start from a template <span class="small">(optional — then edit freely)</span></label>
+    <div class="sch-chips">${PM_TEMPLATES.map((t,i)=>`<button class="sch-chip" onclick="pmUseTpl(${i})">${escapeHtml(t.n)}</button>`).join('')}${saved.map(t=>`<span style="display:inline-flex;gap:2px"><button class="sch-chip" onclick="pmUseSaved('${t.id}')">⭐ ${escapeHtml(t.name)}</button><button class="ghost" style="padding:2px 7px" title="Delete template" onclick="pmDelTpl('${t.id}')">✕</button></span>`).join('')}</div>
+    <label>3 · Your message</label>
+    <textarea id="pmText" rows="5" maxlength="600" oninput="pmOnText(this.value)" placeholder="Type your message to parents here…">${escapeHtml(S.text)}</textarea>
+    <div class="small" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px"><span id="pmCount">${S.text.length} / 600 characters</span><span>Insert a personal field: ${PM_FIELDS.map(([t,l])=>`<button class="ghost" style="font-size:11px;padding:2px 8px;margin:1px" onclick="pmInsert('${t}')">${l}</button>`).join('')}</span></div>
+    <div class="row" style="margin-top:8px"><div style="flex:2 1 220px"><label>Signature <span class="small">(added at the end)</span></label><input value="${escapeHtml(pmSig(school))}" onchange="pmSaveSig(this.value)" maxlength="60" placeholder="e.g. - Headteacher, ${escapeHtml(school.name)}"></div></div>
+    <div class="flexbtns" style="margin-top:4px">
+      <label class="small" style="display:flex;gap:5px;align-items:center"><input type="checkbox" style="width:auto;margin:0" ${S.sign?'checked':''} onchange="pmFlag('sign',this.checked)"> Add signature</label>
+      <label class="small" style="display:flex;gap:5px;align-items:center"><input type="checkbox" style="width:auto;margin:0" ${S.second?'checked':''} onchange="pmFlag('second',this.checked)"> Also send to 2nd parent phone</label>
+      <label class="small" style="display:flex;gap:5px;align-items:center"><input type="checkbox" style="width:auto;margin:0" ${S.notice?'checked':''} onchange="pmFlag('notice',this.checked)"> Also post on Parent Portal notice board</label>
+    </div>
+    ${S.notice?`<div class="row"><div><label>Notice title</label><input value="${escapeHtml(S.noticeTitle)}" oninput="pmState.noticeTitle=this.value" placeholder="e.g. Parents meeting"></div></div><p class="small">The notice shows for 14 days. Personal fields are replaced with general words (e.g. "your child").</p>`:''}
+    <h3 style="margin:12px 0 6px">4 · Check &amp; send</h3>
+    <div id="pmPreview"></div>
+    <div class="flexbtns"><button onclick="pmSend()">📤 Send to parents</button><button class="ghost" onclick="pmSaveTpl()">💾 Save as template</button><button class="ghost" onclick="pmState.text='';pmRefresh()">Clear</button></div>
+    <div id="smsAnnounceMsg"></div></div>`;
+}
+function pmRefresh(){ const box = qs('#pmComposer'); if(box) box.innerHTML = pmComposerHTML(currentSchool()); }
+function tplSadminMessages(school, me){
+  const bal = school.smsCredits||0, price = DB.settings.smsPricePerCredit||0;
+  if(me.canMessage===false) return `<div class="card"><h2>💬 Message Parents</h2><p class="msg err">🔒 You have not been given permission to message parents. Ask the Head of Institution to switch this on for your account under <b>School Admins</b>.</p></div>`;
+  if(!hasSmsConfig()) return `<div class="card"><h2>💬 Message Parents</h2><p class="msg err">⚠ SMS sending isn't set up for this deployment yet. This needs the one-time Cloud Function setup (see <b>GO_LIVE.md</b>). Meanwhile you can still reach parents through the <b>📢 Notice Board</b>.</p></div>`;
+  setTimeout(()=>watchSmsBalances([school.code]), 0);
+  const withPhone = school.students.filter(s=>s.parentPhone && s.parentPhone.trim()).length;
+  const log = (school.smsLog||[]).slice().reverse().slice(0,40);
+  return `<div class="card"><h2>💬 Message Parents</h2>
+    <p class="small">Write a custom SMS and send it to every parent, to chosen grades, to chosen learners, or only to parents who owe fees. Each parent gets their own personalised copy.</p>
+    <div class="row">
+      <div><label>SMS credit balance</label><div class="linkbox" style="text-align:center;font-size:20px;font-weight:700"><span data-smsbal="${school.code}">${bal}</span><span class="small" style="font-weight:400" data-smskes="${school.code}">${price?` (≈ KES ${(bal*price).toFixed(0)})`:''}</span></div></div>
+      <div><label>Learners with a parent phone</label><div class="linkbox" style="text-align:center">${withPhone} of ${school.students.length}</div></div>
+      <div><label>🔐 School SMS PIN (6 digits)</label><input id="smsPin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="Enter once per session" value="${escapeHtml(smsPinMem[school.code]||'')}" oninput="smsPinMem['${school.code}']=this.value.trim()"></div>
+    </div>
+    <p class="msg err" data-smslow="${school.code}" style="margin-top:8px;${bal<20?'':'display:none'}">⚠ Low balance — ask Finance to top up before a large send.</p>
+    <p class="msg err" data-smspinwarn="${school.code}" style="${smsPinSet[school.code]===false?'':'display:none'}">🔒 Sending is locked until the platform administrator issues your school an SMS PIN.</p>
+    <p class="small">1 credit = 1 SMS of up to 160 characters (153 per part for longer ones). Add or fix parent numbers on the DOS <b>Learners</b> tab; the <b>✅ Needs Attention</b> tab lists learners with no number.</p></div>
+  <div id="pmComposer">${pmComposerHTML(school)}</div>
+  <div class="card"><h2>🗂 Sent messages</h2><div style="overflow-x:auto"><table><tr><th>When</th><th>Sent by</th><th>Audience</th><th>Message</th><th>To</th><th>Credits</th><th>Status</th><th></th></tr>
+  ${log.map(l=>`<tr><td>${new Date(l.ts).toLocaleString()}</td><td>${escapeHtml(l.by||'—')}</td><td>${escapeHtml(l.type==='Parent Message'?l.audience:l.type+' · '+l.audience)}</td><td class="small" style="max-width:240px">${l.text?escapeHtml(l.text.length>110?l.text.slice(0,110)+'…':l.text):'<span class="small">—</span>'}</td><td>${l.recipients}</td><td>${l.credits}</td><td>${l.ok?`<span class="badge EE">Sent ${l.sent==null?l.recipients:l.sent}${l.failed?`, ${l.failed} failed`:''}</span>`:`<span class="badge BE">Failed: ${escapeHtml(l.error||'')}</span>`}</td><td>${l.text?`<button class="ghost" style="font-size:11px;padding:3px 8px" onclick="pmReuse('${l.id}')">♻ Reuse</button>`:''}${l.ok&&l.failed&&l.failedNumbers&&l.failedNumbers.length?` <button class="ghost" style="font-size:11px;padding:3px 8px" onclick="retryFailedSms('${l.id}')">🔁 Retry failed</button>`:''}</td></tr>`).join('') || '<tr><td colspan="8" class="small">No messages sent yet.</td></tr>'}
+  </table></div></div>
+  <div class="card"><h2>🔐 Who can message parents?</h2><ul class="small" style="margin:0 0 0 18px">
+    <li><b>School Admins</b> — ${school.sadmins.filter(a=>a.canMessage!==false).map(a=>escapeHtml(a.name)).join(', ')||'none'}. Switch each account on or off under <a href="#" onclick="gotoSadminTab('admins');return false">School Admins</a>.</li>
+    <li><b>DOS</b> — can send results and announcements from their own portal.</li>
+    <li><b>Finance</b> — can send fee reminders and payment confirmations.</li></ul></div>`;
+}
+async function pmSend(){
+  if(smsSending){ toast('A send is already in progress — please wait','err'); return; }
+  const school = currentSchool(), me = school.sadmins.find(x=>x.id===session.userId)||{};
+  if(me.canMessage===false){ toast('You do not have permission to message parents','err'); return; }
+  if(!smsPinGate('smsAnnounceMsg')) return;
+  const S = pmState, r = pmBuild(school), el = qs('#smsAnnounceMsg');
+  const err = m=>{ if(el) el.innerHTML = `<div class="msg err">${m}</div>`; else toast(m,'err'); };
+  if(!r.text) return err('Write a message first.');
+  if(S.aud==='classes' && !S.classIds.length) return err('Tap at least one grade.');
+  if(S.aud==='students' && !S.studentIds.length) return err('Pick at least one learner.');
+  if(S.aud==='owing' && !S.term) return err('Choose a fee term.');
+  if(r.unresolved.length) return err('Replace the placeholders in [square brackets] ('+escapeHtml(r.unresolved.slice(0,4).join(' '))+') with real details first.');
+  if(S.notice && !S.noticeTitle.trim()) return err('Give the notice a title, or untick the notice board option.');
+  if(!r.built.recipients.length) return err('No parent with a valid phone number in this audience.');
+  if(r.credits > (school.smsCredits||0)) return err(`Not enough credit: need ${r.credits}, have ${school.smsCredits||0}. Ask Finance to top up.`);
+  if(!confirm(`Send this message to ${r.built.recipients.length} parent number(s) for ${r.credits} credit(s)?\n\nAudience: ${pmAudienceLabel(school)}\n\n"${r.sample.slice(0,160)}${r.sample.length>160?'…':''}"`)) return;
+  const label = pmAudienceLabel(school), raw = S.text.trim();
+  const ok = await sendSmsBatch(school, r.built.recipients, {type:'Parent Message', audience:label, text:raw, by:me.name||''}, 'smsAnnounceMsg');
+  if(ok){
+    if(S.notice){
+      const body = raw.replace(/\{parent\}/gi,'Parent').replace(/\{learner\}/gi,'your child').replace(/\{school\}/gi,school.name||'').replace(/\s*\{(adm|grade|balance)\}/gi,'').trim();
+      school.notices = school.notices||[];
+      school.notices.push({id:uid('nt_'), created:Date.now(), by:me.name||'', title:S.noticeTitle.trim(), body, aud:'parents', important:false, pinned:false, expires:new Date(Date.now()+14*864e5).toISOString().slice(0,10)});
+      saveDB(DB); toast('Also posted on the Parent Portal notice board');
+    }
+    S.text=''; S.noticeTitle=''; S.notice=false; S.studentIds=[];
+    if(sadminTab==='messages') renderSadmin();
+  }
+}
+function sadToggleMsgPerm(id){
+  const sc = currentSchool(), a = sc.sadmins.find(x=>x.id===id); if(!a || a.id===session.userId) return;
+  a.canMessage = (a.canMessage===false); saveDB(DB); toast(a.canMessage?`${a.name} can now message parents`:`${a.name} can no longer message parents`); renderSadmin();
 }
 
 /* ============================= INIT ============================= */
