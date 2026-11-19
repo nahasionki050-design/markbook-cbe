@@ -2653,6 +2653,45 @@ function finLearners(school, e){
   return base.concat(extra).sort(admOrName);
 }
 // If the DOS re-adds a learner Finance still holds (same admission no.), reuse the old id so fee records re-attach.
+// ---- Optional automatic admission numbers -------------------------------------------------
+// Only ever used when the user ticks the "Assign admission numbers automatically" box. The next
+// number continues from the highest purely-numeric admission number already in the school
+// (including learners kept for Finance), keeps leading zeros (e.g. 0099 -> 0100), and never
+// repeats a number that is already used.
+function admNumericInfo(school){
+  let max=0, pad=0; const used=new Set();
+  finRaw(school).forEach(s=>{
+    const a=String(s.adm==null?'':s.adm).trim(); if(!a) return;
+    used.add(a.toLowerCase());
+    if(/^\d+$/.test(a)){ const n=parseInt(a,10); if(n>max) max=n; if(a.length>1 && a[0]==='0') pad=Math.max(pad,a.length); }
+  });
+  return {max, pad, used};
+}
+function makeAdmAllocator(school){
+  const info=admNumericInfo(school); let n=info.max;
+  return function(){
+    let cand; do{ n++; cand=info.pad?String(n).padStart(info.pad,'0'):String(n); }while(info.used.has(cand.toLowerCase()));
+    info.used.add(cand.toLowerCase()); return cand;
+  };
+}
+function autoAdmChecked(id){ const el=qs(id); return !!(el && el.checked); }
+function setAutoAdmPref(on){ const sc=currentSchool(); if(sc){ sc.autoAdm=!!on; saveDB(DB); } }
+function autoAdmBoxHTML(id, text){
+  const sc=currentSchool();
+  return `<label class="small" style="display:flex;gap:6px;align-items:flex-start;margin:6px 0"><input type="checkbox" id="${id}" style="width:auto;margin:3px 0 0" ${sc&&sc.autoAdm?'checked':''} onchange="setAutoAdmPref(this.checked)"> <span>${text}</span></label>`;
+}
+// Gives an admission number to every learner who has none yet (only when the user confirms).
+function assignMissingAdmissions(){
+  const school=currentSchool();
+  if(!autoAdmChecked('autoAdmExisting')){ toast('Tick the box first to allow automatic admission numbers','err'); return; }
+  const missing=school.students.filter(s=>!String(s.adm||'').trim());
+  if(!missing.length){ toast('Every learner already has an admission number'); return; }
+  if(!confirm(`Assign admission numbers automatically to the ${missing.length} learner(s) who don't have one?\n\nNumbers continue from the highest existing number, in the order the learners are listed. Learners who already have a number are not changed.`)) return;
+  const next=makeAdmAllocator(school);
+  missing.forEach(s=>{ s.adm=next(); });
+  saveDB(DB); toast(`Assigned ${missing.length} admission number(s)`);
+  renderDOS();
+}
 function takeRetainedId(school, adm){ if(!adm) return null; const i=(school.finRetained||[]).findIndex(x=>x.adm===adm); if(i<0) return null; const id=school.finRetained[i].id; school.finRetained.splice(i,1); delete (school.finHidden||{})[id]; return id; }
 function unionStudents(list){ return [...new Map(list.map(s=>[s.id,s])).values()].sort(admOrName); }
 /* ===== Gender helpers ===== */
@@ -6902,6 +6941,7 @@ function tplStudents(school){
     <div><label>Other Phone</label><input id="stuPhone2" placeholder="Second contact"></div>`:''}
     <div><label>Photo <span class="small">(optional)</span></label><input type="file" accept="image/*" id="stuNewPhoto" onchange="stuNewPhotoPick(this)"></div>
     <div><label>Photo background <span class="small">(changes automatically)</span></label><span style="display:flex;gap:8px;align-items:center">${photoBgCtl('stuNewBg',stuNewPhotoBgV||school.photoBg||'cert','stuNewPhotoBgSet','')}<img id="stuNewPhotoPrev" alt="" style="display:none;width:48px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--border)"></span></div>
+    <div style="flex:1 1 100%">${autoAdmBoxHTML('stuAutoAdm','<b>Assign an admission number automatically</b> if the Admission No. is left blank (untick to leave it empty).')}</div>
     <div style="align-self:flex-end"><button onclick="addStudent()">Add Learner</button></div>
   </div></details>
 
@@ -6921,13 +6961,18 @@ function tplStudents(school){
 Amina Hassan"></textarea>
   <label class="small" style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="checkbox" id="bulkHasAssess" style="width:auto;margin:0"> My lines have a <b>KNEC Assessment No.</b> as the 2nd column</label>
   ${pd?'<label class="small" style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="checkbox" id="bulkHasParent" style="width:auto;margin:0"> My lines <b>end with Parent Name and Parent ID</b> (last two columns, either may be empty)</label>':''}
+  ${autoAdmBoxHTML('bulkAutoAdm','<b>Assign admission numbers automatically</b> to lines that have no admission number (untick to leave them blank).')}
   <div class="flexbtns"><button class="ghost" onclick="bulkAddStudents()">Add Bulk to Selected Grade</button></div></details>
 
   <details class="stu-box"><summary>⚙️ Settings &amp; Parent PINs</summary>
   <label class="small" style="display:flex;gap:6px;align-items:center;margin:8px 0"><input type="checkbox" style="width:auto;margin:0" ${pd?'checked':''} onchange="setParentDetails(this.checked)"> <b>Record parent / guardian details</b> (name, relationship, ID number, second phone), all optional. Untick to hide them; nothing is deleted.</label>
   <label class="small" style="display:flex;gap:6px;align-items:center;margin:8px 0"><input type="checkbox" style="width:auto;margin:0" ${school.photoOnReport!==false?'checked':''} onchange="setPhotoOnReport(this.checked)"> <b>Print learner photos on report forms</b> (learners without a photo simply show no picture).</label>
   <p class="small">Each learner's <b>Parent PIN</b> is the fourth Parent Portal login factor. Hand it to that parent directly, not on a public notice. Moving a learner to another grade keeps their past results filed under the old one.</p>
-  <div class="flexbtns"><button class="ghost" onclick="fillMissingParentPins()">🔑 Generate PINs for learners without one</button></div></details>
+  <div class="flexbtns"><button class="ghost" onclick="fillMissingParentPins()">🔑 Generate PINs for learners without one</button></div>
+  <hr style="border:none;border-top:1px solid var(--border);margin:10px 0">
+  <p class="small"><b>Admission numbers for existing learners.</b> ${school.students.filter(s=>!String(s.adm||'').trim()).length} learner(s) currently have no admission number.</p>
+  ${autoAdmBoxHTML('autoAdmExisting','<b>Allow automatic admission numbers</b> for learners who don\'t have one. Nothing is assigned unless this is ticked.')}
+  <div class="flexbtns"><button class="ghost" onclick="assignMissingAdmissions()">🔢 Assign admission numbers to learners without one</button></div></details>
 
   <div class="row" style="margin-top:10px">
     <div style="flex:2 1 220px"><label>🔍 Search name / admission / phone / parent</label><input id="stuSearch" value="${escapeHtml(stuSearch)}" oninput="stuSearch=this.value;debStuRows()" placeholder="Type to find a learner…"></div>
@@ -6992,7 +7037,7 @@ function updStudentClass(id, newClassId, selectEl){
   toast(`${s.name} moved to ${to.name}`); renderStudentRows();
 }
 function addStudent(){
-  const adm = qs('#stuAdm').value.trim(), name = qs('#stuName').value.trim(), classId = qs('#stuClass').value;
+  const adm0 = qs('#stuAdm').value.trim(), name = qs('#stuName').value.trim(), classId = qs('#stuClass').value;
   const assessNo = qs('#stuAssessNo') ? qs('#stuAssessNo').value.trim() : '';
   const parentPhone = qs('#stuPhone') ? qs('#stuPhone').value.trim() : '';
   const pv = id=>qs(id) ? qs(id).value.trim().replace(/\s+/g,' ') : '';
@@ -7002,8 +7047,10 @@ function addStudent(){
   const school = currentSchool();
   // Uniqueness only matters when an admission number was actually given — multiple
   // learners are allowed to have no admission number at the same time.
-  if(adm && school.students.some(s=>s.adm===adm)){ toast('Admission number already exists','err'); return; }
+  if(adm0 && school.students.some(s=>s.adm===adm0)){ toast('Admission number already exists','err'); return; }
   if(assessNo && school.students.some(s=>s.assessNo===assessNo)){ toast('Assessment number already exists','err'); return; }
+  let adm = adm0;
+  if(!adm && autoAdmChecked('#stuAutoAdm')) adm = makeAdmAllocator(school)();
   const _rid = takeRetainedId(school, adm); school.students.push({id:_rid||uid('stu_'), adm, assessNo, name: name.replace(/\s+/g,' '), classId, gender, parentPhone, parentName, parentRel, parentId, parentPhone2, photo: (typeof stuNewPhotoData==='string'?stuNewPhotoData:''), ...(stuNewPhotoData&&stuNewPhotoOrig?{photoOrig:stuNewPhotoOrig, photoBg:stuNewPhotoBgV}:{}), parentPin: genParentPin()}); stuNewPhotoData=''; stuNewPhotoOrig=''; stuNewPhotoBgV=''; saveDB(DB); renderDOS();
 }
 // Lets HOI/DOS correct a learner's admission number directly from the Learners table
@@ -7077,6 +7124,7 @@ function bulkAddStudents(){
   const hasAssessCol = !!(qs('#bulkHasAssess') && qs('#bulkHasAssess').checked);
   const hasParentCol = !!(qs('#bulkHasParent') && qs('#bulkHasParent').checked);
   let added=0;
+  const autoAdm = autoAdmChecked('#bulkAutoAdm'), nextAdm = autoAdm ? makeAdmAllocator(school) : null;
   lines.forEach(l=>{
     let adm='', name='', parentPhone='', gender='', assessNo='', parentName='', parentId='';
     if(l.includes(',')){
@@ -7101,6 +7149,7 @@ function bulkAddStudents(){
     }
     if(!name) return;
     if(adm && school.students.some(s=>s.adm===adm)) return; // skip duplicate admission numbers
+    if(!adm && nextAdm) adm = nextAdm();
     if(assessNo && school.students.some(s=>s.assessNo===assessNo)) assessNo = ''; // duplicate assessment no.: still add the learner, just without it
     { const _rid = takeRetainedId(school, adm); school.students.push({id:_rid||uid('stu_'), adm, assessNo, name, classId, gender, parentPhone, parentName, parentRel:'', parentId, parentPhone2:'', parentPin: genParentPin()}); } added++;
   });
@@ -10602,10 +10651,12 @@ function financeLearnersHTML(school){
     <div><label>Grade</label><select id="finStuClass">${school.classes.map(c=>`<option value="${c.id}" ${c.id===cid?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
     <div><label>Parent Phone <span class="small">(optional, for fee SMS)</span></label><input id="finStuPhone" placeholder="e.g. 0712345678"></div>
     <div><label>Parent / Guardian Name <span class="small">(optional)</span></label><input id="finStuParent"></div>
+    <div style="flex:1 1 100%">${autoAdmBoxHTML('finAutoAdm','<b>Assign an admission number automatically</b> if the Admission No. is left blank.')}</div>
     <div style="align-self:flex-end"><button onclick="finAddLearner()">Add Learner</button></div>
   </div>
   <p class="small" style="margin-top:8px">Bulk paste — one learner per line, "Admission,Name,Gender,ParentPhone" (Gender Boy/Girl or M/F; admission, gender and phone may be left out). They go into the Grade chosen above:</p>
   <textarea id="finBulkStu" rows="3" placeholder="1001,John Mwangi,Boy,0712345678&#10;,Faith Wanjiru,Girl,&#10;Amina Hassan"></textarea>
+  ${autoAdmBoxHTML('finBulkAutoAdm','<b>Assign admission numbers automatically</b> to lines that have none.')}
   <div class="flexbtns"><button class="ghost" onclick="finBulkAddLearners()">Add Bulk to Selected Grade</button></div></div>`;
   return `<div class="card"><h2>👥 Finance Learners</h2>${addForm}
   <p class="small">Learners added by the DOS appear here automatically. If the DOS later deletes a learner, they <b>stay here</b> with their fees, balances and receipts until Finance removes them. Removing here never affects the DOS lists, and payment history is kept.</p>
@@ -10618,9 +10669,10 @@ function financeLearnersHTML(school){
 function finAddLearner(){
   if(!canEdit()){ noEdit(); return; }
   const school = currentSchool(), v = id=>(qs(id)?qs(id).value:'').trim().replace(/\s+/g,' ');
-  const adm = v('#finStuAdm'), name = v('#finStuName'), classId = qs('#finStuClass')?qs('#finStuClass').value:'';
+  let adm = v('#finStuAdm'); const name = v('#finStuName'), classId = qs('#finStuClass')?qs('#finStuClass').value:'';
   if(!name||!classId){ toast('Enter at least the learner name and grade','err'); return; }
   if(adm && school.students.some(s=>s.adm===adm)){ toast('Admission number already exists','err'); return; }
+  if(!adm && autoAdmChecked('#finAutoAdm')) adm = makeAdmAllocator(school)();
   const rid = takeRetainedId(school, adm);
   school.students.push({id:rid||uid('stu_'), adm, assessNo:'', name, classId, gender:normGender(qs('#finStuGender')?qs('#finStuGender').value:''),
     parentPhone:v('#finStuPhone'), parentName:v('#finStuParent'), parentRel:'', parentId:'', parentPhone2:'', parentPin:genParentPin()});
@@ -10632,6 +10684,7 @@ function finBulkAddLearners(){
   const lines = (qs('#finBulkStu')?qs('#finBulkStu').value:'').split('\n').map(l=>l.trim()).filter(Boolean);
   if(!classId){ toast('Choose a grade first','err'); return; }
   let added=0, skipped=0;
+  const nextAdm = autoAdmChecked('#finBulkAutoAdm') ? makeAdmAllocator(school) : null;
   lines.forEach(l=>{
     let adm='', name='', parentPhone='', gender='';
     if(l.includes(',')){
@@ -10642,6 +10695,7 @@ function finBulkAddLearners(){
     } else name = l;
     if(!name) return;
     if(adm && school.students.some(s=>s.adm===adm)){ skipped++; return; }
+    if(!adm && nextAdm) adm = nextAdm();
     const rid = takeRetainedId(school, adm);
     school.students.push({id:rid||uid('stu_'), adm, assessNo:'', name, classId, gender, parentPhone, parentName:'', parentRel:'', parentId:'', parentPhone2:'', parentPin:genParentPin()});
     added++;
@@ -12927,9 +12981,165 @@ function rcRenderPart(p){
   const parts = n>1 ? `<div class="flexbtns no-print" style="margin:6px 0">${Array.from({length:n},(_,i)=>`<button class="${i===p?'':'ghost'}" onclick="rcGoPart(${i})">Part ${i+1} · ${i*bs+1}–${Math.min(total,(i+1)*bs)}</button>`).join('')}</div>` : '';
   const label = n>1 ? `Print Part ${p+1} of ${n} (${from+1}–${to})` : R.title;
   const next = n>1 && p<n-1 ? `<button class="ghost" onclick="rcGoPart(${p+1})">Next part ▶</button>` : '';
-  area.innerHTML = R.info + parts + R.built.slice(from,to).map(r=>r.html).join('') +
+  area.innerHTML = R.info + parts + R.built.slice(from,to).map(r=>r.html).join('') + waPanelHTML(R.built.slice(from,to), R.examId, from) +
     `<div class="flexbtns no-print">${rcPaperPick()}${inkPick(true)}${sel}<button class="gold" onclick="rcPrintNow()">🖨 ${label}</button>${next}</div><p class="small no-print">Tip: in the print dialog set <b>Paper size</b> to the same size you chose here (A4 recommended) and leave Margins on Default / Scale on 100%.${total>bs&&bs?' Large grades print in batches so the phone/browser does not run out of memory — print each part, then tap <b>Next part</b>.':''}</p>`;
   if(n>1){ try{ area.scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){} }
+}
+/* ============================= SHARE REPORT FORMS AS PDF VIA WHATSAPP =============================
+   Builds a PDF of each learner's report form in the browser and hands it to WhatsApp.
+   - One learner: the button next to their name.
+   - ALL parents: "Start sending to all parents" walks through every learner with a valid parent phone
+     (across all batches). The next PDF is prepared in the background, so each parent is one tap:
+       phone/tablet -> WhatsApp share sheet opens with the PDF attached (pick the parent's chat);
+       computer     -> the PDF downloads and WhatsApp opens the parent's chat with a ready message (attach with 📎).
+   Learners already sent for this exam are remembered and skipped next time.
+   WhatsApp does not let a web page attach a file to a chat or send by itself, so each parent needs one tap. */
+let _waLibsPromise = null, WA_Q = null;
+function waLoadScript(src){ return new Promise((res,rej)=>{ const t=document.createElement('script'); t.src=src; t.onload=res; t.onerror=()=>rej(new Error('Could not load '+src)); document.head.appendChild(t); }); }
+function waLoadLibs(){
+  if(window.html2canvas && window.jspdf) return Promise.resolve();
+  if(_waLibsPromise) return _waLibsPromise;
+  _waLibsPromise = (async()=>{
+    if(!window.html2canvas) await waLoadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+    if(!window.jspdf) await waLoadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  })().catch(e=>{ _waLibsPromise=null; throw e; });
+  return _waLibsPromise;
+}
+function waSentMap(school, examId){ if(!school.waSent) school.waSent={}; if(!school.waSent[examId]) school.waSent[examId]={}; return school.waSent[examId]; }
+// Everything needed to send learner number gi (index into RC_LAST.built).
+function waInfo(gi){
+  const R=RC_LAST, school=currentSchool(); const it=R&&R.built[gi];
+  const st=it&&school.students.find(x=>x.id===it.sid); if(!st) return null;
+  const exam=school.exams.find(e=>e.id===R.examId)||{};
+  const ph=normalizePhone(st.parentPhone), ok=isValidSmsPhone(ph);
+  const clean=t=>String(t||'').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'_');
+  return {school,R,it,st,exam,ok,num:ok?ph.replace('+',''):'',
+    fname:(clean(st.name)||'learner')+'_'+(clean(exam.name)||'Results')+'.pdf',
+    text:`Dear Parent/Guardian of ${st.name}, please find attached the ${exam.name?exam.name+' ('+exam.term+' '+exam.year+') ':''}report form.${school.name?'\n\n'+school.name:''}`};
+}
+function waPanelHTML(items, examId, from){
+  const school = currentSchool(); if(!school || !items.length) return '';
+  const sent = waSentMap(school, examId);
+  const rows = items.map((r,i)=>{
+    const gi=(from||0)+i, st = school.students.find(x=>x.id===r.sid) || {};
+    const ok = isValidSmsPhone(normalizePhone(st.parentPhone));
+    return `<tr><td style="text-align:left">${escapeHtml(st.name||'?')}</td><td>${st.parentPhone?escapeHtml(st.parentPhone):'<span class="small">no phone</span>'}</td>
+    <td id="waSt${gi}">${sent[st.id]?'✔ Sent':''}</td>
+    <td><button class="ghost" id="waBtn${gi}" onclick="waSendReport(${gi})">📲 ${ok?'Send PDF':'Share PDF'}</button></td></tr>`;
+  }).join('');
+  return `<details class="stu-box no-print" style="margin:12px 0" open><summary>📲 Send report forms to parents as PDF on WhatsApp</summary>
+  <div id="waQueue">${waQueueHTML()}</div>
+  <details style="margin-top:8px"><summary class="small">Or send one learner at a time (${items.length} in this batch)</summary>
+  <div style="overflow-x:auto"><table><thead><tr><th>Learner</th><th>Parent phone</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></details>
+  <p class="small" id="waMsg"></p></details>`;
+}
+function waQueueHTML(){
+  const R=RC_LAST, school=currentSchool(); if(!R||!school) return '';
+  const Q=WA_Q;
+  if(Q && !Q.done){
+    const gi=Q.list[Q.pos], inf=waInfo(gi); if(!inf) return '';
+    const ready=!!Q.ready[gi], err=Q.err[gi];
+    return `<div class="card" style="background:#f0f7f1;margin:8px 0"><p><b>Parent ${Q.pos+1} of ${Q.list.length}:</b> ${escapeHtml(inf.st.name)} · ${escapeHtml(inf.st.parentPhone||'')}</p>
+    <div style="background:#dde6ee;border-radius:6px;height:8px;margin:6px 0"><div style="background:#25a244;height:8px;border-radius:6px;width:${Math.round(Q.pos/Q.list.length*100)}%"></div></div>
+    ${err?`<p class="msg err">Could not prepare this PDF: ${escapeHtml(err)}</p>`:ready?'':'<p class="small">⏳ Preparing the PDF…</p>'}
+    <div class="flexbtns"><button class="gold" ${ready?'':'disabled'} onclick="waQueueSend()">📲 Send to this parent &amp; go to next</button>
+    <button class="ghost" onclick="waQueueSkip()">Skip</button><button class="danger" onclick="waQueueStop()">Stop</button></div>
+    <p class="small">On a phone, pick WhatsApp and then this parent's chat. On a computer the chat opens by itself: attach the downloaded PDF with 📎 and press send.</p></div>`;
+  }
+  const sent=waSentMap(school,R.examId); let pending=0, nophone=0, done=0;
+  R.built.forEach(it=>{ const st=school.students.find(x=>x.id===it.sid); if(!st) return;
+    if(!isValidSmsPhone(normalizePhone(st.parentPhone))) nophone++; else if(sent[st.id]) done++; else pending++; });
+  return `${Q&&Q.done?'<p class="msg ok">✔ Finished — every parent in the list has been handled.</p>':''}
+  <p class="small">Each parent needs one tap: the next report is prepared while you send the current one. <b>${pending}</b> parent(s) ready to send${done?`, <b>${done}</b> already sent`:''}${nophone?`, <b>${nophone}</b> skipped (no valid phone number — fix it on the Learners tab)`:''}. Only send reports that are final and approved.</p>
+  <div class="flexbtns"><button class="gold" ${pending?'':'disabled'} onclick="waStartQueue()">▶ Start sending to all parents (${pending})</button>
+  ${done?'<button class="ghost" onclick="waResetSent()">Clear “sent” marks</button>':''}</div>`;
+}
+function waDrawQueue(){ const el=qs('#waQueue'); if(el) el.innerHTML=waQueueHTML(); }
+// Renders learner gi in a hidden box and returns a one-page A4 PDF (Blob).
+async function waMakePdf(gi){
+  const inf=waInfo(gi); if(!inf) throw new Error('Report form not found — generate the reports again');
+  await waLoadLibs();
+  const host=document.createElement('div');
+  host.style.cssText='position:fixed;left:0;top:0;width:840px;background:#fff;z-index:-1;pointer-events:none';
+  host.innerHTML=inf.it.html; document.body.appendChild(host);
+  try{
+    const card=host.querySelector('.report-card')||host;
+    const w=rcImagesReady(host); if(w) await w;
+    await new Promise(r=>setTimeout(r,60));
+    const canvas=await window.html2canvas(card,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false});
+    const pdf=new window.jspdf.jsPDF({unit:'mm',format:'a4',orientation:'portrait'});
+    const maxW=194, maxH=281; let w2=maxW, h2=canvas.height*maxW/canvas.width;
+    if(h2>maxH){ h2=maxH; w2=canvas.width*maxH/canvas.height; }
+    pdf.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',(210-w2)/2,8,w2,h2);
+    return pdf.output('blob');
+  } finally { host.remove(); }
+}
+// Hands a ready PDF to WhatsApp. Returns 'shared' | 'opened' | 'cancelled'.
+async function waDeliver(gi, blob){
+  const inf=waInfo(gi); const file=new File([blob],inf.fname,{type:'application/pdf'});
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file],text:inf.text,title:inf.fname}); return 'shared'; }
+    catch(e){ if(e && e.name==='AbortError') return 'cancelled'; }
+  }
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download=inf.fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),30000);
+  window.open('https://wa.me/'+inf.num+'?text='+encodeURIComponent(inf.text),'_blank');
+  return 'opened';
+}
+function waMark(gi){
+  const inf=waInfo(gi); if(!inf) return;
+  waSentMap(inf.school,inf.R.examId)[inf.st.id]=Date.now(); saveDB(DB);
+  const c=qs('#waSt'+gi); if(c) c.textContent='✔ Sent';
+}
+async function waSendReport(gi){
+  const inf=waInfo(gi); if(!inf){ toast('Learner not found','err'); return; }
+  const ex=inf.exam;
+  if(ex.id && inf.school.requireApproval && ex.resultsApproval!=='approved'){ toast("Approve this exam's results before sending them to parents",'err'); return; }
+  const btn=qs('#waBtn'+gi), msgEl=qs('#waMsg'), old=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Preparing…'; }
+  try{
+    const blob=await waMakePdf(gi), r=await waDeliver(gi,blob);
+    if(r!=='cancelled') waMark(gi);
+    if(msgEl) msgEl.innerHTML = r==='opened' ? `✔ PDF downloaded (<b>${escapeHtml(inf.fname)}</b>). In the WhatsApp chat that opened, tap 📎 → Document and pick it.${inf.ok?'':' (No valid phone number on file, so choose the contact in WhatsApp.)'}` : r==='shared' ? '✔ Shared — choose WhatsApp and the parent’s chat.' : '';
+  }catch(err){
+    console.error(err);
+    if(msgEl) msgEl.innerHTML=`<span class="msg err">Could not create the PDF: ${escapeHtml(String(err.message||err))}. PDF creation needs an internet connection the first time.</span>`;
+  }finally{ if(btn){ btn.disabled=false; btn.textContent=old; } }
+}
+function waStartQueue(){
+  const R=RC_LAST, school=currentSchool(); if(!R) return;
+  const ex=school.exams.find(e=>e.id===R.examId);
+  if(ex && school.requireApproval && ex.resultsApproval!=='approved'){ toast("Approve this exam's results before sending them to parents",'err'); return; }
+  const sent=waSentMap(school,R.examId), list=[];
+  R.built.forEach((it,gi)=>{ const st=school.students.find(x=>x.id===it.sid); if(st && isValidSmsPhone(normalizePhone(st.parentPhone)) && !sent[st.id]) list.push(gi); });
+  if(!list.length){ toast('Nobody left to send to','err'); return; }
+  if(!confirm(`Send report forms to ${list.length} parent(s) one after another?\n\nFor each parent you tap once to open WhatsApp with their PDF.`)) return;
+  WA_Q={list,pos:0,ready:{},err:{},p:{},done:false};
+  waPrefetch(0); waDrawQueue();
+}
+function waPrefetch(pos){
+  const Q=WA_Q; if(!Q || pos>=Q.list.length) return; const gi=Q.list[pos]; if(gi in Q.p) return;
+  Q.p[gi]=waMakePdf(gi).then(b=>{ Q.ready[gi]=b; }).catch(e=>{ Q.err[gi]=String(e.message||e); })
+    .then(()=>{ if(WA_Q!==Q) return; waDrawQueue(); if(pos===Q.pos && Q.ready[gi]) waPrefetch(pos+1); });
+}
+function waQueueAdvance(){
+  const Q=WA_Q; if(!Q) return; delete Q.ready[Q.list[Q.pos]]; Q.pos++;
+  if(Q.pos>=Q.list.length){ Q.done=true; }
+  else { const gi=Q.list[Q.pos]; if(Q.ready[gi]) waPrefetch(Q.pos+1); else waPrefetch(Q.pos); }
+  waDrawQueue();
+}
+async function waQueueSend(){
+  const Q=WA_Q; if(!Q || Q.busy || Q.done) return; const gi=Q.list[Q.pos], blob=Q.ready[gi]; if(!blob) return;
+  Q.busy=true;
+  try{ const r=await waDeliver(gi,blob); if(r!=='cancelled'){ waMark(gi); Q.busy=false; waQueueAdvance(); return; } }
+  catch(e){ console.error(e); toast('Could not open WhatsApp for this parent','err'); }
+  Q.busy=false; waDrawQueue();
+}
+function waQueueSkip(){ if(WA_Q && !WA_Q.busy) waQueueAdvance(); }
+function waQueueStop(){ WA_Q=null; waDrawQueue(); toast('Stopped. Parents already sent are remembered.'); }
+function waResetSent(){
+  const R=RC_LAST; if(!R) return; if(!confirm('Clear the “sent” marks for this exam so every parent can be sent to again?')) return;
+  const school=currentSchool(); delete (school.waSent||{})[R.examId]; saveDB(DB); WA_Q=null; rcRenderPart(R.part||0);
 }
 async function showReports(areaSel, learners, examId, title){
   const area = qs(areaSel), school = currentSchool();
@@ -12944,7 +13154,7 @@ async function showReports(areaSel, learners, examId, title){
   let t0 = performance.now();
   for(let i=0;i<learners.length;i++){
     const l = learners[i];
-    try{ built.push(buildReportHTML(school, l.id, examId)); }catch(err){ console.error('Report failed for', l && l.name, err); failed.push((l&&l.name)||'?'); }
+    try{ built.push(Object.assign(buildReportHTML(school, l.id, examId), {sid:l.id})); }catch(err){ console.error('Report failed for', l && l.name, err); failed.push((l&&l.name)||'?'); }
     // give the browser a breath every ~40ms so the screen stays alive and shows progress
     if(performance.now()-t0 > 40){
       const pe = document.getElementById('rcProg'); if(pe) pe.textContent = '⏳ Preparing reports… '+(i+1)+' / '+learners.length;
@@ -12958,7 +13168,8 @@ async function showReports(areaSel, learners, examId, title){
   const info = `<div class="no-print small" style="margin:8px 0">${built.length} report form(s) ready · ${escapeHtml(exam.name)} (${escapeHtml(exam.term)} ${exam.year})`
     + (marked===0 ? ' · <b style="color:#9c2c2c">⚠ no marks have been entered for this exam yet — the forms will be blank</b>' : '')
     + (failed.length ? `<br><b style="color:#9c2c2c">⚠ Could not build ${failed.length}: ${escapeHtml(failed.slice(0,8).join(', '))}${failed.length>8?'…':''}</b>` : '') + '</div>';
-  RC_LAST = {areaSel, built, info, title, part:0};
+  WA_Q = null;
+  RC_LAST = {areaSel, built, info, title, part:0, examId};
   rcRenderPart(0);
   try{ area.scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){}
 }
